@@ -36,6 +36,7 @@ if _current_dir not in sys.path:
 from config import (
     KIOSK_ID,
     KIOSK_NAME,
+    KIOSK_SECRET,
     API_URL,
     PRINTER_NAME,
     POLL_INTERVAL_SECONDS,
@@ -50,6 +51,7 @@ class KioskBrainDaemon:
     def __init__(self):
         self.kiosk_id = KIOSK_ID
         self.kiosk_name = KIOSK_NAME
+        self.kiosk_secret = KIOSK_SECRET
         self.api_url = API_URL
         self.printer_name = PRINTER_NAME
         self.cups = CupsController()
@@ -64,8 +66,19 @@ class KioskBrainDaemon:
         print(f"  Station Name: {self.kiosk_name}")
         print(f"  Backend API : {self.api_url}")
         print(f"  Printer Target: {self.printer_name}")
+        print(f"  Auth Status : {'Secured (Token Loaded)' if self.kiosk_secret else 'Warning (No KIOSK_SECRET configured)'}")
         print(f"  Printed History: {len(self.processed_orders)} order(s) already completed")
         print("========================================================\n")
+
+    def _get_auth_headers(self) -> Dict[str, str]:
+        headers = {
+            "X-Kiosk-Id": self.kiosk_id,
+            "Accept": "application/json",
+        }
+        if self.kiosk_secret:
+            headers["X-Kiosk-Secret"] = self.kiosk_secret
+            headers["Authorization"] = f"Bearer {self.kiosk_secret}"
+        return headers
 
     def _load_processed_history(self) -> set:
         try:
@@ -102,10 +115,11 @@ class KioskBrainDaemon:
         try:
             req_url = f"{self.api_url}/kiosks/{self.kiosk_id}/heartbeat"
             req_data = json.dumps(payload).encode("utf-8")
+            headers = {**self._get_auth_headers(), "Content-Type": "application/json"}
             req = urllib.request.Request(
                 req_url,
                 data=req_data,
-                headers={"Content-Type": "application/json", "X-Kiosk-Id": self.kiosk_id},
+                headers=headers,
                 method="POST",
             )
             with urllib.request.urlopen(req, timeout=4) as resp:
@@ -122,7 +136,7 @@ class KioskBrainDaemon:
             req_url = f"{self.api_url}/orders?{query}"
             req = urllib.request.Request(
                 req_url,
-                headers={"X-Kiosk-Id": self.kiosk_id, "Accept": "application/json"},
+                headers=self._get_auth_headers(),
             )
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
@@ -201,7 +215,9 @@ class KioskBrainDaemon:
             if not local_target.exists():
                 print(f"[Kiosk Brain] 📥 Staged Order {order_id} (Awaiting customer to enter PIN {release_pin} on kiosk)")
                 try:
-                    urllib.request.urlretrieve(download_url, str(local_target))
+                    dl_req = urllib.request.Request(download_url, headers=self._get_auth_headers())
+                    with urllib.request.urlopen(dl_req, timeout=20) as resp, open(local_target, "wb") as f:
+                        f.write(resp.read())
                     print(f"[Kiosk Brain] ✓ Pre-fetched {file_name} ({local_target.stat().st_size} bytes)")
                 except Exception as e:
                     print(f"[Kiosk Brain] Staging prefetch error: {e}")
@@ -213,7 +229,9 @@ class KioskBrainDaemon:
         if not local_target.exists() or local_target.stat().st_size == 0:
             try:
                 print(f"[Kiosk Brain] 📥 Downloading document from {download_url}...")
-                urllib.request.urlretrieve(download_url, str(local_target))
+                dl_req = urllib.request.Request(download_url, headers=self._get_auth_headers())
+                with urllib.request.urlopen(dl_req, timeout=25) as resp, open(local_target, "wb") as f:
+                    f.write(resp.read())
                 print(f"[Kiosk Brain] ✓ Downloaded {file_name} ({local_target.stat().st_size} bytes)")
             except Exception as e:
                 print(f"[Kiosk Brain] [ERROR] Download failed: {e}")
@@ -254,10 +272,11 @@ class KioskBrainDaemon:
         try:
             req_url = f"{self.api_url}/orders/{order_id}/status"
             req_data = json.dumps({"status": "READY_FOR_COLLECTION", "kioskId": self.kiosk_id}).encode("utf-8")
+            headers = {**self._get_auth_headers(), "Content-Type": "application/json"}
             req = urllib.request.Request(
                 req_url,
                 data=req_data,
-                headers={"Content-Type": "application/json", "X-Kiosk-Id": self.kiosk_id},
+                headers=headers,
                 method="POST",
             )
             urllib.request.urlopen(req, timeout=3)
