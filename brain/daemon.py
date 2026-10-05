@@ -144,10 +144,50 @@ class KioskBrainDaemon:
             return
 
         file_name = order.get("fileName", "print_document.pdf")
-        copies = int(order.get("copies", 1))
-        colour_mode = order.get("colourMode", "BW")
-        duplex = order.get("duplex", "SINGLE")
-        paper_size = order.get("paperSize", "A4")
+        
+        # Deep extraction of all print settings configured by customer
+        print_settings = order.get("printSettings") or {}
+        if isinstance(print_settings, str):
+            try:
+                print_settings = json.loads(print_settings)
+            except Exception:
+                print_settings = {}
+
+        copies = int(order.get("copies") or print_settings.get("copies") or 1)
+        colour_mode = str(
+            order.get("colourMode")
+            or order.get("colour")
+            or print_settings.get("colour")
+            or print_settings.get("colourMode")
+            or "BW"
+        ).upper()
+        duplex = str(
+            order.get("duplex")
+            or print_settings.get("duplex")
+            or "SINGLE"
+        ).upper()
+        paper_size = str(
+            order.get("paperSize")
+            or print_settings.get("paperSize")
+            or "A4"
+        ).upper()
+        page_range = str(
+            order.get("pageRange")
+            or order.get("pages")
+            or print_settings.get("pages")
+            or print_settings.get("pageRange")
+            or "ALL"
+        ).strip()
+        scaling = str(
+            order.get("scaling")
+            or print_settings.get("scaling")
+            or "FIT"
+        ).strip()
+        pages_per_sheet = int(
+            order.get("pagesPerSheet")
+            or print_settings.get("pagesPerSheet")
+            or 1
+        )
 
         # Resolve document download URL (always download from configured backend API)
         local_target = TEMP_JOBS_DIR / f"{order_id}_{file_name}"
@@ -179,13 +219,24 @@ class KioskBrainDaemon:
                 print(f"[Kiosk Brain] [ERROR] Download failed: {e}")
                 return
 
-        print(f"[Kiosk Brain] Sending to spooler: {copies} copies | {colour_mode} | {duplex} | {paper_size}")
+        print(f"[Kiosk Brain] Sending to spooler with user-selected configuration:")
+        print(f"  • Copies     : {copies}")
+        print(f"  • Colour Mode: {colour_mode}")
+        print(f"  • Duplex     : {duplex}")
+        print(f"  • Paper Size : {paper_size}")
+        print(f"  • Page Range : {page_range}")
+        print(f"  • Scaling    : {scaling}")
+        print(f"  • N-Up       : {pages_per_sheet}")
+
         result = self.cups.print_file(
             file_path=str(local_target),
             copies=copies,
             colour_mode=colour_mode,
             duplex=duplex,
             paper_size=paper_size,
+            page_range=page_range,
+            scaling=scaling,
+            pages_per_sheet=pages_per_sheet,
             printer_name=self.printer_name,
             job_title=f"Order {order_id} - {file_name}",
         )

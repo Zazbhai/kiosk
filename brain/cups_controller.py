@@ -144,21 +144,37 @@ class CupsController:
         duplex: str = "SINGLE",
         paper_size: str = "A4",
         page_range: Optional[str] = None,
+        scaling: str = "FIT",
+        pages_per_sheet: int = 1,
     ) -> Dict[str, str]:
-        """Maps customer print options into standardized CUPS IPP attributes."""
+        """Maps customer print options into standardized CUPS IPP and Brother PPD attributes."""
+        # Normalize Paper Size
+        norm_paper = (paper_size or "A4").upper().strip()
+        ppd_paper = "A4"
+        if norm_paper in ("LETTER", "USLETTER"):
+            ppd_paper = "Letter"
+        elif norm_paper == "LEGAL":
+            ppd_paper = "Legal"
+        elif norm_paper in ("A5", "A6", "EXECUTIVE", "INDIANLEGAL"):
+            ppd_paper = norm_paper.capitalize()
+
         options: Dict[str, str] = {
             "copies": str(max(1, copies)),
-            "media": "A4" if paper_size.upper() == "A4" else "Letter",
-            "fit-to-page": "true",
+            "media": ppd_paper,
+            "PageSize": ppd_paper,
+            "BRMediaType": "Plain",
         }
 
-        # Color vs Monochrome
-        if colour_mode.upper() in ("COLOR", "COLOUR"):
+        # Color vs Monochrome (BRMonoColor is the exact PPD key for Brother DCP-T420W)
+        is_color = colour_mode.upper() in ("COLOR", "COLOUR")
+        if is_color:
+            options["BRMonoColor"] = "FullColor"
             options["print-color-mode"] = "color"
             options["ColorModel"] = "RGB"
         else:
+            options["BRMonoColor"] = "Mono"
             options["print-color-mode"] = "monochrome"
-            options["ColorModel"] = "KBlack"
+            options["ColorModel"] = "Gray"
             options["HPColorMode"] = "grayscale"
 
         # Duplex
@@ -170,8 +186,16 @@ class CupsController:
             options["sides"] = "one-sided"
 
         # Page Ranges
-        if page_range and page_range.upper() != "ALL":
-            options["page-ranges"] = page_range
+        if page_range and page_range.upper() not in ("ALL", ""):
+            options["page-ranges"] = str(page_range).replace(" ", "")
+
+        # Scaling / Fit to page
+        if str(scaling).upper() in ("FIT", "FILL", "TRUE"):
+            options["fit-to-page"] = "true"
+
+        # N-Up (pages per sheet)
+        if pages_per_sheet and int(pages_per_sheet) > 1:
+            options["number-up"] = str(pages_per_sheet)
 
         return options
 
@@ -183,6 +207,8 @@ class CupsController:
         duplex: str = "SINGLE",
         paper_size: str = "A4",
         page_range: Optional[str] = None,
+        scaling: str = "FIT",
+        pages_per_sheet: int = 1,
         printer_name: Optional[str] = None,
         job_title: str = "PrintBooth Document",
     ) -> Dict[str, Any]:
@@ -209,30 +235,49 @@ class CupsController:
             duplex=duplex,
             paper_size=paper_size,
             page_range=page_range,
+            scaling=scaling,
+            pages_per_sheet=pages_per_sheet,
         )
 
         print(f"[CUPS] Dispatching '{p_path.name}' to printer '{printer}'")
-        print(f"[CUPS] Options: {cups_opts}")
+        print(f"[CUPS] Hardware Options applied: {cups_opts}")
 
-        # Try pycups
+        # Primary execution via Linux lp CLI on Raspberry Pi (guarantees -n copies and -P page-ranges)
+        if sys.platform != "win32":
+            # Attempt hardware mode sync if Brother utility exists
+            for br_bin in ["/usr/bin/brprintconf_dcpt420w", "/opt/brother/Printers/dcpt420w/lpd/brprintconf_dcpt420w"]:
+                if os.path.exists(br_bin):
+                    try:
+                        col_arg = "COLOR" if colour_mode.upper() in ("COLOR", "COLOUR") else "MONO"
+                        subprocess.run([br_bin, "-sec", col_arg], timeout=2, capture_output=True)
+                    except Exception:
+                        pass
+                    break
+
+            try:
+                cmd = ["lp", "-d", printer]
+                if copies and int(copies) > 1:
+                    cmd.extend(["-n", str(copies)])
+                if page_range and page_range.upper() not in ("ALL", ""):
+                    clean_range = str(page_range).replace(" ", "")
+                    cmd.extend(["-P", clean_range])
+                for k, v in cups_opts.items():
+                    cmd.extend(["-o", f"{k}={v}"])
+                cmd.append(str(p_path.resolve()))
+                print(f"[CUPS CLI] Executing: {' '.join(cmd)}")
+                out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
+                print(f"[CUPS CLI] Success output: {out.strip()}")
+                return {"success": True, "output": out.strip(), "printer": printer}
+            except Exception as e:
+                print(f"[CUPS CLI] lp execution error: {e}. Trying pycups fallback...")
+
+        # Fallback to pycups if lp is unavailable or failed
         if self._conn:
             try:
                 job_id = self._conn.printFile(printer, str(p_path.resolve()), job_title, cups_opts)
                 return {"success": True, "job_id": job_id, "printer": printer}
             except Exception as e:
                 print(f"[CUPS] pycups print error: {e}")
-
-        # Try CLI lp on Raspberry Pi
-        if sys.platform != "win32":
-            try:
-                cmd = ["lp", "-d", printer]
-                for k, v in cups_opts.items():
-                    cmd.extend(["-o", f"{k}={v}"])
-                cmd.append(str(p_path.resolve()))
-                out = subprocess.check_output(cmd, text=True)
-                return {"success": True, "output": out.strip(), "printer": printer}
-            except Exception as e:
-                return {"success": False, "error": f"lp execution failed: {e}"}
 
         # Real Windows GDI hardware print engine
         if sys.platform == "win32":

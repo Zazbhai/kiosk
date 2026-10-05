@@ -134,16 +134,18 @@ class KioskWsClient:
 
                 elif msg_type == "PIN_VERIFIED":
                     print(f"[WSS Kiosk Client] 🔑 PIN Verified on Kiosk for Order {order_id}! Starting physical print...")
-                    staged_job = self.staged_jobs.get(order_id) or payload
-                    asyncio.create_task(self._handle_print_order(order_id, staged_job))
+                    staged_job = self.staged_jobs.get(order_id) or {}
+                    merged_payload = {**staged_job, **payload}
+                    asyncio.create_task(self._handle_print_order(order_id, merged_payload))
 
                 elif msg_type == "FILE_INCOMING":
                     print(f"[WSS Kiosk Client] 📄 Incoming file received via WS: {payload.get('fileName')} (Order: {order_id})")
 
                 elif msg_type in ("PAYMENT_CAPTURED", "PRINT_EXECUTE"):
                     print(f"[WSS Kiosk Client] ⚡ Order Paid / Print Trigger: {order_id}!")
-                    staged_job = self.staged_jobs.get(order_id) or payload
-                    asyncio.create_task(self._handle_print_order(order_id, staged_job))
+                    staged_job = self.staged_jobs.get(order_id) or {}
+                    merged_payload = {**staged_job, **payload}
+                    asyncio.create_task(self._handle_print_order(order_id, merged_payload))
 
             except Exception as e:
                 print(f"[WSS Kiosk Client] Message parse error: {e}")
@@ -175,12 +177,15 @@ class KioskWsClient:
 
         file_name = payload.get("fileName") or "document.pdf"
         copies = int(payload.get("copies") or 1)
-        colour_mode = payload.get("colourMode") or "BW"
-        duplex = payload.get("duplex") or "SINGLE"
-        paper_size = payload.get("paperSize") or "A4"
+        colour_mode = str(payload.get("colourMode") or payload.get("colour") or "BW").upper()
+        duplex = str(payload.get("duplex") or "SINGLE").upper()
+        paper_size = str(payload.get("paperSize") or "A4").upper()
+        page_range = str(payload.get("pageRange") or payload.get("pages") or "ALL").strip()
+        scaling = str(payload.get("scaling") or "FIT").strip()
+        pages_per_sheet = int(payload.get("pagesPerSheet") or 1)
 
         print(f"\n[WSS Kiosk Client] 🖨 Starting CUPS Print for Order {order_id}: {file_name}")
-        print(f"  Settings: {copies} copies | {colour_mode} | {duplex} | {paper_size}")
+        print(f"  Settings: {copies} copies | {colour_mode} | {duplex} | {paper_size} | Pages: {page_range} | Scaling: {scaling} | N-Up: {pages_per_sheet}")
 
         # Resolve local document path
         local_target = TEMP_JOBS_DIR / f"{order_id}_{file_name}"
@@ -192,7 +197,7 @@ class KioskWsClient:
                 f"%PDF-1.4\n% PrintBooth Automated Kiosk Print\nOrder: {order_id}\nKiosk: {self.kiosk_id}\n"
             )
 
-        # Dispatch to CUPS physical printer
+        # Dispatch to CUPS physical printer with all user settings applied
         try:
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
@@ -203,6 +208,9 @@ class KioskWsClient:
                     colour_mode=colour_mode,
                     duplex=duplex,
                     paper_size=paper_size,
+                    page_range=page_range,
+                    scaling=scaling,
+                    pages_per_sheet=pages_per_sheet,
                     printer_name=self.printer_name,
                     job_title=f"Order {order_id} - {file_name}",
                 )
