@@ -55,7 +55,8 @@ class KioskBrainDaemon:
         self.cups = CupsController()
         self.monitor = HardwareMonitor(self.cups)
         self.last_heartbeat = 0
-        self.processed_orders = set()
+        self.history_file = TEMP_JOBS_DIR / "printed_orders_history.json"
+        self.processed_orders = self._load_processed_history()
 
         print("========================================================")
         print(f"  PrintBooth Kiosk Brain Daemon -- Initialized")
@@ -63,7 +64,24 @@ class KioskBrainDaemon:
         print(f"  Station Name: {self.kiosk_name}")
         print(f"  Backend API : {self.api_url}")
         print(f"  Printer Target: {self.printer_name}")
+        print(f"  Printed History: {len(self.processed_orders)} order(s) already completed")
         print("========================================================\n")
+
+    def _load_processed_history(self) -> set:
+        try:
+            if self.history_file.exists():
+                data = json.loads(self.history_file.read_text(encoding="utf-8"))
+                return set(data)
+        except Exception:
+            pass
+        return set()
+
+    def _mark_order_processed(self, order_id: str):
+        self.processed_orders.add(order_id)
+        try:
+            self.history_file.write_text(json.dumps(list(self.processed_orders)), encoding="utf-8")
+        except Exception:
+            pass
 
     def send_heartbeat(self):
         """Sends live hardware telemetry to the PrintBooth backend."""
@@ -98,9 +116,9 @@ class KioskBrainDaemon:
             pass
 
     def fetch_pending_orders(self) -> List[Dict[str, Any]]:
-        """Queries central API for paid orders ready to print for this station."""
+        """Queries central API for orders ready to stage or print for this station."""
         try:
-            query = urllib.parse.urlencode({"kioskId": self.kiosk_id, "status": "PAID"})
+            query = urllib.parse.urlencode({"kioskId": self.kiosk_id})
             req_url = f"{self.api_url}/orders?{query}"
             req = urllib.request.Request(
                 req_url,
@@ -117,12 +135,14 @@ class KioskBrainDaemon:
             return []
 
     def execute_order(self, order: Dict[str, Any]):
-        """Executes a customer print job via CUPS."""
+        """Executes a customer print job via CUPS only when PIN is verified."""
         order_id = order.get("orderId") or order.get("orderNumber") or order.get("_id")
-        if not order_id or order_id in self.processed_orders:
+        order_status = (order.get("status") or "").upper()
+
+        # Skip already completed or already printed jobs
+        if not order_id or order_id in self.processed_orders or order_status in ("PRINTED", "COMPLETED", "READY_FOR_COLLECTION"):
             return
 
-        print(f"\n[Kiosk Brain] [PRINT] New Job Received for Station {self.kiosk_id} -> Order {order_id}")
         file_name = order.get("fileName", "print_document.pdf")
         copies = int(order.get("copies", 1))
         colour_mode = order.get("colourMode", "BW")
@@ -133,20 +153,22 @@ class KioskBrainDaemon:
         local_target = TEMP_JOBS_DIR / f"{order_id}_{file_name}"
         download_url = f"{self.api_url}/print/download/{order_id}"
 
-        # Check if immediate auto-printing is enabled
-        auto_print = os.environ.get("AUTO_PRINT_ON_PAID", "true").lower() in ("true", "1", "yes")
         release_pin = order.get("releasePin") or order.get("otp") or order.get("pickupCode")
-        order_status = (order.get("status") or "").upper()
 
-        if not auto_print and release_pin and order_status not in ("PRINTING", "VERIFIED"):
+        # STRICT OTP ENFORCEMENT:
+        # If an order has a release_pin and is NOT verified yet, prefetch/stage the file and wait!
+        if release_pin and order_status not in ("PRINTING", "VERIFIED"):
             if not local_target.exists():
-                print(f"[Kiosk Brain] 📥 Staging document for Order {order_id} (Awaiting Kiosk PIN {release_pin})")
+                print(f"[Kiosk Brain] 📥 Staged Order {order_id} (Awaiting customer to enter PIN {release_pin} on kiosk)")
                 try:
                     urllib.request.urlretrieve(download_url, str(local_target))
-                    print(f"[Kiosk Brain] ✓ Pre-fetched {file_name} for PIN verification")
+                    print(f"[Kiosk Brain] ✓ Pre-fetched {file_name} ({local_target.stat().st_size} bytes)")
                 except Exception as e:
-                    print(f"[Kiosk Brain] Staging download error: {e}")
+                    print(f"[Kiosk Brain] Staging prefetch error: {e}")
             return
+
+        # PIN is verified (status is PRINTING/VERIFIED) or no PIN required -> Proceed with physical print
+        print(f"\n[Kiosk Brain] 🖨 PIN Verified / Authorized! Starting Print for Order {order_id} ({file_name})")
 
         if not local_target.exists() or local_target.stat().st_size == 0:
             try:
@@ -170,7 +192,7 @@ class KioskBrainDaemon:
 
         if result.get("success"):
             print(f"[Kiosk Brain] [OK] Print dispatched successfully via {result.get('printer')}!")
-            self.processed_orders.add(order_id)
+            self._mark_order_processed(order_id)
             self.monitor.estimated_paper = max(0, self.monitor.estimated_paper - copies)
             self.notify_order_completed(order_id)
         else:
