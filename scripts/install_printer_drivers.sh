@@ -37,6 +37,13 @@ USB_PRINTERS=$(lsusb | grep -i -E "printer|brother|hewlett|canon|epson|xerox|sam
 if [ -n "$USB_PRINTERS" ]; then
     echo "Found USB hardware device:"
     echo "$USB_PRINTERS"
+    
+    # Specific specialized driver flow for Brother DCP-T420W
+    if echo "$USB_PRINTERS" | grep -i -E "DCP-T420W|04f9:0475" >/dev/null 2>&1; then
+        echo "✓ Identified Brother DCP-T420W hardware! Launching dedicated driver installer..."
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        exec bash "$SCRIPT_DIR/setup_brother_t420w.sh"
+    fi
 else
     echo "Warning: No USB printer detected in 'lsusb'. Ensure USB cable is firmly plugged in and printer is powered ON."
 fi
