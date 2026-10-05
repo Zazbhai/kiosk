@@ -129,35 +129,33 @@ class KioskBrainDaemon:
         duplex = order.get("duplex", "SINGLE")
         paper_size = order.get("paperSize", "A4")
 
-        # Resolve document file path
+        # Resolve document download URL (always download from configured backend API)
         local_target = TEMP_JOBS_DIR / f"{order_id}_{file_name}"
-        file_url = order.get("fileUrl") or order.get("filePath")
+        download_url = f"{self.api_url}/print/download/{order_id}"
 
-        # If order requires Release PIN / OTP verification and has not been verified yet, stage it and wait
+        # Check if immediate auto-printing is enabled
+        auto_print = os.environ.get("AUTO_PRINT_ON_PAID", "true").lower() in ("true", "1", "yes")
         release_pin = order.get("releasePin") or order.get("otp") or order.get("pickupCode")
         order_status = (order.get("status") or "").upper()
-        if release_pin and order_status not in ("PRINTING", "VERIFIED"):
+
+        if not auto_print and release_pin and order_status not in ("PRINTING", "VERIFIED"):
             if not local_target.exists():
                 print(f"[Kiosk Brain] 📥 Staging document for Order {order_id} (Awaiting Kiosk PIN {release_pin})")
-                if file_url and file_url.startswith("http"):
-                    try:
-                        urllib.request.urlretrieve(file_url, str(local_target))
-                    except Exception as e:
-                        print(f"[Kiosk Brain] Staging download error: {e}")
+                try:
+                    urllib.request.urlretrieve(download_url, str(local_target))
+                    print(f"[Kiosk Brain] ✓ Pre-fetched {file_name} for PIN verification")
+                except Exception as e:
+                    print(f"[Kiosk Brain] Staging download error: {e}")
             return
 
-        if file_url and file_url.startswith("http"):
+        if not local_target.exists() or local_target.stat().st_size == 0:
             try:
-                print(f"[Kiosk Brain] Downloading document: {file_url}")
-                urllib.request.urlretrieve(file_url, str(local_target))
+                print(f"[Kiosk Brain] 📥 Downloading document from {download_url}...")
+                urllib.request.urlretrieve(download_url, str(local_target))
+                print(f"[Kiosk Brain] ✓ Downloaded {file_name} ({local_target.stat().st_size} bytes)")
             except Exception as e:
                 print(f"[Kiosk Brain] [ERROR] Download failed: {e}")
                 return
-        elif not local_target.exists():
-            # Create diagnostic fallback test document if none downloaded
-            local_target.write_text(
-                f"%PDF-1.4\n% PrintBooth Automated Test Print\nOrder: {order_id}\nKiosk: {self.kiosk_id}\n"
-            )
 
         print(f"[Kiosk Brain] Sending to spooler: {copies} copies | {colour_mode} | {duplex} | {paper_size}")
         result = self.cups.print_file(

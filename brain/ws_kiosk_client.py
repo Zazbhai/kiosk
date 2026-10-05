@@ -157,9 +157,8 @@ class KioskWsClient:
         if local_target.exists() and local_target.stat().st_size > 0:
             return
 
-        file_url = payload.get("fileUrl") or payload.get("filePath")
-        if not file_url:
-            file_url = f"{self.api_url}/print/download/{order_id}"
+        # Always download from configured self.api_url
+        file_url = f"{self.api_url}/print/download/{order_id}"
 
         try:
             print(f"[WSS Kiosk Client] ⚡ Pre-fetching document from {file_url}...")
