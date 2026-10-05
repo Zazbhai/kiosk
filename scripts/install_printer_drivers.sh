@@ -19,8 +19,18 @@ if ! systemctl is-active --quiet cups; then
     sudo systemctl enable cups
 fi
 
-# 2. Check for USB printers connected
-echo "\n[1/4] Scanning for connected USB printing devices..."
+# 2. Prevent ipp-usb from locking the USB interface away from CUPS/usblp
+echo "\n[1/4] Ensuring Linux USB printer kernel module is attached..."
+if systemctl is-active --quiet ipp-usb 2>/dev/null; then
+    echo "[!] Stopping conflicting 'ipp-usb' daemon so native CUPS USB driver can claim printer..."
+    sudo systemctl stop ipp-usb || true
+    sudo systemctl mask ipp-usb || true
+fi
+sudo modprobe usblp 2>/dev/null || true
+sleep 1
+
+# 3. Check for USB printers connected
+echo "\n[2/4] Scanning for connected USB printing devices..."
 USB_PRINTERS=$(lsusb | grep -i -E "printer|brother|hewlett|canon|epson|xerox|samsung" || true)
 
 if [ -n "$USB_PRINTERS" ]; then
@@ -30,40 +40,56 @@ else
     echo "Warning: No USB printer detected in 'lsusb'. Ensure USB cable is firmly plugged in and printer is powered ON."
 fi
 
-# 3. Discover printer URI via CUPS
-echo "\n[2/4] Discovering device URI via CUPS subsystem..."
-DEVICE_URI=$(sudo lpinfo -v 2>/dev/null | grep -E "usb://|direct usb" | head -n 1 | awk '{print $2}' || true)
+# 4. Discover real printer URI via CUPS or kernel device node
+echo "\n[3/4] Discovering active device URI..."
+DEVICE_URI=$(sudo lpinfo -v 2>/dev/null | grep -i -E "direct usb://|usb://brother" | head -n 1 | awk '{print $2}' || true)
 
 if [ -z "$DEVICE_URI" ]; then
-    # Try generic fallback
-    DEVICE_URI="usb://Brother/DCP-T420W?serial=00000000"
-    echo "Could not auto-detect active USB URI. Using default target URI: $DEVICE_URI"
+    # Check if kernel device node /dev/usb/lp0 exists
+    if [ -e "/dev/usb/lp0" ]; then
+        DEVICE_URI="usb:/dev/usb/lp0"
+        echo "Using kernel USB node URI: $DEVICE_URI"
+    else
+        # Try raw USB scanning via lpinfo
+        FALLBACK_URI=$(sudo lpinfo -v 2>/dev/null | grep -E "usb://" | head -n 1 | awk '{print $2}' || true)
+        if [ -n "$FALLBACK_URI" ]; then
+            DEVICE_URI="$FALLBACK_URI"
+            echo "Found active USB URI: $DEVICE_URI"
+        else
+            echo "[!] Could not detect active USB URI. Checking if printer is available over Wi-Fi/network..."
+            NET_URI=$(ippfind 2>/dev/null | head -n 1 || true)
+            if [ -n "$NET_URI" ]; then
+                DEVICE_URI="$NET_URI"
+                echo "✓ Detected network printer URI: $DEVICE_URI"
+            else
+                DEVICE_URI="usb:/dev/usb/lp0"
+                echo "Falling back to standard direct node: $DEVICE_URI"
+            fi
+        fi
+    fi
 else
-    echo "Detected device URI: $DEVICE_URI"
+    echo "Detected hardware device URI: $DEVICE_URI"
 fi
 
 PRINTER_NAME="PrintBooth_Printer"
 
-# 4. Add printer to CUPS
-echo "\n[3/4] Configuring CUPS spooler for $PRINTER_NAME..."
-# Remove existing queue if reconfiguring
+# 5. Add printer to CUPS
+echo "\n[4/4] Configuring CUPS spooler for $PRINTER_NAME..."
+# Cancel any existing stuck jobs and remove old queue
+sudo cancel -a "$PRINTER_NAME" 2>/dev/null || true
 sudo lpadmin -x "$PRINTER_NAME" 2>/dev/null || true
 
-# Try IPP Everywhere driver first (standard on modern CUPS for Brother / HP / Canon)
-if sudo lpadmin -p "$PRINTER_NAME" -E -v "$DEVICE_URI" -m everywhere 2>/dev/null; then
-    echo "✓ Added $PRINTER_NAME using IPP Everywhere standard driver."
+# Try generic / gutenprint PPD or raw mode
+GUTEN_PPD=$(sudo lpinfo -m 2>/dev/null | grep -i -E "brother.*dcp|gutenprint.*generic|generic.*pcl" | head -n 1 | awk '{print $1}' || true)
+if [ -n "$GUTEN_PPD" ]; then
+    sudo lpadmin -p "$PRINTER_NAME" -E -v "$DEVICE_URI" -m "$GUTEN_PPD"
+    echo "✓ Added $PRINTER_NAME using driver: $GUTEN_PPD"
+elif sudo lpadmin -p "$PRINTER_NAME" -E -v "$DEVICE_URI" -m everywhere 2>/dev/null; then
+    echo "✓ Added $PRINTER_NAME using IPP Everywhere."
 else
-    # Fallback to generic postscript / gutenprint PPD
-    echo "IPP Everywhere not directly available. Trying Generic / Gutenprint driver..."
-    GUTEN_PPD=$(sudo lpinfo -m 2>/dev/null | grep -i -E "brother.*dcp|gutenprint.*generic|generic.*pcl" | head -n 1 | awk '{print $1}' || true)
-    if [ -n "$GUTEN_PPD" ]; then
-        sudo lpadmin -p "$PRINTER_NAME" -E -v "$DEVICE_URI" -m "$GUTEN_PPD"
-        echo "✓ Added $PRINTER_NAME using driver: $GUTEN_PPD"
-    else
-        # Raw / generic CUPS fallback
-        sudo lpadmin -p "$PRINTER_NAME" -E -v "$DEVICE_URI" -m raw
-        echo "✓ Added $PRINTER_NAME in standard spooling mode."
-    fi
+    # Raw spooling mode fallback
+    sudo lpadmin -p "$PRINTER_NAME" -E -v "$DEVICE_URI" -m raw
+    echo "✓ Added $PRINTER_NAME in direct spooling mode."
 fi
 
 # 5. Set as default printer and configure optimal kiosk options
