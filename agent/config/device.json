@@ -1,0 +1,12 @@
+{
+  "kioskId": "PB-001",
+  "kioskName": "PrintBooth — Development Station",
+  "environment": "development",
+  "wssUrl": "ws://localhost:5000/device",
+  "apiUrl": "http://localhost:5000/api",
+  "printerName": "auto",
+  "maxCopies": 20,
+  "maxPages": 250,
+  "maxFileSizeBytes": 52428800,
+  "heartbeatIntervalSeconds": 10
+}

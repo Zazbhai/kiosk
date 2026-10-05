@@ -1,0 +1,13 @@
+{
+  "kioskId": "PB-PUNE-001",
+  "kioskName": "PrintBooth — Pune Station #1",
+  "environment": "production",
+  "wssUrl": "wss://api.printbooth.in/device",
+  "apiUrl": "https://api.printbooth.in/api",
+  "printerName": "auto",
+  "maxCopies": 20,
+  "maxPages": 250,
+  "maxFileSizeBytes": 52428800,
+  "heartbeatIntervalSeconds": 15,
+  "keyPath": "/etc/printbooth/device.key"
+}

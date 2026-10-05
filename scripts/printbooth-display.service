@@ -1,0 +1,17 @@
+[Unit]
+Description=PrintBooth Touchscreen Kiosk Display
+After=graphical.target printbooth-brain.service
+Wants=printbooth-brain.service
+
+[Service]
+Type=simple
+User=pi
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+WorkingDirectory=/home/pi/printer_automation/kiosk/scripts
+ExecStart=/bin/bash /home/pi/printer_automation/kiosk/scripts/start_kiosk.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target

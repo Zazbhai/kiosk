@@ -1,0 +1,18 @@
+[Unit]
+Description=PrintBooth Kiosk Brain IoT Daemon
+After=network-online.target cups.service
+Wants=network-online.target cups.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/printer_automation/kiosk/brain
+ExecStart=/home/pi/printer_automation/kiosk/brain/venv/bin/python daemon.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+EnvironmentFile=-/home/pi/printer_automation/kiosk/.env
+
+[Install]
+WantedBy=multi-user.target

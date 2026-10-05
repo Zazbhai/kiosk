@@ -1,0 +1,40 @@
+[Unit]
+Description=PrintBooth Self-Service Kiosk Device Agent
+Documentation=https://github.com/printbooth/agent
+After=network-online.target cups.service
+Wants=network-online.target
+Requires=cups.service
+
+[Service]
+Type=simple
+User=printbooth
+Group=printbooth
+
+WorkingDirectory=/opt/printbooth-agent
+ExecStart=/opt/printbooth-agent/venv/bin/python /opt/printbooth-agent/agent/main.py
+
+# Restart Policy: Always recover after crash or network timeout
+Restart=always
+RestartSec=5s
+
+# Security Hardening & Sandboxing
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+# Filesystem permissions
+ReadWritePaths=/opt/printbooth-agent/data /var/lib/printbooth/jobs
+ReadOnlyPaths=/etc/printbooth /opt/printbooth-agent/config
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+Environment=PRINTBOOTH_CONFIG_FILE=/opt/printbooth-agent/config/device.json
+Environment=DEVICE_KEY_PATH=/etc/printbooth/device.key
+
+# Resource limits
+LimitNOFILE=65535
+TimeoutStopSec=15s
+
+[Install]
+WantedBy=multi-user.target

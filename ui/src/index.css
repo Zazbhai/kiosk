@@ -1,0 +1,194 @@
+/* Kiosk App — Fullscreen Touch-First Interface */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap');
+
+:root {
+  --clr-bg-900: #06110D;
+  --clr-bg-800: #091a12;
+  --clr-bg-700: #0f2a1c;
+  --clr-surface-1: rgba(255, 255, 255, 0.05);
+  --clr-surface-2: rgba(255, 255, 255, 0.09);
+  --clr-surface-3: rgba(255, 255, 255, 0.13);
+  --clr-border: rgba(255, 255, 255, 0.10);
+  --clr-border-strong: rgba(255, 255, 255, 0.18);
+  --clr-accent: #c8ff00;
+  --clr-accent-light: #d4ff33;
+  --clr-accent-dim: rgba(200, 255, 0, 0.18);
+  --clr-success: #10b981;
+  --clr-success-dim: rgba(16, 185, 129, 0.15);
+  --clr-warning: #f59e0b;
+  --clr-error: #ef4444;
+  --clr-error-dim: rgba(239, 68, 68, 0.15);
+  --clr-text-1: #fafafa;
+  --clr-text-2: #a1a1aa;
+  --clr-text-3: #71717a;
+  --font-sans: 'Geist', -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', monospace;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-normal: 200ms;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html {
+  font-size: 18px; /* Larger base for kiosk */
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--clr-bg-900);
+  color: var(--clr-text-1);
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Kiosk Screen — fullscreen layout */
+.kiosk-screen {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Background mesh */
+.kiosk-bg-mesh {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 30%, rgba(200, 255, 0, 0.1) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 40% at 80% 80%, rgba(160, 204, 0, 0.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* Status bar at top */
+.kiosk-statusbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+  background: rgba(9, 9, 11, 0.6);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--clr-border);
+  font-size: 13px;
+  color: var(--clr-text-3);
+  font-family: var(--font-mono);
+  z-index: 10;
+}
+
+.statusbar__left { display: flex; align-items: center; gap: 16px; }
+.statusbar__right { display: flex; align-items: center; gap: 16px; }
+.statusbar__kiosk { font-weight: 600; color: var(--clr-text-2); }
+.statusbar__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--clr-success); }
+
+/* Kiosk buttons — larger for touch */
+.kiosk-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px 40px;
+  border-radius: var(--radius-lg);
+  font-family: var(--font-sans);
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all var(--dur-normal) var(--ease-smooth);
+  white-space: nowrap;
+  min-width: 200px;
+  min-height: 64px;
+}
+
+.kiosk-btn:active { transform: scale(0.97); }
+
+.kiosk-btn-primary {
+  background: var(--clr-accent);
+  color: #06110D;
+  font-weight: 700;
+  border-color: var(--clr-accent);
+  box-shadow: 0 4px 20px rgba(200, 255, 0, 0.3);
+}
+.kiosk-btn-primary:hover { background: var(--clr-accent-light); color: #06110D; box-shadow: 0 4px 30px rgba(200, 255, 0, 0.5); }
+
+.kiosk-btn-secondary {
+  background: var(--clr-surface-2);
+  color: var(--clr-text-1);
+  border-color: var(--clr-border-strong);
+}
+.kiosk-btn-secondary:hover { background: var(--clr-surface-3); }
+
+.kiosk-btn-ghost {
+  background: transparent;
+  color: var(--clr-text-2);
+  border-color: var(--clr-border);
+}
+
+.kiosk-btn-danger {
+  background: var(--clr-error-dim);
+  color: var(--clr-error);
+  border-color: rgba(239,68,68,0.3);
+}
+
+/* Kiosk card */
+.kiosk-card {
+  background: var(--clr-surface-1);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius-xl);
+  padding: 40px;
+}
+
+/* Typography */
+.kiosk-title {
+  font-size: 3rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--clr-text-1);
+  line-height: 1.1;
+}
+
+.kiosk-subtitle {
+  font-size: 1.1rem;
+  color: var(--clr-text-2);
+  line-height: 1.6;
+}
+
+/* Animations */
+@keyframes kiosk-fadeIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes kiosk-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.kiosk-enter { animation: kiosk-fadeIn 0.3s var(--ease-smooth) both; }
+.kiosk-pulse { animation: kiosk-pulse 3s ease-in-out infinite; }
