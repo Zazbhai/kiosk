@@ -15,9 +15,10 @@ import NetworkOfflineScreen from './screens/NetworkOfflineScreen'
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<WelcomeScreen />} />
-      <Route path="/pickup" element={<PinReleaseScreen />} />
+      <Route path="/" element={<PinReleaseScreen />} />
       <Route path="/pin" element={<PinReleaseScreen />} />
+      <Route path="/pickup" element={<PinReleaseScreen />} />
+      <Route path="/welcome" element={<WelcomeScreen />} />
       <Route path="/upload" element={<UploadMethodScreen />} />
       <Route path="/upload/qr" element={<QRUploadScreen />} />
       <Route path="/upload/usb" element={<USBSelectScreen />} />

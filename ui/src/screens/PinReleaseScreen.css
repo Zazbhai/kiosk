@@ -1,0 +1,243 @@
+/* ─── Kiosk Walk-up Enter PIN Screen ─── */
+.kiosk-pin-screen-layout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px 24px;
+  z-index: 2;
+}
+
+@media (max-width: 900px) {
+  .kiosk-pin-screen-layout {
+    flex-direction: column;
+    gap: 24px;
+    padding: 12px;
+  }
+}
+
+/* ── Primary PIN Column ── */
+.kiosk-pin-main-col {
+  flex: 1.2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 540px;
+  width: 100%;
+}
+
+.kiosk-pin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(200, 255, 0, 0.1);
+  border: 1px solid rgba(200, 255, 0, 0.25);
+  color: var(--clr-accent-light, #d4ff33);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+.kiosk-pin-title {
+  font-size: clamp(1.8rem, 3.2vw, 2.5rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #fff;
+  line-height: 1.1;
+  margin-bottom: 8px;
+}
+
+.kiosk-pin-sub {
+  font-size: 14px;
+  color: var(--clr-text-2, #a1a1aa);
+  max-width: 440px;
+  margin-bottom: 24px;
+  line-height: 1.4;
+}
+
+/* ── 6-Digit PIN Boxes Display ── */
+.kiosk-pin-slots-row {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  width: 100%;
+}
+
+.kiosk-pin-slot {
+  position: relative;
+  width: 58px;
+  height: 72px;
+  border-radius: 14px;
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono, monospace);
+  font-size: 36px;
+  font-weight: 800;
+  color: #fff;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.kiosk-pin-slot.is-filled {
+  border-color: rgba(200, 255, 0, 0.4);
+  background: rgba(200, 255, 0, 0.08);
+  color: #fff;
+  box-shadow: 0 0 16px rgba(200, 255, 0, 0.2);
+}
+
+.kiosk-pin-slot.is-active {
+  border-color: var(--clr-accent, #c8ff00);
+  box-shadow: 0 0 20px rgba(200, 255, 0, 0.4), inset 0 0 10px rgba(200, 255, 0, 0.1);
+  background: rgba(200, 255, 0, 0.05);
+  transform: translateY(-2px);
+}
+
+.kiosk-pin-cursor {
+  width: 3px;
+  height: 32px;
+  background: var(--clr-accent, #c8ff00);
+  border-radius: 2px;
+  animation: kioskCaretBlink 0.9s infinite;
+}
+
+@keyframes kioskCaretBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Shake on error */
+.kiosk-pin-slots-row.is-error {
+  animation: kioskPinShake 0.4s ease-in-out;
+}
+
+@keyframes kioskPinShake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+
+/* ── Feedback Banners ── */
+.kiosk-feedback-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  max-width: 440px;
+  animation: kioskFadeIn 0.2s ease-out;
+}
+
+.kiosk-feedback-box.error {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+
+.kiosk-feedback-box.success {
+  background: rgba(34, 197, 94, 0.16);
+  border: 1px solid rgba(34, 197, 94, 0.45);
+  color: #4ade80;
+}
+
+.kiosk-feedback-box.loading {
+  background: rgba(200, 255, 0, 0.12);
+  border: 1px solid rgba(200, 255, 0, 0.3);
+  color: var(--clr-accent-light, #d4ff33);
+}
+
+.kiosk-spinner-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(200, 255, 0, 0.3);
+  border-top-color: var(--clr-accent, #c8ff00);
+  animation: kioskSpin 0.7s linear infinite;
+}
+
+@keyframes kioskSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes kioskFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Side QR Code Card Column ── */
+.kiosk-pin-side-col {
+  flex: 0.9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 380px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  padding: 28px 24px;
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.kiosk-qr-box {
+  background: #ffffff;
+  padding: 16px;
+  border-radius: 16px;
+  box-shadow: 0 0 35px rgba(200, 255, 0, 0.15);
+  margin-bottom: 16px;
+}
+
+.kiosk-qr-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 6px;
+}
+
+.kiosk-qr-sub {
+  font-size: 13px;
+  color: var(--clr-text-2, #a1a1aa);
+  line-height: 1.4;
+  margin-bottom: 20px;
+}
+
+.kiosk-usb-opt-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #fafafa;
+  font-family: var(--font-sans, sans-serif);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.kiosk-usb-opt-btn:hover,
+.kiosk-usb-opt-btn:active {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(-1px);
+}

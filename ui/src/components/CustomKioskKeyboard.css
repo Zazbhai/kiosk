@@ -1,0 +1,232 @@
+/* ─── Touch Kiosk Custom Virtual Keyboard ─── */
+.kiosk-keyboard-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.kiosk-keyboard-wrapper.is-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* ── Mode Switch Bar ── */
+.kiosk-kb-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.kiosk-kb-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--clr-text-3, #71717a);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.kiosk-kb-tab.active {
+  background: rgba(200, 255, 0, 0.15);
+  color: var(--clr-accent-light, #d4ff33);
+  box-shadow: 0 0 12px rgba(200, 255, 0, 0.2);
+}
+
+/* ── Numpad Grid (3 Columns) ── */
+.kiosk-numpad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  width: 100%;
+  max-width: 420px;
+}
+
+.kiosk-num-key {
+  position: relative;
+  height: 76px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  color: #fafafa;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 0.08s ease, background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.kiosk-num-key:active {
+  transform: scale(0.94);
+  background: rgba(200, 255, 0, 0.14);
+  border-color: var(--clr-accent, #c8ff00);
+  box-shadow: 0 0 20px rgba(200, 255, 0, 0.35), inset 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.kiosk-key-digit {
+  font-family: var(--font-sans, sans-serif);
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1;
+  color: #fff;
+}
+
+.kiosk-key-sub {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.45);
+  letter-spacing: 0.16em;
+  margin-top: 3px;
+  text-transform: uppercase;
+}
+
+.kiosk-action-key {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.kiosk-key-clear {
+  color: #f87171;
+}
+
+.kiosk-key-clear:active {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
+}
+
+.kiosk-action-text {
+  font-family: var(--font-mono, monospace);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.kiosk-key-backspace {
+  color: #38bdf8;
+}
+
+.kiosk-key-backspace:active {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: #38bdf8;
+}
+
+/* ── Alphanumeric QWERTY Grid ── */
+.kiosk-qwerty-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 580px;
+}
+
+.kiosk-qwerty-row {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.kiosk-alpha-key {
+  height: 52px;
+  min-width: 38px;
+  flex: 1;
+  max-width: 48px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.25);
+  color: #fff;
+  font-family: var(--font-sans, sans-serif);
+  font-size: 19px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 0.06s ease, background 0.1s ease;
+}
+
+.kiosk-alpha-key:active {
+  transform: scale(0.92);
+  background: rgba(200, 255, 0, 0.2);
+  border-color: var(--clr-accent, #c8ff00);
+}
+
+.kiosk-key-num {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--clr-accent-light, #d4ff33);
+}
+
+.kiosk-key-wide {
+  flex: 1.5;
+  max-width: 72px;
+  font-size: 14px;
+}
+
+.kiosk-key-clear-small {
+  color: #f87171;
+}
+
+.kiosk-key-backspace-small {
+  color: #38bdf8;
+}
+
+/* ── Verify & Print CTA Button ── */
+.kiosk-kb-submit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 420px;
+  height: 60px;
+  border-radius: 16px;
+  border: 1px solid rgba(200, 255, 0, 0.4);
+  background: linear-gradient(135deg, #c8ff00 0%, #a3d900 100%);
+  color: #06110D;
+  font-family: var(--font-sans, sans-serif);
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(200, 255, 0, 0.35);
+  transition: all 0.15s ease;
+}
+
+.kiosk-kb-submit-btn:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 8px 26px rgba(200, 255, 0, 0.45);
+}
+
+.kiosk-kb-submit-btn:active {
+  transform: scale(0.98);
+}
+
+.kiosk-kb-submit-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
