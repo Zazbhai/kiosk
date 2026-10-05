@@ -155,7 +155,9 @@ class CupsController:
             ppd_paper = "Letter"
         elif norm_paper == "LEGAL":
             ppd_paper = "Legal"
-        elif norm_paper in ("A5", "A6", "EXECUTIVE", "INDIANLEGAL"):
+        elif norm_paper in ("LEDGER", "TABLOID", "11X17"):
+            ppd_paper = "Ledger"
+        elif norm_paper in ("A3", "A5", "A6", "EXECUTIVE", "INDIANLEGAL"):
             ppd_paper = norm_paper.capitalize()
 
         options: Dict[str, str] = {
@@ -190,7 +192,7 @@ class CupsController:
             options["page-ranges"] = str(page_range).replace(" ", "")
 
         # Scaling / Fit to page
-        if str(scaling).upper() in ("FIT", "FILL", "TRUE"):
+        if str(scaling).upper() in ("FIT", "FILL", "TRUE", "FIT_PRINTABLE", "FIT_PAPER"):
             options["fit-to-page"] = "true"
 
         # N-Up (pages per sheet)
