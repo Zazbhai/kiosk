@@ -245,6 +245,8 @@ class HardwareMonitor:
         printers_info = self.cups.get_printers()
         printers = printers_info.get("printers", [])
 
+        is_usb_connected = bool(usb_info.get("connected", False))
+
         is_online = False
         printer_status = "OFFLINE"
         active_printer_name = "None"
@@ -255,6 +257,13 @@ class HardwareMonitor:
             active_printer_name = active.get("name", "CUPS Printer")
             is_online = active.get("is_online", True)
             printer_status = "READY" if is_online else "OFFLINE"
+
+        # Physical USB Override: If lsusb confirms Brother USB hardware is connected, mark online & ready
+        if is_usb_connected:
+            is_online = True
+            printer_status = "READY"
+            if not printers or active_printer_name in ("None", "CUPS Printer"):
+                active_printer_name = usb_info.get("printerFound") or "Brother DCP-T420W"
 
         # If printer is reported OFFLINE on Linux, periodically trigger self-healing (every 20s)
         if not is_online and sys.platform != "win32":
@@ -278,10 +287,16 @@ class HardwareMonitor:
             "isOnline": is_online,
             "printerStatus": printer_status,
             "activePrinter": active_printer_name,
-            "usbConnected": usb_info.get("connected", True),
+            "usbConnected": is_usb_connected,
             "usbDevice": usb_info.get("printerFound"),
             "usbInfo": usb_info,
-            "allPrinters": printers,
+            "allPrinters": printers if printers else ([{
+                "name": "Brother_DCP_T420W",
+                "info": "Brother DCP-T420W (USB / CUPS)",
+                "is_default": True,
+                "is_online": True,
+                "connection_type": "USB"
+            }] if is_usb_connected else []),
             "paperLevel": self.estimated_paper,
             "tonerLevel": self.estimated_toner,
             "diagnostics": self.get_system_telemetry(),
