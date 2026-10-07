@@ -1,14 +1,42 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, memo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
-import { QrCode, Printer, Gear, CheckCircle, WarningCircle } from '@phosphor-icons/react'
+import { QrCode, Printer } from '@phosphor-icons/react'
 import ParticleBackground from '../components/ParticleBackground'
 import './PinReleaseScreen.css'
+
+// Isolated clock component: re-renders only itself every second without causing keypad re-renders
+const StationClock = memo(function StationClock() {
+  const [time, setTime] = useState(() =>
+    new Date().toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    })
+  )
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTime(
+        new Date().toLocaleTimeString('en-IN', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+        })
+      )
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  return <span>Ready • {time}</span>
+})
 
 export default function PinReleaseScreen() {
   const navigate = useNavigate()
 
-  // 1. Dynamic API & Station ID Resolution with multiple robust fallbacks
+  // Dynamic API & Station ID Resolution
   const searchParams = new URLSearchParams(window.location.search)
   const paramApi = searchParams.get('api') || searchParams.get('apiUrl')
   const paramId = searchParams.get('kioskId') || searchParams.get('id')
@@ -47,32 +75,8 @@ export default function PinReleaseScreen() {
 
   // QR Modal toggle for direct walk-up mobile upload
   const [showQrModal, setShowQrModal] = useState(false)
-  // Station Config Modal (allows technician or user to configure backend IP right on screen)
-  const [showConfigModal, setShowConfigModal] = useState(false)
-  const [configDraftUrl, setConfigDraftUrl] = useState(apiUrl)
-  const [configDraftId, setConfigDraftId] = useState(kioskId)
-  const [pingStatus, setPingStatus] = useState<{ testing: boolean; success?: boolean; text?: string } | null>(null)
-
   const webAppUrl = import.meta.env.VITE_CUSTOMER_WEB_URL || 'http://localhost:5200'
   const kioskQrUrl = `${webAppUrl}/print?id=${encodeURIComponent(kioskId)}`
-
-  // Live clock
-  const [timeStr, setTimeStr] = useState('')
-  useEffect(() => {
-    const updateTime = () => {
-      setTimeStr(
-        new Date().toLocaleTimeString('en-IN', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: true,
-        })
-      )
-    }
-    updateTime()
-    const timer = setInterval(updateTime, 1000)
-    return () => clearInterval(timer)
-  }, [])
 
   // Auto-fetch runtime config.json if served by Pi HTTP server
   useEffect(() => {
@@ -80,13 +84,10 @@ export default function PinReleaseScreen() {
       .then(res => res.json())
       .then(cfg => {
         if (!paramApi && !localStorage.getItem('pb_api_url') && cfg.apiUrl) {
-          const cleanUrl = cfg.apiUrl.replace(/\/api$/, '')
-          setApiUrl(cleanUrl)
-          setConfigDraftUrl(cleanUrl)
+          setApiUrl(cfg.apiUrl.replace(/\/api$/, ''))
         }
         if (!paramId && !localStorage.getItem('pb_kiosk_id') && cfg.kioskId) {
           setKioskId(cfg.kioskId)
-          setConfigDraftId(cfg.kioskId)
         }
         if (cfg.kioskName) {
           setKioskName(cfg.kioskName)
@@ -123,7 +124,6 @@ export default function PinReleaseScreen() {
 
       try {
         const cleanApi = apiUrl.replace(/\/api$/, '')
-        // 1. Primary endpoint: /api/kiosks/:id/verify-pin
         let res = await fetch(`${cleanApi}/api/kiosks/${kioskId}/verify-pin`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -131,7 +131,6 @@ export default function PinReleaseScreen() {
         })
         let data = await res.json()
 
-        // 2. Secondary fallback endpoint: /api/print/verify-pin
         if (!data.success && !data.valid) {
           const res2 = await fetch(`${cleanApi}/api/print/verify-pin`, {
             method: 'POST',
@@ -186,7 +185,7 @@ export default function PinReleaseScreen() {
         setShake(true)
         buzz([60, 40, 60])
         setMsg({
-          text: `Could not connect to station spooler at ${apiUrl}.`,
+          text: `Could not connect to station spooler (${apiUrl}).`,
           isErr: true,
         })
         setTimeout(() => {
@@ -221,16 +220,28 @@ export default function PinReleaseScreen() {
     [busy, showDone, pin, verifyOtp]
   )
 
-  // Physical keyboard support
+  // Keyboard support: Numbers, Backspace, Clear, AND Ctrl+C to Exit Kiosk Mode
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // 1. EXIT KIOSK ON CTRL + C or CTRL + Q
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C' || e.key === 'q' || e.key === 'Q')) {
+        e.preventDefault()
+        // Signal local kiosk UI server to terminate Chromium
+        fetch('/api/exit').catch(() => {})
+        // Attempt browser window close
+        try {
+          window.close()
+        } catch {}
+        return
+      }
+
       if (busy || showDone) return
       const k = /^\d$/.test(e.key) ? e.key : e.key === 'Backspace' ? '⌫' : e.key === 'Escape' ? 'clear' : null
       if (!k) return
       const b = document.querySelector(`[data-k="${k}"]`) as HTMLElement | null
       if (b) {
         b.classList.add('p')
-        setTimeout(() => b.classList.remove('p'), 120)
+        setTimeout(() => b.classList.remove('p'), 100)
       }
       handlePress(k, b || undefined)
     }
@@ -238,58 +249,17 @@ export default function PinReleaseScreen() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [busy, showDone, handlePress])
 
-  // Test Ping from Config Modal
-  const testConnectionPing = async () => {
-    setPingStatus({ testing: true })
-    try {
-      const clean = configDraftUrl.trim().replace(/\/api$/, '')
-      const res = await fetch(`${clean}/api/kiosks/${configDraftId}/verify-pin`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: '0000', kioskId: configDraftId }),
-      })
-      if (res.status === 200 || res.status === 400) {
-        setPingStatus({ testing: false, success: true, text: '✓ Connected to backend successfully!' })
-      } else {
-        setPingStatus({ testing: false, success: false, text: `Received HTTP ${res.status}` })
-      }
-    } catch (e: any) {
-      setPingStatus({ testing: false, success: false, text: `Failed: ${e.message || 'Connection refused'}` })
-    }
-  }
-
-  const handleSaveConfig = () => {
-    const clean = configDraftUrl.trim().replace(/\/api$/, '')
-    setApiUrl(clean)
-    setKioskId(configDraftId.trim().toUpperCase())
-    localStorage.setItem('pb_api_url', clean)
-    localStorage.setItem('pb_kiosk_id', configDraftId.trim().toUpperCase())
-    setShowConfigModal(false)
-    setMsg({ text: `✓ Server updated to ${clean}`, isErr: false })
-  }
-
   return (
     <div className="kiosk-otp-root">
-      {/* High-Performance Ambient Background (0% CPU on Pi) */}
+      {/* High-Performance Static Ambient Background (Zero CPU overhead) */}
       <ParticleBackground />
 
-      {/* Floating Station Top Bar */}
+      {/* Clean Customer-Facing Top Bar (No settings button) */}
       <header className="kiosk-otp-topbar">
-        <button
-          type="button"
-          className="kiosk-otp-topbar-pill kiosk-topbar-interactive"
-          onClick={() => {
-            setConfigDraftUrl(apiUrl)
-            setConfigDraftId(kioskId)
-            setPingStatus(null)
-            setShowConfigModal(true)
-          }}
-          title="Tap to configure Station Spooler IP"
-        >
+        <div className="kiosk-otp-topbar-pill">
           <span className="kiosk-otp-topbar-dot" />
           <span>{kioskId} • {kioskName}</span>
-          <Gear size={15} weight="bold" style={{ opacity: 0.6, marginLeft: 2 }} />
-        </button>
+        </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button
@@ -304,18 +274,16 @@ export default function PinReleaseScreen() {
 
           <div className="kiosk-otp-topbar-pill">
             <Printer size={16} weight="bold" color="var(--red)" />
-            <span>Ready • {timeStr}</span>
+            <StationClock />
           </div>
         </div>
       </header>
 
-      {/* Main Glass Neomorphic OTP Card */}
+      {/* Main Fast Neomorphic OTP Card */}
       <main className={`kiosk-card ${showDone ? 'leave' : ''}`} id="card">
-        <div className="pane" />
-
         {/* Lock Icon */}
         <div className="lock">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
             <rect x="4" y="11" width="16" height="10" rx="3" />
             <path d="M8 11V8a4 4 0 018 0v3" />
           </svg>
@@ -337,12 +305,7 @@ export default function PinReleaseScreen() {
                 className={`box ${isFilled ? 'filled' : ''} ${isCurrent ? 'active' : ''}`}
                 data-c={digit}
               >
-                {digit && (
-                  <>
-                    <span className="d">{digit}</span>
-                    <i className="ring" />
-                  </>
-                )}
+                {digit && <span className="d">{digit}</span>}
               </div>
             )
           })}
@@ -351,23 +314,9 @@ export default function PinReleaseScreen() {
         {/* Status Message Line */}
         <div className={`msg ${msg.isErr ? 'err' : ''}`} id="msg">
           <span>{msg.text}</span>
-          {msg.isErr && msg.text.includes('Could not connect') && (
-            <button
-              type="button"
-              className="msg-fix-btn"
-              onClick={() => {
-                setConfigDraftUrl(apiUrl)
-                setConfigDraftId(kioskId)
-                setPingStatus(null)
-                setShowConfigModal(true)
-              }}
-            >
-              Configure IP
-            </button>
-          )}
         </div>
 
-        {/* 3x4 Neomorphic Keypad */}
+        {/* 3x4 Tactile Neomorphic Keypad */}
         <div className="pad" id="pad">
           {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', '⌫'].map(k => (
             <button
@@ -379,7 +328,7 @@ export default function PinReleaseScreen() {
                 e.preventDefault()
                 const btn = e.currentTarget
                 btn.classList.add('p')
-                setTimeout(() => btn.classList.remove('p'), 150)
+                setTimeout(() => btn.classList.remove('p'), 100)
                 handlePress(k, btn)
               }}
             >
@@ -417,7 +366,7 @@ export default function PinReleaseScreen() {
               ✕
             </button>
 
-            <div style={{ margin: '0 auto 16px', display: 'inline-flex', padding: 12, borderRadius: 24, background: '#f8fafc', boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.06)' }}>
+            <div style={{ margin: '0 auto 16px', display: 'inline-flex', padding: 12, borderRadius: 24, background: '#f8fafc', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.06)' }}>
               <QRCodeSVG
                 value={kioskQrUrl}
                 size={200}
@@ -443,106 +392,6 @@ export default function PinReleaseScreen() {
             >
               I Have My 4-Digit Code
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* Technician / Station Configuration Modal */}
-      {showConfigModal && (
-        <div className="kiosk-qr-modal-backdrop" onClick={() => setShowConfigModal(false)}>
-          <div className="kiosk-qr-modal-card config-modal-card" onClick={e => e.stopPropagation()}>
-            <button
-              type="button"
-              className="kiosk-qr-close-btn"
-              onClick={() => setShowConfigModal(false)}
-            >
-              ✕
-            </button>
-
-            <div className="config-modal-icon">
-              <Gear size={28} weight="bold" color="var(--red)" />
-            </div>
-
-            <h3 style={{ fontSize: '1.3rem', fontWeight: 800, margin: '0 0 6px', color: 'var(--tx)' }}>
-              Station Spooler Setup
-            </h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--mu)', margin: '0 0 16px', lineHeight: 1.4 }}>
-              Connect this touchscreen kiosk to your central backend API or PC.
-            </p>
-
-            <div className="config-form-group">
-              <label>Backend API URL</label>
-              <input
-                type="text"
-                value={configDraftUrl}
-                onChange={e => setConfigDraftUrl(e.target.value)}
-                placeholder="http://192.168.1.4:5000"
-                className="config-input"
-              />
-              <div className="config-quick-chips">
-                <button
-                  type="button"
-                  onClick={() => setConfigDraftUrl('http://192.168.1.4:5000')}
-                >
-                  Local PC: 192.168.1.4
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfigDraftUrl('http://localhost:5000')}
-                >
-                  localhost:5000
-                </button>
-              </div>
-            </div>
-
-            <div className="config-form-group" style={{ marginTop: 12 }}>
-              <label>Station ID</label>
-              <input
-                type="text"
-                value={configDraftId}
-                onChange={e => setConfigDraftId(e.target.value.toUpperCase())}
-                placeholder="PB-001"
-                className="config-input"
-              />
-            </div>
-
-            {/* Test Ping Indicator */}
-            {pingStatus && (
-              <div className={`config-ping-box ${pingStatus.success ? 'ok' : 'err'}`}>
-                {pingStatus.testing ? (
-                  <span>Pinging {configDraftUrl}…</span>
-                ) : pingStatus.success ? (
-                  <>
-                    <CheckCircle size={16} weight="fill" />
-                    <span>{pingStatus.text}</span>
-                  </>
-                ) : (
-                  <>
-                    <WarningCircle size={16} weight="fill" />
-                    <span>{pingStatus.text}</span>
-                  </>
-                )}
-              </div>
-            )}
-
-            <div className="config-modal-actions">
-              <button
-                type="button"
-                className="config-btn-secondary"
-                onClick={testConnectionPing}
-                disabled={pingStatus?.testing}
-              >
-                {pingStatus?.testing ? 'Testing…' : 'Test Ping'}
-              </button>
-
-              <button
-                type="button"
-                className="config-btn-primary"
-                onClick={handleSaveConfig}
-              >
-                Save & Connect
-              </button>
-            </div>
           </div>
         </div>
       )}
