@@ -28,6 +28,7 @@ class HardwareMonitor:
         self.cups = cups_ctrl
         self.estimated_paper = 100
         self.estimated_toner = 100
+        self._last_recovery_time = 0
 
     def get_cpu_temperature(self) -> float:
         """Reads Raspberry Pi SoC temperature in Celsius."""
@@ -62,7 +63,9 @@ class HardwareMonitor:
         }
 
     def get_hardware_status(self) -> Dict[str, Any]:
-        """Combines printer spooler state and system vitals."""
+        """Combines printer spooler state and system vitals with auto-recovery."""
+        import time
+
         printers_info = self.cups.get_printers()
         printers = printers_info.get("printers", [])
 
@@ -76,6 +79,24 @@ class HardwareMonitor:
             active_printer_name = active.get("name", "CUPS Printer")
             is_online = active.get("is_online", True)
             printer_status = "READY" if is_online else "OFFLINE"
+
+        # If printer is reported OFFLINE on Linux, periodically trigger self-healing (every 20s)
+        if not is_online and sys.platform != "win32":
+            now = time.time()
+            if now - self._last_recovery_time > 20:
+                self._last_recovery_time = now
+                rec_target = active_printer_name if active_printer_name != "None" else None
+                rec_result = self.cups.auto_recover_printer(rec_target)
+                if rec_result.get("success"):
+                    # Re-query printer status
+                    printers_info = self.cups.get_printers()
+                    printers = printers_info.get("printers", [])
+                    if printers:
+                        default_p = printers_info.get("default")
+                        active = next((p for p in printers if p.get("is_default") or p.get("name") == default_p), printers[0])
+                        active_printer_name = active.get("name", "CUPS Printer")
+                        is_online = active.get("is_online", True)
+                        printer_status = "READY" if is_online else "OFFLINE"
 
         return {
             "isOnline": is_online,

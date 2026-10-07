@@ -47,6 +47,7 @@ class KioskWsClient:
         self.print_callbacks = []
         self.staged_jobs = {}  # Indexed by order_id and releasePin
         self.printed_orders = set()
+        self._was_printer_online = False
 
 
         print("════════════════════════════════════════════════════════")
@@ -88,11 +89,19 @@ class KioskWsClient:
         while self.is_running and self.ws:
             try:
                 hw = self.monitor.get_hardware_status()
+                is_online = hw["isOnline"]
+                if is_online != self._was_printer_online:
+                    self._was_printer_online = is_online
+                    if is_online:
+                        print(f"[WSS Kiosk Client] 🟢 Printer online & ready: {hw['activePrinter']}")
+                    else:
+                        print(f"[WSS Kiosk Client] 🔴 Printer offline: {hw['activePrinter']}. Auto-recovering...")
+
                 payload = {
                     "type": "KIOSK_HEARTBEAT",
                     "kioskId": self.kiosk_id,
                     "payload": {
-                        "status": "ONLINE" if hw["isOnline"] else "OFFLINE",
+                        "status": "ONLINE" if is_online else "OFFLINE",
                         "printerStatus": hw["printerStatus"],
                         "paperLevel": hw["paperLevel"],
                         "tonerLevel": hw["tonerLevel"],

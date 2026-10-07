@@ -47,8 +47,98 @@ class CupsController:
     def is_connected(self) -> bool:
         return self._conn is not None
 
+    def _is_usb_printer_present(self) -> bool:
+        """Checks if a physical USB printer is enumerated on the Linux USB bus."""
+        if sys.platform == "win32":
+            return False
+        try:
+            res = subprocess.run(["lsusb"], capture_output=True, text=True, timeout=2)
+            if res.returncode == 0:
+                out = res.stdout.lower()
+                return ("04f9:" in out) or ("brother" in out) or ("printer" in out) or ("dcp-t420w" in out)
+        except Exception:
+            pass
+        return False
+
+    def auto_recover_printer(self, printer_name: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Self-healing routine for Raspberry Pi CUPS printer:
+        1. Checks if queue is STOPPED (state 5) or disabled. If so, enables and accepts jobs.
+        2. Sets printer-error-policy=retry-current-job so CUPS does not disable queue when printer boots slowly.
+        3. Scans lsusb for physical USB printer presence.
+        4. If device is on USB but missing/broken in CUPS, detects current URI via lpinfo and re-binds.
+        """
+        if sys.platform == "win32":
+            return {"success": True, "message": "Windows platform; CUPS auto-recover skipped"}
+
+        target = printer_name or "PrintBooth_Printer"
+        actions = []
+
+        try:
+            # 1. Ensure kernel usblp module is loaded
+            if not os.path.exists("/dev/usb/lp0") and self._is_usb_printer_present():
+                subprocess.run(["sudo", "modprobe", "usblp"], capture_output=True, timeout=2)
+                actions.append("modprobe usblp")
+
+            # 2. Re-enable CUPS queue and accept incoming jobs
+            subprocess.run(["cupsenable", target], capture_output=True, timeout=2)
+            subprocess.run(["cupsaccept", target], capture_output=True, timeout=2)
+            subprocess.run(["sudo", "cupsenable", target], capture_output=True, timeout=2)
+            subprocess.run(["sudo", "cupsaccept", target], capture_output=True, timeout=2)
+            actions.append(f"unpaused {target}")
+
+            # 3. Ensure error policy is retry-current-job (prevents CUPS from disabling queue on power restart)
+            subprocess.run(
+                ["sudo", "lpadmin", "-p", target, "-o", "printer-error-policy=retry-current-job"],
+                capture_output=True,
+                timeout=2,
+            )
+            actions.append("set retry-current-job error policy")
+
+            # 4. If connection is alive in pycups, enable through API
+            if self._conn:
+                try:
+                    self._conn.enablePrinter(target)
+                    self._conn.acceptJobs(target)
+                except Exception:
+                    pass
+
+            # 5. Check if URI needs re-binding if printer is on USB
+            if self._is_usb_printer_present():
+                try:
+                    lpinfo_out = subprocess.run(
+                        ["lpinfo", "-v"],
+                        capture_output=True,
+                        text=True,
+                        timeout=3,
+                    ).stdout
+                    active_uri = None
+                    for line in lpinfo_out.splitlines():
+                        if any(k in line.lower() for k in ["brother", "dcp-t420w", "direct usb://brother"]):
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                active_uri = parts[1]
+                                break
+                    if not active_uri and os.path.exists("/dev/usb/lp0"):
+                        active_uri = "usb:/dev/usb/lp0"
+
+                    if active_uri:
+                        subprocess.run(
+                            ["sudo", "lpadmin", "-p", target, "-v", active_uri],
+                            capture_output=True,
+                            timeout=2,
+                        )
+                        actions.append(f"re-bound URI to {active_uri}")
+                except Exception:
+                    pass
+
+            print(f"[CUPS Auto-Recover] Actions executed for '{target}': {', '.join(actions)}")
+            return {"success": True, "actions": actions}
+        except Exception as e:
+            return {"success": False, "error": str(e), "actions": actions}
+
     def get_printers(self) -> Dict[str, Any]:
-        """Discovers and returns all configured CUPS printers and their states."""
+        """Discovers and returns all configured CUPS printers and their states with self-healing."""
         if self._conn:
             try:
                 raw_printers = self._conn.getPrinters()
@@ -57,6 +147,19 @@ class CupsController:
                 for name, d in raw_printers.items():
                     state_code = d.get("printer-state", 3)
                     state_map = {3: "IDLE", 4: "PRINTING", 5: "STOPPED"}
+
+                    # SELF-HEALING: If printer is STOPPED (5) on Linux, auto-recover immediately!
+                    if state_code == 5 and sys.platform != "win32":
+                        print(f"[CUPS Controller] Detected STOPPED state (code 5) for '{name}'. Auto-recovering...")
+                        self.auto_recover_printer(name)
+                        try:
+                            # Re-fetch state after recovery
+                            raw_printers = self._conn.getPrinters()
+                            d = raw_printers.get(name, d)
+                            state_code = d.get("printer-state", 3)
+                        except Exception:
+                            pass
+
                     is_online = state_code in (3, 4)
                     printers.append({
                         "name": name,
@@ -66,8 +169,31 @@ class CupsController:
                         "is_online": is_online,
                         "device_uri": d.get("device-uri", ""),
                     })
+
+                # If no online printers found on Linux, check physical USB and attempt recovery
+                if sys.platform != "win32" and (not printers or not any(p.get("is_online") for p in printers)):
+                    if self._is_usb_printer_present():
+                        target_name = default_p or (printers[0]["name"] if printers else "PrintBooth_Printer")
+                        self.auto_recover_printer(target_name)
+                        # Re-query
+                        try:
+                            raw_printers = self._conn.getPrinters()
+                            printers = []
+                            for name, d in raw_printers.items():
+                                sc = d.get("printer-state", 3)
+                                printers.append({
+                                    "name": name,
+                                    "info": d.get("printer-info", name),
+                                    "state": state_map.get(sc, "IDLE"),
+                                    "is_default": (name == default_p),
+                                    "is_online": sc in (3, 4),
+                                    "device_uri": d.get("device-uri", ""),
+                                })
+                        except Exception:
+                            pass
+
                 return {"success": True, "printers": printers, "default": default_p}
-            except Exception as e:
+            except Exception:
                 pass
 
         # Fallback via lpstat on Linux/Pi
@@ -82,16 +208,26 @@ class CupsController:
                     elif line.startswith("printer "):
                         parts = line.split()
                         p_name = parts[1]
+                        is_disabled = "disabled" in line.lower()
+                        if is_disabled:
+                            print(f"[CUPS Controller] Printer '{p_name}' is disabled in lpstat. Auto-enabling...")
+                            self.auto_recover_printer(p_name)
+                            is_disabled = False
                         is_idle = "idle" in line.lower()
                         printers.append({
                             "name": p_name,
                             "info": p_name,
-                            "state": "IDLE" if is_idle else "PRINTING",
+                            "state": "STOPPED" if is_disabled else ("IDLE" if is_idle else "PRINTING"),
                             "is_default": (p_name == default_p),
-                            "is_online": True,
+                            "is_online": not is_disabled,
                         })
+
+                # If empty or offline, check USB presence
+                if (not printers or not any(p.get("is_online") for p in printers)) and self._is_usb_printer_present():
+                    self.auto_recover_printer(default_p or "PrintBooth_Printer")
+
                 return {"success": True, "printers": printers, "default": default_p}
-            except Exception as e:
+            except Exception:
                 pass
 
         # Windows native print enumeration

@@ -92,8 +92,11 @@ if [ -f "$SCRIPT_DIR/printbooth-brain.service" ]; then
     echo "✓ Enabled printbooth-brain.service"
 fi
 
-# 7. Configure printer queue and drivers
+# 7. Configure printer queue, drivers & self-healing watchdog
 echo -e "\n[7/7] Checking printer hardware & configuring CUPS queue..."
+if [ -f "$SCRIPT_DIR/setup_autorecover.sh" ]; then
+    bash "$SCRIPT_DIR/setup_autorecover.sh" || echo "Note: Auto-recover can be re-run after connecting USB."
+fi
 if [ -f "$SCRIPT_DIR/install_printer_drivers.sh" ]; then
     bash "$SCRIPT_DIR/install_printer_drivers.sh" || echo "Note: Printer configuration can be re-run after connecting USB."
 fi

@@ -104,12 +104,20 @@ fi
 
 # 6. Set as default printer and configure optimal kiosk options
 sudo lpadmin -d "$PRINTER_NAME"
+sudo lpadmin -p "$PRINTER_NAME" -o printer-error-policy=retry-current-job 2>/dev/null || true
 sudo cupsenable "$PRINTER_NAME" 2>/dev/null || true
 sudo cupsaccept "$PRINTER_NAME" 2>/dev/null || true
 
 # Configure A4 standard paper size
 sudo lpoptions -p "$PRINTER_NAME" -o media=A4 2>/dev/null || true
 sudo lpoptions -d "$PRINTER_NAME" -o media=A4 2>/dev/null || true
+
+# Install self-healing recovery engine & udev watchdogs
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/setup_autorecover.sh" ]; then
+    echo "\nInstalling hardware self-healing watchdog..."
+    bash "$SCRIPT_DIR/setup_autorecover.sh" || true
+fi
 
 echo "\n════════════════════════════════════════════════════════"
 echo "  Configuration Complete! 🎉"

@@ -36,17 +36,45 @@ else
     echo "✗ CUPS daemon is NOT running! Run: sudo systemctl start cups"
 fi
 
-# 4. Configured CUPS Printers
+# Check ipp-usb conflict
+if systemctl is-active --quiet ipp-usb 2>/dev/null; then
+    echo "⚠ WARNING: ipp-usb is ACTIVE! It may lock the printer USB interface. Run: sudo systemctl mask --now ipp-usb"
+fi
+
+# 4. Configured CUPS Printers & Queue States
 echo "\n[4] Configured CUPS Printers (lpstat -p -d):"
-lpstat -p -d || echo "✗ No CUPS printers found."
+LPSTAT_OUT=$(lpstat -p -d 2>&1 || true)
+echo "$LPSTAT_OUT"
 
-# 5. Device URI mapping
-echo "\n[5] CUPS Device URIs (lpstat -v):"
+if echo "$LPSTAT_OUT" | grep -i -E "disabled|paused" >/dev/null; then
+    echo "⚠ WARNING: Queue is in DISABLED / PAUSED state! Auto-unpausing..."
+    sudo cupsenable PrintBooth_Printer 2>/dev/null || true
+    sudo cupsaccept PrintBooth_Printer 2>/dev/null || true
+    echo "✓ Executed cupsenable PrintBooth_Printer"
+fi
+
+# 5. Device URI mapping & Error Policy
+echo "\n[5] CUPS Device URIs & Error Policy:"
 lpstat -v || true
+if [ -f "/etc/cups/printers.conf" ]; then
+    POLICY=$(grep -i "ErrorPolicy" /etc/cups/printers.conf 2>/dev/null || true)
+    if [ -n "$POLICY" ]; then
+        echo "  Configured Error Policy: $POLICY"
+    else
+        echo "  Configured Error Policy: default (stop-printer) - Recommended: retry-current-job"
+    fi
+fi
 
-# 6. Test Print Prompt
+# 6. Auto-recovery trigger option
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ "$1" == "--recover" ] || [ "$1" == "-r" ]; then
+    echo "\n[6] Running full hardware auto-recovery..."
+    bash "$SCRIPT_DIR/printer_autorecover.sh"
+fi
+
+# 7. Test Print Prompt
 if [ "$1" == "--print" ] || [ "$1" == "-p" ]; then
-    echo "\n[6] Sending Diagnostic Test Page to Default Printer..."
+    echo "\n[7] Sending Diagnostic Test Page to Default Printer..."
     TEST_FILE="/tmp/printbooth_diag_test.txt"
     cat << 'EOF' > "$TEST_FILE"
 ========================================================
@@ -66,7 +94,8 @@ EOF
         echo "✗ Failed to submit test job. Check CUPS errors above."
     fi
 else
-    echo "\nTip: Run 'bash test_printer_connection.sh --print' to dispatch a test print."
+    echo "\nTip: Run 'bash test_printer_connection.sh --recover' to auto-heal queue."
+    echo "Tip: Run 'bash test_printer_connection.sh --print' to dispatch a test print."
 fi
 
 echo "\n========================================================"

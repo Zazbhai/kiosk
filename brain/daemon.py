@@ -59,6 +59,7 @@ class KioskBrainDaemon:
         self.last_heartbeat = 0
         self.history_file = TEMP_JOBS_DIR / "printed_orders_history.json"
         self.processed_orders = self._load_processed_history()
+        self._was_printer_online = False
 
         print("========================================================")
         print(f"  PrintBooth Kiosk Brain Daemon -- Initialized")
@@ -69,6 +70,32 @@ class KioskBrainDaemon:
         print(f"  Auth Status : {'Secured (Token Loaded)' if self.kiosk_secret else 'Warning (No KIOSK_SECRET configured)'}")
         print(f"  Printed History: {len(self.processed_orders)} order(s) already completed")
         print("========================================================\n")
+
+        self._wait_for_printer_startup(warmup_seconds=60)
+
+    def _wait_for_printer_startup(self, warmup_seconds: int = 60):
+        """
+        Grace period on cold boot:
+        When Raspberry Pi and printer turn on simultaneously after a power outage,
+        the Pi boots in ~15-20s while Brother DCP-T420W takes 40-70s to complete its
+        mechanical self-calibration and USB PHY start.
+        We poll every 5s during warmup so the printer is caught the moment it appears.
+        """
+        if sys.platform == "win32":
+            return
+        print(f"[Kiosk Brain] 🔄 Checking printer readiness (up to {warmup_seconds}s boot grace period)...")
+        start = time.time()
+        while time.time() - start < warmup_seconds:
+            hw = self.monitor.get_hardware_status()
+            if hw["isOnline"]:
+                self._was_printer_online = True
+                elapsed = int(time.time() - start)
+                print(f"[Kiosk Brain] ✓ Printer detected and READY ({hw['activePrinter']}) after {elapsed}s!\n")
+                return
+            elapsed = int(time.time() - start)
+            print(f"[Kiosk Brain] ⏳ Waiting for printer to finish power-on self-test... ({elapsed}s / {warmup_seconds}s)")
+            time.sleep(5)
+        print(f"[Kiosk Brain] ℹ Boot grace period completed. Background watchdog will continue auto-recovery.\n")
 
     def _get_auth_headers(self) -> Dict[str, str]:
         headers = {
@@ -103,9 +130,17 @@ class KioskBrainDaemon:
             return
 
         hw = self.monitor.get_hardware_status()
+        is_online = hw["isOnline"]
+        if is_online != self._was_printer_online:
+            self._was_printer_online = is_online
+            if is_online:
+                print(f"[Kiosk Brain] 🟢 Printer status restored: ONLINE ({hw['activePrinter']})")
+            else:
+                print(f"[Kiosk Brain] 🔴 Printer status: OFFLINE. Background auto-recovery engaged.")
+
         payload = {
             "kioskId": self.kiosk_id,
-            "status": "ONLINE" if hw["isOnline"] else "OFFLINE",
+            "status": "ONLINE" if is_online else "OFFLINE",
             "printerStatus": hw["printerStatus"],
             "paperLevel": hw["paperLevel"],
             "tonerLevel": hw["tonerLevel"],

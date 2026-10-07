@@ -122,7 +122,7 @@ sudo cancel -a "$PRINTER_NAME" 2>/dev/null || true
 sudo lpadmin -x "$PRINTER_NAME" 2>/dev/null || true
 
 echo "Registering $PRINTER_NAME with official Brother PPD and URI: $DEVICE_URI"
-sudo lpadmin -p "$PRINTER_NAME" -E -v "$DEVICE_URI" -P /usr/share/cups/model/Brother/brother_dcpt420w_printer_en.ppd
+sudo lpadmin -p "$PRINTER_NAME" -E -v "$DEVICE_URI" -P /usr/share/cups/model/Brother/brother_dcpt420w_printer_en.ppd -o printer-error-policy=retry-current-job
 sudo lpadmin -d "$PRINTER_NAME"
 sudo cupsenable "$PRINTER_NAME"
 sudo cupsaccept "$PRINTER_NAME"
@@ -134,9 +134,17 @@ sudo lpoptions -d "$PRINTER_NAME" -o media=A4 2>/dev/null || true
 # Clean up temporary downloads
 rm -rf "$WORK_DIR"
 
+# Install self-healing recovery engine & udev watchdogs
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/setup_autorecover.sh" ]; then
+    echo "\nInstalling hardware self-healing watchdog..."
+    bash "$SCRIPT_DIR/setup_autorecover.sh" || true
+fi
+
 echo "\n════════════════════════════════════════════════════════"
 echo "  Brother DCP-T420W Installation Successful! 🎉         "
 echo "  Queue Name   : $PRINTER_NAME"
 echo "  Device URI   : $DEVICE_URI"
 echo "  PPD Model    : Brother DCPT420W CUPS (Official)"
+echo "  Self-Healing : Active (udev + systemd watchdogs)"
 echo "════════════════════════════════════════════════════════"

@@ -198,11 +198,28 @@ bash scripts/start_kiosk.sh
 
 ---
 
+## ⚡ Power Outage & Hardware Auto-Recovery (Self-Healing)
+
+When kiosk power is cut and restored, the Raspberry Pi boots in ~15s while the Brother DCP-T420W takes ~50s to perform mechanical printhead calibration. PrintBooth incorporates an automated self-healing layer so the printer is **automatically detected and recovered with zero manual intervention**:
+
+1. **CUPS Error Policy (`retry-current-job`)**: Prevents CUPS from disabling the printer queue when cold-booting before the printer.
+2. **`ipp-usb` Auto-Masking**: Prevents user-space IPP daemons from locking the USB interface and detaching kernel `usblp`.
+3. **Udev Hotplug Watchdog (`/etc/udev/rules.d/99-printbooth-printer-autorecover.rules`)**: The instant the Brother printer completes calibration and announces on USB, udev triggers `/usr/local/bin/printbooth_printer_autorecover.sh` to unpause CUPS and re-bind URIs.
+4. **Boot Grace Period & Daemon Self-Healing**: The Python Kiosk Brain provides a 60s boot warmup grace period and active heartbeat self-healing.
+
+### Install / Verify Auto-Recovery on Pi:
+```bash
+sudo bash scripts/setup_autorecover.sh
+```
+
+---
+
 ## 💡 Troubleshooting & FAQ
 
 | Issue | Solution |
 | :--- | :--- |
-| **Printer shows OFFLINE** | Verify USB cable. Run `lsusb` to confirm vendor ID. Run `sudo systemctl restart cups` and `sudo cupsenable PrintBooth_Printer`. |
+| **Power outage / restart: printer OFFLINE** | Install auto-recovery watchdog: `sudo bash scripts/setup_autorecover.sh`. Or run manual heal: `sudo bash scripts/printer_autorecover.sh`. |
+| **Printer shows OFFLINE** | Verify USB cable. Run `lsusb` to confirm vendor ID. Run `sudo cupsenable PrintBooth_Printer`. |
 | **Permission denied on CUPS** | Ensure user is in `lpadmin` and `lp`: `sudo usermod -a -G lpadmin,lp $USER`. |
 | **Cursor visible on touchscreen** | Ensure unclutter is installed: `sudo apt install unclutter`. Run `unclutter -idle 0.5 -root &`. |
 | **Touchscreen inverted / rotated** | Edit `/boot/firmware/cmdline.txt` or display settings: add `video=DSI-1:800x480@60,rotate=180` or use `wlr-randr --output DSI-1 --transform 180`. |
