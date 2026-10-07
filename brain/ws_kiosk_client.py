@@ -221,10 +221,13 @@ class KioskWsClient:
         scaling = str(payload.get("scaling") or "FIT").strip()
         pages_per_sheet = int(payload.get("pagesPerSheet") or 1)
 
+        page_colours = payload.get("pageColours")
+        page_copies = payload.get("pageCopies")
+
         self.printed_orders.add(order_id)
 
         print(f"\n[WSS Kiosk Client] 🖨 Starting Print for Order {order_id}: {file_name}")
-        print(f"  Settings: {copies} copies | {colour_mode} | {duplex} | {paper_size} | Pages: {page_range} | Scaling: {scaling} | N-Up: {pages_per_sheet}")
+        print(f"  Settings: {copies} copies | {colour_mode} | {duplex} | {paper_size} | Pages: {page_range} | Scaling: {scaling} | N-Up: {pages_per_sheet} | Custom Colors: {bool(page_colours)}")
 
         # Resolve local document path
         local_target = TEMP_JOBS_DIR / f"{order_id}_{file_name}"
@@ -252,6 +255,8 @@ class KioskWsClient:
                     pages_per_sheet=pages_per_sheet,
                     printer_name=self.printer_name,
                     job_title=f"Order {order_id} - {file_name}",
+                    page_colours=page_colours,
+                    page_copies=page_copies,
                 )
             )
             print(f"[WSS Kiosk Client] CUPS Spooler response: {result}")

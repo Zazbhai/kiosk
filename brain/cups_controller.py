@@ -349,6 +349,8 @@ class CupsController:
         pages_per_sheet: int = 1,
         printer_name: Optional[str] = None,
         job_title: str = "PrintBooth Document",
+        page_colours: Optional[Any] = None,
+        page_copies: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Dispatches a document file directly to the CUPS spooler."""
         p_path = Path(file_path)
@@ -430,7 +432,27 @@ class CupsController:
                 raw_c = str(colour_mode or "BW").upper().replace("&", "")
                 norm_colour = "COLOUR" if raw_c in ("COLOUR", "COLOR") else "BW"
 
-                print(f"[WindowsPrinter] Dispatching '{p_path.name}' to '{printer}' (Mode: {norm_colour})")
+                parsed_colours = None
+                if page_colours:
+                    if isinstance(page_colours, str):
+                        try:
+                            parsed_colours = json.loads(page_colours)
+                        except Exception:
+                            parsed_colours = None
+                    elif isinstance(page_colours, dict):
+                        parsed_colours = page_colours
+
+                parsed_copies = None
+                if page_copies:
+                    if isinstance(page_copies, str):
+                        try:
+                            parsed_copies = json.loads(page_copies)
+                        except Exception:
+                            parsed_copies = None
+                    elif isinstance(page_copies, dict):
+                        parsed_copies = page_copies
+
+                print(f"[WindowsPrinter] Dispatching '{p_path.name}' to '{printer}' (Mode: {norm_colour}, Custom Colors: {bool(parsed_colours)})")
                 res = win_print_file(
                     file_path=str(p_path.resolve()),
                     copies=copies,
@@ -440,6 +462,8 @@ class CupsController:
                     duplex=duplex,
                     paper_size=paper_size,
                     dpi=300,
+                    page_colours=parsed_colours,
+                    page_copies=parsed_copies,
                 )
                 return res
             except Exception as win_err:

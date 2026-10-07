@@ -204,6 +204,9 @@ class PrinterController:
         duplex: bool = False,
         paper_size: str = "A4",
         job_title: str = "PrintBooth Document",
+        page_colours: Optional[Any] = None,
+        page_copies: Optional[Any] = None,
+        page_range: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Dispatches an authorized PDF file to the local CUPS print spooler.
@@ -221,6 +224,7 @@ class PrinterController:
             colour=colour,
             duplex=duplex,
             paper_size=paper_size,
+            page_range=page_range,
         )
 
         logger.info(f"Spooling '{file_path.name}' to '{printer_name}' with options: {cups_opts}")
@@ -275,8 +279,11 @@ class PrinterController:
                 colour="COLOUR" if colour else "BW",
                 duplex="DOUBLE" if duplex else "SINGLE",
                 paper_size=paper_size,
+                page_range=page_range or "ALL",
                 printer_name=printer_name,
                 dpi=300,
+                page_colours=page_colours,
+                page_copies=page_copies,
             )
             return res
         except Exception as win_err:

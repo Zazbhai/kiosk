@@ -12,14 +12,15 @@ export interface PrinterStatusInfo {
 }
 
 export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: string): PrinterStatusInfo {
-  const [isOffline, setIsOffline] = useState(false)
-  const [printerStatus, setPrinterStatus] = useState('READY')
+  const urlParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+  const forceOffline = urlParams.get('offline') === '1' || urlParams.get('error') === '1'
+  const [isOffline, setIsOffline] = useState(forceOffline)
+  const [printerStatus, setPrinterStatus] = useState(forceOffline ? 'OFFLINE' : 'READY')
   const [reason, setReason] = useState('Printer is currently offline or rebooting after a power cycle.')
   const [detail, setDetail] = useState('The station is auto-recovering and will resume automatically as soon as the printer is ready.')
   const [isDismissed, setIsDismissed] = useState(false)
 
   const isTestMode = (() => {
-    const urlParams = new URLSearchParams(window.location.search)
     if (urlParams.get('test') === '1' || urlParams.get('mode') === 'test') return true
     const envMode = (import.meta.env.VITE_PRINT_MODE || '').toLowerCase()
     if (envMode === 'test') return true
@@ -39,6 +40,10 @@ export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: stri
   const checkingRef = useRef(false)
 
   const checkStatus = useCallback(async () => {
+    if (forceOffline) {
+      setIsOffline(true)
+      return
+    }
     if (checkingRef.current) return
     checkingRef.current = true
 

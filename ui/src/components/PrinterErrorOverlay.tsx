@@ -36,23 +36,6 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
     return sessionMode === 'test'
   })
 
-  // Check /api/print/mode
-  useEffect(() => {
-    let mounted = true
-    fetch('/api/print/mode')
-      .then(res => res.json())
-      .then(data => {
-        if (!mounted || !data) return
-        const testMode = Boolean(data.isTestMode || data.mode === 'test')
-        setIsTestMode(testMode)
-        sessionStorage.setItem('pb_print_mode', testMode ? 'test' : 'real')
-      })
-      .catch(() => {})
-    return () => {
-      mounted = false
-    }
-  }, [])
-
   // Admin secret 5-tap bypass for shop testing without hardware
   const tapCountRef = useRef(0)
   const lastTapRef = useRef(0)
@@ -143,6 +126,7 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
             <span className="oopss-live-dot" />
             <span className="oopss-live-text">Monitoring hardware connection & auto-recovering…</span>
           </div>
+
         </div>
       </motion.div>
     </AnimatePresence>,

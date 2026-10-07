@@ -62,6 +62,112 @@ class HardwareMonitor:
             "platform": sys.platform,
         }
 
+    def get_network_telemetry(self) -> Dict[str, Any]:
+        """Detects whether Pi is connected via Ethernet or Wi-Fi, and discovers IP address."""
+        import socket
+        active_type = "OFFLINE"
+        primary_ip = "127.0.0.1"
+        eth_connected = False
+        eth_cable = False
+        eth_ip = None
+        eth_mac = None
+        wifi_connected = False
+        wifi_ip = None
+        wifi_mac = None
+        wifi_ssid = "Offline"
+        wifi_signal = 0
+
+        # Try to find default route
+        if sys.platform != "win32":
+            try:
+                out = subprocess.check_output(["ip", "route", "get", "8.8.8.8"], text=True, timeout=2)
+                if "dev" in out:
+                    parts = out.split()
+                    dev_idx = parts.index("dev") + 1 if "dev" in parts else -1
+                    if dev_idx > 0 and dev_idx < len(parts):
+                        dev = parts[dev_idx]
+                        if dev.startswith("eth") or dev.startswith("end"):
+                            active_type = "ETHERNET"
+                        elif dev.startswith("wlan"):
+                            active_type = "WIFI"
+                    if "src" in parts:
+                        src_idx = parts.index("src") + 1
+                        if src_idx < len(parts):
+                            primary_ip = parts[src_idx]
+            except Exception:
+                pass
+
+            # Check /sys/class/net
+            for iface in ["eth0", "end0", "eth1"]:
+                p = f"/sys/class/net/{iface}"
+                if os.path.exists(p):
+                    try:
+                        with open(f"{p}/operstate", "r") as f:
+                            eth_connected = f.read().strip() == "up"
+                        if os.path.exists(f"{p}/carrier"):
+                            with open(f"{p}/carrier", "r") as f:
+                                eth_cable = f.read().strip() == "1"
+                        if os.path.exists(f"{p}/address"):
+                            with open(f"{p}/address", "r") as f:
+                                eth_mac = f.read().strip()
+                    except Exception:
+                        pass
+                    break
+
+            for iface in ["wlan0", "wlan1"]:
+                p = f"/sys/class/net/{iface}"
+                if os.path.exists(p):
+                    try:
+                        with open(f"{p}/operstate", "r") as f:
+                            wifi_connected = f.read().strip() == "up"
+                        if os.path.exists(f"{p}/address"):
+                            with open(f"{p}/address", "r") as f:
+                                wifi_mac = f.read().strip()
+                    except Exception:
+                        pass
+                    if wifi_connected:
+                        try:
+                            ssid_out = subprocess.check_output(["iwgetid", "-r", iface], text=True, timeout=2)
+                            if ssid_out.strip():
+                                wifi_ssid = ssid_out.strip()
+                        except Exception:
+                            pass
+                    break
+        else:
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))
+                primary_ip = s.getsockname()[0]
+                s.close()
+                active_type = "WIFI"
+                wifi_connected = True
+                wifi_ip = primary_ip
+            except Exception:
+                pass
+
+        if active_type == "OFFLINE" and primary_ip != "127.0.0.1":
+            active_type = "ETHERNET" if eth_connected else "WIFI"
+
+        return {
+            "activeConnectionType": active_type,
+            "primaryIp": primary_ip,
+            "isOnline": active_type != "OFFLINE",
+            "ethernet": {
+                "connected": eth_connected,
+                "cableConnected": eth_cable,
+                "ipAddress": eth_ip or (primary_ip if active_type == "ETHERNET" else None),
+                "macAddress": eth_mac,
+                "speedMbps": 1000,
+            },
+            "wifi": {
+                "connected": wifi_connected,
+                "ssid": wifi_ssid,
+                "ipAddress": wifi_ip or (primary_ip if active_type == "WIFI" else None),
+                "macAddress": wifi_mac,
+                "signalStrength": wifi_signal or 100,
+            },
+        }
+
     def get_hardware_status(self) -> Dict[str, Any]:
         """Combines printer spooler state and system vitals with auto-recovery."""
         import time
@@ -105,4 +211,5 @@ class HardwareMonitor:
             "paperLevel": self.estimated_paper,
             "tonerLevel": self.estimated_toner,
             "diagnostics": self.get_system_telemetry(),
+            "network": self.get_network_telemetry(),
         }
