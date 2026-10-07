@@ -283,6 +283,14 @@ class KioskBrainDaemon:
                     print(f"[Kiosk Brain] Staging prefetch error: {e}")
             return
 
+        # Atomic cross-process spool claiming: prevents duplicate prints if WSS client is running!
+        order_number = order.get("orderNumber")
+        aliases = [a for a in [order_number, release_pin] if a and a != order_id]
+        if not self.cups.claim_order_for_spooling(order_id, aliases):
+            print(f"[Kiosk Brain] ℹ Order {order_id} already claimed/spooled by WSS client. Skipping duplicate print.")
+            self._mark_order_processed(order_id)
+            return
+
         # PIN is verified (status is PRINTING/VERIFIED) or no PIN required -> Proceed with physical print
         print(f"\n[Kiosk Brain] 🖨 PIN Verified / Authorized! Starting Print for Order {order_id} ({file_name})")
 

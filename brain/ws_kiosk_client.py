@@ -245,17 +245,32 @@ class KioskWsClient:
 
                 elif msg_type == "PIN_VERIFIED":
                     print(f"[WSS Kiosk Client] 🔑 PIN Verified on Kiosk for Order {order_id}!")
+                    order_number = payload.get("orderNumber") or msg.get("orderNumber")
+                    release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")
+                    aliases = [a for a in [order_number, release_pin] if a and a != order_id]
+                    all_ids = {order_id} | set(aliases)
+
                     if payload.get("dispatchedLocally") and not payload.get("forceKioskPrint"):
                         print(f"[WSS Kiosk Client] ℹ Order {order_id} handled directly by host engine. Skipping duplicate spool.")
-                        if order_id:
-                            self.printed_orders.add(order_id)
+                        self.printed_orders.update(all_ids)
                         continue
-                    if order_id and order_id in self.printed_orders:
+
+                    if any(i in self.printed_orders for i in all_ids):
                         print(f"[WSS Kiosk Client] ℹ Order {order_id} already spooled. Skipping duplicate spool.")
                         continue
-                    if order_id:
-                        self.printed_orders.add(order_id)
-                    staged_job = self.staged_jobs.get(order_id) or {}
+
+                    if not self.cups.claim_order_for_spooling(order_id, aliases):
+                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already claimed/spooled. Skipping duplicate spool.")
+                        self.printed_orders.update(all_ids)
+                        continue
+
+                    self.printed_orders.update(all_ids)
+                    staged_job = (
+                        self.staged_jobs.get(order_id)
+                        or (self.staged_jobs.get(order_number) if order_number else None)
+                        or (self.staged_jobs.get(release_pin) if release_pin else None)
+                        or {}
+                    )
                     merged_payload = {**staged_job, **payload}
                     asyncio.create_task(self._handle_print_order(order_id, merged_payload))
 
@@ -264,23 +279,40 @@ class KioskWsClient:
 
                 elif msg_type in ("PAYMENT_CAPTURED", "PRINT_EXECUTE"):
                     print(f"[WSS Kiosk Client] ⚡ Order Event: {msg_type} for Order {order_id}")
-                    staged_job = self.staged_jobs.get(order_id) or {}
+                    order_number = payload.get("orderNumber") or msg.get("orderNumber")
+                    release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")
+                    aliases = [a for a in [order_number, release_pin] if a and a != order_id]
+                    all_ids = {order_id} | set(aliases)
+
+                    staged_job = (
+                        self.staged_jobs.get(order_id)
+                        or (self.staged_jobs.get(order_number) if order_number else None)
+                        or (self.staged_jobs.get(release_pin) if release_pin else None)
+                        or {}
+                    )
                     merged_payload = {**staged_job, **payload}
-                    release_pin = merged_payload.get("releasePin") or merged_payload.get("otp") or merged_payload.get("pickupCode")
+                    check_pin = merged_payload.get("releasePin") or merged_payload.get("otp") or merged_payload.get("pickupCode")
+
                     # If order requires PIN verification at the kiosk, DO NOT auto-print on payment capture!
-                    if release_pin and not merged_payload.get("pinVerified") and not merged_payload.get("immediate"):
+                    if check_pin and not merged_payload.get("pinVerified") and not merged_payload.get("immediate"):
                         print(f"[WSS Kiosk Client] ⏸ Order {order_id} requires PIN entry at kiosk. Awaiting PIN verification.")
                         continue
+
                     if payload.get("dispatchedLocally") and not payload.get("forceKioskPrint"):
                         print(f"[WSS Kiosk Client] ℹ Order {order_id} dispatched locally by host. Skipping duplicate spool.")
-                        if order_id:
-                            self.printed_orders.add(order_id)
+                        self.printed_orders.update(all_ids)
                         continue
-                    if order_id and order_id in self.printed_orders:
+
+                    if any(i in self.printed_orders for i in all_ids):
                         print(f"[WSS Kiosk Client] ℹ Order {order_id} already spooled. Skipping duplicate spool.")
                         continue
-                    if order_id:
-                        self.printed_orders.add(order_id)
+
+                    if not self.cups.claim_order_for_spooling(order_id, aliases):
+                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already claimed/spooled. Skipping duplicate spool.")
+                        self.printed_orders.update(all_ids)
+                        continue
+
+                    self.printed_orders.update(all_ids)
                     asyncio.create_task(self._handle_print_order(order_id, merged_payload))
 
             except Exception as e:
@@ -324,7 +356,10 @@ class KioskWsClient:
         page_colours = payload.get("pageColours")
         page_copies = payload.get("pageCopies")
 
-        self.printed_orders.add(order_id)
+        order_number = payload.get("orderNumber")
+        release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")
+        aliases = [a for a in [order_number, release_pin] if a and a != order_id]
+        self.printed_orders.update({order_id} | set(aliases))
 
         print(f"\n[WSS Kiosk Client] 🖨 Starting Print for Order {order_id}: {file_name}")
         print(f"  Settings: {copies} copies | {colour_mode} | {duplex} | {paper_size} | Pages: {page_range} | Scaling: {scaling} | N-Up: {pages_per_sheet} | Custom Colors: {bool(page_colours)}")

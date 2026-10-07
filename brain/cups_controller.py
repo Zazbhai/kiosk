@@ -14,6 +14,8 @@ import subprocess
 import json
 import os
 import sys
+import shutil
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -24,9 +26,96 @@ except ImportError:
     cups = None
     CUPS_AVAILABLE = False
 
+try:
+    from config import TEMP_JOBS_DIR
+except Exception:
+    TEMP_JOBS_DIR = Path("/tmp/printbooth_jobs" if os.name != "nt" else "./temp_jobs")
+TEMP_JOBS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def claim_order_for_spooling(order_id: str, aliases: Optional[List[str]] = None) -> bool:
+    """
+    Atomically claims an order ID (and aliases like orderNumber, releasePin)
+    across all processes (ws_kiosk_client, daemon, retry handlers).
+    Returns True if successfully claimed (first time), False if already claimed (duplicate).
+    """
+    if not order_id:
+        return True
+
+    all_keys = [str(order_id).strip()]
+    if aliases:
+        for a in aliases:
+            if a and str(a).strip():
+                all_keys.append(str(a).strip())
+
+    lock_file = TEMP_JOBS_DIR / ".spool_claims.lock"
+    claims_file = TEMP_JOBS_DIR / ".spool_claims.json"
+
+    try:
+        TEMP_JOBS_DIR.mkdir(parents=True, exist_ok=True)
+        with open(lock_file, "a+", encoding="utf-8") as lf:
+            if sys.platform != "win32":
+                try:
+                    import fcntl
+                    fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+                except Exception:
+                    pass
+
+            claims = {}
+            if claims_file.exists():
+                try:
+                    with open(claims_file, "r", encoding="utf-8") as cf:
+                        claims = json.load(cf)
+                except Exception:
+                    claims = {}
+
+            # Check if ANY key is already claimed
+            for k in all_keys:
+                if k in claims:
+                    claimed_info = claims[k]
+                    print(
+                        f"[CUPS Spooler] [BLOCKED] Prevented duplicate print! Order '{order_id}' was already spooled "
+                        f"by PID {claimed_info.get('pid')} at {claimed_info.get('time')}."
+                    )
+                    if sys.platform != "win32":
+                        try:
+                            import fcntl
+                            fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+                        except Exception:
+                            pass
+                    return False
+
+            # First time claim: Register all keys
+            now_iso = time.strftime("%Y-%m-%d %H:%M:%S")
+            now_ts = time.time()
+            entry = {"pid": os.getpid(), "time": now_iso, "ts": now_ts, "primary": order_id}
+            for k in all_keys:
+                claims[k] = entry
+
+            # Prune claims older than 48 hours
+            claims = {k: v for k, v in claims.items() if (now_ts - v.get("ts", 0)) < 172800}
+
+            with open(claims_file, "w", encoding="utf-8") as cf:
+                json.dump(claims, cf, indent=2)
+
+            if sys.platform != "win32":
+                try:
+                    import fcntl
+                    fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+                except Exception:
+                    pass
+
+            return True
+    except Exception as e:
+        print(f"[CUPS Spooler] Claim check notice ({e})")
+        return True
+
 
 class CupsController:
     """Interface to Linux CUPS spooler via pycups or fallback system CLI (lp/lpstat)."""
+
+    def claim_order_for_spooling(self, order_id: str, aliases: Optional[List[str]] = None) -> bool:
+        return claim_order_for_spooling(order_id, aliases)
 
     def __init__(self, host: str = "localhost", port: int = 631):
         self.host = host
@@ -447,6 +536,71 @@ class CupsController:
 
         return {"success": True, "activePrinter": clean_name, "actions": actions}
 
+    def prepare_monochrome_file(self, file_path: Path) -> Path:
+        """
+        Enforces true monochrome hardware rendering by converting images or PDFs to pure 
+        grayscale before dispatching to CUPS. This physically prevents inkjet printers 
+        (e.g. Brother DCP-T420W) from using Cyan, Magenta, or Yellow inks.
+        """
+        suffix = file_path.suffix.lower()
+
+        # 1. Raster Image Grayscale Conversion
+        if suffix in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".gif"):
+            try:
+                from PIL import Image
+                with Image.open(file_path) as im:
+                    if im.mode != "L":
+                        mono_path = file_path.parent / f"mono_{file_path.name}"
+                        # If image has an alpha channel, composite onto crisp white background first
+                        if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+                            bg = Image.new("RGB", im.size, (255, 255, 255))
+                            rgba_im = im.convert("RGBA")
+                            bg.paste(rgba_im, mask=rgba_im.split()[-1])
+                            mono = bg.convert("L")
+                        else:
+                            mono = im.convert("L")
+                        mono.save(mono_path)
+                        print(f"[CUPS Controller] [MONO] Pre-processed color image '{file_path.name}' to pure 8-bit Grayscale -> '{mono_path.name}'")
+                        return mono_path
+                    return file_path
+            except Exception as e:
+                print(f"[CUPS Controller] Pillow image grayscale conversion notice: {e}")
+                # Try ImageMagick CLI fallback on Linux
+                if sys.platform != "win32":
+                    try:
+                        if shutil.which("convert"):
+                            mono_path = file_path.parent / f"mono_{file_path.name}"
+                            subprocess.run(["convert", str(file_path), "-colorspace", "Gray", str(mono_path)], check=True, timeout=10)
+                            return mono_path
+                    except Exception:
+                        pass
+
+        # 2. PDF Grayscale Conversion
+        elif suffix == ".pdf":
+            try:
+                mono_path = file_path.parent / f"mono_{file_path.name}"
+                gs_bin = shutil.which("gs") or ("/usr/bin/gs" if os.path.exists("/usr/bin/gs") else None)
+                if gs_bin:
+                    gs_cmd = [
+                        gs_bin,
+                        "-sDEVICE=pdfwrite",
+                        "-dColorConversionStrategy=Gray",
+                        "-dProcessColorModel=/DeviceGray",
+                        "-dCompatibilityLevel=1.4",
+                        "-dNOPAUSE",
+                        "-dBATCH",
+                        f"-sOutputFile={mono_path}",
+                        str(file_path),
+                    ]
+                    res = subprocess.run(gs_cmd, capture_output=True, timeout=25)
+                    if res.returncode == 0 and mono_path.exists() and mono_path.stat().st_size > 0:
+                        print(f"[CUPS Controller] [MONO] Pre-processed PDF '{file_path.name}' to pure DeviceGray via Ghostscript -> '{mono_path.name}'")
+                        return mono_path
+            except Exception as e:
+                print(f"[CUPS Controller] Ghostscript PDF grayscale conversion notice: {e}")
+
+        return file_path
+
     def build_cups_options(
         self,
         copies: int = 1,
@@ -487,7 +641,6 @@ class CupsController:
             options["BRMonoColor"] = "Mono"
             options["print-color-mode"] = "monochrome"
             options["ColorModel"] = "Gray"
-            options["HPColorMode"] = "grayscale"
 
         # Duplex
         if duplex.upper() in ("DOUBLE", "DUPLEX", "TWO_SIDED_LONG"):
@@ -543,6 +696,12 @@ class CupsController:
         if not printer:
             return {"success": False, "error": "No CUPS printer available on this station"}
 
+        # Pre-process file to pure monochrome if B&W is selected
+        is_color = colour_mode.upper() in ("COLOR", "COLOUR")
+        target_path = p_path
+        if not is_color:
+            target_path = self.prepare_monochrome_file(p_path)
+
         cups_opts = self.build_cups_options(
             copies=copies,
             colour_mode=colour_mode,
@@ -553,7 +712,7 @@ class CupsController:
             pages_per_sheet=pages_per_sheet,
         )
 
-        print(f"[CUPS] Dispatching '{p_path.name}' to printer '{printer}'")
+        print(f"[CUPS] Dispatching '{target_path.name}' to printer '{printer}'")
         print(f"[CUPS] Hardware Options applied: {cups_opts}")
 
         # Primary execution via Linux lp CLI on Raspberry Pi (guarantees -n copies and -P page-ranges)
@@ -562,22 +721,27 @@ class CupsController:
             for br_bin in ["/usr/bin/brprintconf_dcpt420w", "/opt/brother/Printers/dcpt420w/lpd/brprintconf_dcpt420w"]:
                 if os.path.exists(br_bin):
                     try:
-                        col_arg = "COLOR" if colour_mode.upper() in ("COLOR", "COLOUR") else "MONO"
-                        subprocess.run([br_bin, "-sec", col_arg], timeout=2, capture_output=True)
+                        col_arg = "COLOR" if is_color else "MONO"
+                        subprocess.run([br_bin, "-col", col_arg], timeout=2, capture_output=True)
                     except Exception:
                         pass
                     break
 
             try:
                 cmd = ["lp", "-d", printer]
+                # Always use -n for copies in CUPS CLI; never pass duplicate -o copies=N to prevent multiplication
                 if copies and int(copies) > 1:
                     cmd.extend(["-n", str(copies)])
                 if page_range and page_range.upper() not in ("ALL", ""):
                     clean_range = str(page_range).replace(" ", "")
                     cmd.extend(["-P", clean_range])
                 for k, v in cups_opts.items():
+                    if k == "copies":
+                        # CRITICAL: Do NOT pass -o copies=N when -n N is already in cmd!
+                        # Passing both causes CUPS driver filters to multiply: copies = N x N!
+                        continue
                     cmd.extend(["-o", f"{k}={v}"])
-                cmd.append(str(p_path.resolve()))
+                cmd.append(str(target_path.resolve()))
                 print(f"[CUPS CLI] Executing: {' '.join(cmd)}")
                 out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
                 print(f"[CUPS CLI] Success output: {out.strip()}")
@@ -588,7 +752,7 @@ class CupsController:
         # Fallback to pycups if lp is unavailable or failed
         if self._conn:
             try:
-                job_id = self._conn.printFile(printer, str(p_path.resolve()), job_title, cups_opts)
+                job_id = self._conn.printFile(printer, str(target_path.resolve()), job_title, cups_opts)
                 return {"success": True, "job_id": job_id, "printer": printer}
             except Exception as e:
                 print(f"[CUPS] pycups print error: {e}")
