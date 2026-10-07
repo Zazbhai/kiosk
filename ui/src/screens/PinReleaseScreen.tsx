@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
-import { QrCode, Printer, Usb } from '@phosphor-icons/react'
+import { QrCode, Printer } from '@phosphor-icons/react'
 import ParticleBackground from '../components/ParticleBackground'
 import './PinReleaseScreen.css'
 
@@ -68,19 +68,6 @@ export default function PinReleaseScreen() {
         navigator.vibrate(pattern)
       }
     } catch {}
-  }
-
-  const ripple = (btn: HTMLElement, e?: React.PointerEvent) => {
-    const q = btn.getBoundingClientRect()
-    const s = q.width * 2
-    const r = document.createElement('span')
-    r.className = 'r'
-    r.style.width = `${s}px`
-    r.style.height = `${s}px`
-    r.style.left = `${(e ? e.clientX - q.left : q.width / 2) - s / 2}px`
-    r.style.top = `${(e ? e.clientY - q.top : q.height / 2) - s / 2}px`
-    btn.appendChild(r)
-    setTimeout(() => r.remove(), 600)
   }
 
   const verifyOtp = useCallback(
@@ -163,10 +150,9 @@ export default function PinReleaseScreen() {
   )
 
   const handlePress = useCallback(
-    (k: string, btn?: HTMLElement, e?: React.PointerEvent) => {
+    (k: string, _btn?: HTMLElement) => {
       if (busy || showDone) return
       idleRef.current = 0
-      if (btn) ripple(btn, e)
       buzz(12)
       setMsg({ text: 'Enter the 4-digit code sent to your phone', isErr: false })
 
@@ -194,7 +180,7 @@ export default function PinReleaseScreen() {
       const b = document.querySelector(`[data-k="${k}"]`) as HTMLElement | null
       if (b) {
         b.classList.add('p')
-        setTimeout(() => b.classList.remove('p'), 130)
+        setTimeout(() => b.classList.remove('p'), 120)
       }
       handlePress(k, b || undefined)
     }
@@ -204,21 +190,8 @@ export default function PinReleaseScreen() {
 
   return (
     <div className="kiosk-otp-root">
-      {/* 3D WebGL Particle Background */}
+      {/* High-Performance Ambient Background (0% CPU on Pi) */}
       <ParticleBackground />
-
-      {/* SVG Liquid Glass Filter */}
-      <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true">
-        <defs>
-          <filter id="lg" x="-10%" y="-10%" width="120%" height="120%" colorInterpolationFilters="sRGB">
-            <feTurbulence type="fractalNoise" baseFrequency="0.011 0.016" numOctaves={2} seed={7} result="n">
-              <animate attributeName="baseFrequency" dur="14s" values="0.011 0.016;0.016 0.011;0.011 0.016" repeatCount="indefinite" />
-            </feTurbulence>
-            <feGaussianBlur in="n" stdDeviation={2} result="nb" />
-            <feDisplacementMap in="SourceGraphic" in2="nb" scale={24} xChannelSelector="R" yChannelSelector="G" />
-          </filter>
-        </defs>
-      </svg>
 
       {/* Floating Station Top Bar */}
       <header className="kiosk-otp-topbar">
@@ -236,16 +209,6 @@ export default function PinReleaseScreen() {
           >
             <QrCode size={18} weight="bold" color="var(--red)" />
             <span>Scan QR to Upload</span>
-          </button>
-
-          <button
-            type="button"
-            className="kiosk-otp-qr-action-btn"
-            onClick={() => navigate('/upload/usb')}
-            title="Print directly from USB flash drive"
-          >
-            <Usb size={18} weight="bold" color="var(--red)" />
-            <span>USB Drive</span>
           </button>
 
           <div className="kiosk-otp-topbar-pill">
@@ -311,8 +274,8 @@ export default function PinReleaseScreen() {
                 e.preventDefault()
                 const btn = e.currentTarget
                 btn.classList.add('p')
-                setTimeout(() => btn.classList.remove('p'), 200)
-                handlePress(k, btn, e)
+                setTimeout(() => btn.classList.remove('p'), 150)
+                handlePress(k, btn)
               }}
             >
               <span className="t">{k === 'clear' ? 'Clear' : k}</span>

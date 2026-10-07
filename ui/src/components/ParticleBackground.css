@@ -1,0 +1,65 @@
+/* ─── High-Performance Ambient Kiosk Background for Raspberry Pi ─── */
+.kiosk-ambient-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 45%, #f6f7fb 0%, #ebeef5 100%);
+  contain: strict;
+}
+
+.kiosk-ambient-orb {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+}
+
+/* Subtle, calm laser-red ambient aura at top right */
+.kiosk-ambient-orb.orb-primary {
+  width: 520px;
+  height: 520px;
+  top: -100px;
+  right: -80px;
+  background: radial-gradient(circle, rgba(229, 56, 59, 0.08) 0%, rgba(229, 56, 59, 0.02) 45%, transparent 70%);
+  animation: float-ambient-1 20s ease-in-out infinite alternate;
+}
+
+/* Soft cool neutral aura at bottom left */
+.kiosk-ambient-orb.orb-secondary {
+  width: 480px;
+  height: 480px;
+  bottom: -100px;
+  left: -80px;
+  background: radial-gradient(circle, rgba(118, 125, 150, 0.12) 0%, rgba(118, 125, 150, 0.03) 45%, transparent 70%);
+  animation: float-ambient-2 25s ease-in-out infinite alternate;
+}
+
+/* Crisp subtle dot grid that grounds the neomorphic hardware elements */
+.kiosk-ambient-grid {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(118, 125, 150, 0.15) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0.7) 0%, transparent 80%);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0.7) 0%, transparent 80%);
+  opacity: 0.55;
+}
+
+@keyframes float-ambient-1 {
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-35px, 30px, 0); }
+}
+
+@keyframes float-ambient-2 {
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(30px, -25px, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kiosk-ambient-orb {
+    animation: none !important;
+  }
+}
