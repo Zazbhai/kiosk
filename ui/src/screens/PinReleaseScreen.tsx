@@ -175,7 +175,7 @@ export default function PinReleaseScreen() {
         // Invalid code
         setShake(true)
         buzz([60, 40, 60])
-        setMsg({ text: data.error || 'Incorrect OTP code. Please try again.', isErr: true })
+        setMsg({ text: 'Invalid OTP', isErr: true })
         setTimeout(() => {
           setShake(false)
           setPin('')
