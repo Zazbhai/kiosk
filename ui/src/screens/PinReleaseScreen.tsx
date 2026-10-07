@@ -241,7 +241,7 @@ export default function PinReleaseScreen() {
       const b = document.querySelector(`[data-k="${k}"]`) as HTMLElement | null
       if (b) {
         b.classList.add('p')
-        setTimeout(() => b.classList.remove('p'), 100)
+        setTimeout(() => b.classList.remove('p'), 160)
       }
       handlePress(k, b || undefined)
     }
@@ -328,7 +328,7 @@ export default function PinReleaseScreen() {
                 e.preventDefault()
                 const btn = e.currentTarget
                 btn.classList.add('p')
-                setTimeout(() => btn.classList.remove('p'), 100)
+                setTimeout(() => btn.classList.remove('p'), 160)
                 handlePress(k, btn)
               }}
             >

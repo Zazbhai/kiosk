@@ -233,41 +233,98 @@
 .pad {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  padding: 2px;
+  gap: 14px;
+  padding: 4px;
 }
 
 .k {
-  height: 62px;
-  border-radius: 18px;
+  height: 64px;
+  border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.95);
-  background: linear-gradient(145deg, #ffffff, #e9ecf5);
+  background: linear-gradient(180deg, #ffffff 0%, #f7f9fd 55%, #e9edf6 100%);
   color: var(--tx);
-  font: 600 1.6rem -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font: 700 1.65rem -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   cursor: pointer;
   position: relative;
-  box-shadow: var(--raise);
-  transition: transform 0.06s ease, box-shadow 0.06s ease;
+  overflow: hidden;
+  box-shadow: 4px 5px 12px rgba(150, 162, 185, 0.28),
+              -4px -4px 10px #ffffff,
+              inset 0 1.5px 1px #ffffff,
+              inset 0 -1.5px 1px rgba(150, 162, 185, 0.15);
+  transition: transform 0.14s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.14s cubic-bezier(0.16, 1, 0.3, 1),
+              background 0.14s ease,
+              color 0.14s ease,
+              text-shadow 0.14s ease;
   will-change: transform;
 }
 
+/* Molded top specular highlight curve */
+.k::before {
+  content: "";
+  position: absolute;
+  inset: 1px 8px auto 8px;
+  height: 38%;
+  border-radius: 18px 18px 50% 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%);
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+/* Tactile laser-red ambient bloom on press */
+.k::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at center, rgba(220, 38, 38, 0.25) 0%, rgba(220, 38, 38, 0) 70%);
+  opacity: 0;
+  transform: scale(0.65);
+  pointer-events: none;
+  transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Active mechanical depress */
 .k:active,
 .k.p {
-  transform: scale(0.95);
-  box-shadow: var(--inset);
-  background: linear-gradient(145deg, #dde1ed, #f3f5f9);
+  transform: translateY(3px) scale(0.965);
+  box-shadow: inset 3px 4px 8px rgba(135, 148, 172, 0.45),
+              inset -2px -2px 6px #ffffff,
+              0 1px 1px rgba(0, 0, 0, 0.04);
+  background: linear-gradient(180deg, #e4e9f4 0%, #edf1f8 100%);
   color: var(--red);
+  text-shadow: 0 0 10px rgba(220, 38, 38, 0.3);
+}
+
+.k:active::before,
+.k.p::before {
+  opacity: 0;
+}
+
+.k:active::after,
+.k.p::after {
+  opacity: 1;
+  transform: scale(1.15);
 }
 
 .k span.t {
   display: block;
   position: relative;
+  z-index: 1;
   pointer-events: none;
+  transition: transform 0.14s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.k:active span.t,
+.k.p span.t {
+  transform: translateY(0.5px);
 }
 
 .k.fn {
-  font-size: 0.92rem;
-  font-weight: 600;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
   color: var(--mu);
 }
 
