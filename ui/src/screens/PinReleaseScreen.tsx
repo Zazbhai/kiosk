@@ -1,16 +1,8 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
-import {
-  Key,
-  CheckCircle,
-  XCircle,
-  QrCode,
-  Usb,
-  Printer,
-} from '@phosphor-icons/react'
-import { CustomKioskKeyboard } from '../components/CustomKioskKeyboard'
-import './KioskScreens.css'
+import { QrCode, Printer, Usb } from '@phosphor-icons/react'
+import ParticleBackground from '../components/ParticleBackground'
 import './PinReleaseScreen.css'
 
 export default function PinReleaseScreen() {
@@ -23,22 +15,23 @@ export default function PinReleaseScreen() {
     'http://localhost:5000'
 
   const [pin, setPin] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [errorMsg, setErrorMsg] = useState('')
-  const [isShaking, setIsShaking] = useState(false)
-  const [successInfo, setSuccessInfo] = useState<{
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState({ text: 'Enter the 4-digit code sent to your phone', isErr: false })
+  const [shake, setShake] = useState(false)
+  const [isOk, setIsOk] = useState(false)
+  const [showDone, setShowDone] = useState(false)
+  const [verifiedInfo, setVerifiedInfo] = useState<{
     orderNumber?: string
     fileName?: string
     pageCount?: number
   } | null>(null)
 
-  // Real upload URL for this specific kiosk
-  const webAppUrl =
-    import.meta.env.VITE_CUSTOMER_WEB_URL ||
-    'http://localhost:5200'
+  // QR Modal toggle for direct walk-up mobile upload
+  const [showQrModal, setShowQrModal] = useState(false)
+  const webAppUrl = import.meta.env.VITE_CUSTOMER_WEB_URL || 'http://localhost:5200'
   const kioskQrUrl = `${webAppUrl}/print?id=${encodeURIComponent(kioskId)}`
 
-  // Live clock for kiosk header
+  // Live clock
   const [timeStr, setTimeStr] = useState('')
   useEffect(() => {
     const updateTime = () => {
@@ -56,246 +49,335 @@ export default function PinReleaseScreen() {
     return () => clearInterval(timer)
   }, [])
 
-  const verifyPin = useCallback(
-    async (pinToVerify: string) => {
-      if (pinToVerify.length < 4) {
-        setErrorMsg('Please enter at least 4 digits')
-        return
+  // Auto reset idle timer
+  const idleRef = useRef(0)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      idleRef.current += 1
+      if (idleRef.current >= 45 && pin && !busy) {
+        setPin('')
+        setMsg({ text: 'Enter the 4-digit code sent to your phone', isErr: false })
       }
-      setLoading(true)
-      setErrorMsg('')
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [pin, busy])
+
+  const buzz = (pattern: number | number[]) => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(pattern)
+      }
+    } catch {}
+  }
+
+  const ripple = (btn: HTMLElement, e?: React.PointerEvent) => {
+    const q = btn.getBoundingClientRect()
+    const s = q.width * 2
+    const r = document.createElement('span')
+    r.className = 'r'
+    r.style.width = `${s}px`
+    r.style.height = `${s}px`
+    r.style.left = `${(e ? e.clientX - q.left : q.width / 2) - s / 2}px`
+    r.style.top = `${(e ? e.clientY - q.top : q.height / 2) - s / 2}px`
+    btn.appendChild(r)
+    setTimeout(() => r.remove(), 600)
+  }
+
+  const verifyOtp = useCallback(
+    async (codeToVerify: string) => {
+      setBusy(true)
+      setMsg({ text: 'Verifying code with station spooler…', isErr: false })
 
       try {
         // 1. Primary endpoint: /api/kiosks/:id/verify-pin
-        const res = await fetch(`${apiUrl}/api/kiosks/${kioskId}/verify-pin`, {
+        let res = await fetch(`${apiUrl}/api/kiosks/${kioskId}/verify-pin`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pin: pinToVerify, kioskId }),
+          body: JSON.stringify({ pin: codeToVerify, kioskId }),
         })
-        const data = await res.json()
-
-        if (data.success || data.valid) {
-          setSuccessInfo({
-            orderNumber: data.data?.orderNumber || data.orderNumber || 'PRINT-JOB',
-            fileName: data.data?.fileName || data.fileName || 'Document',
-            pageCount: data.data?.pageCount || data.pageCount || 1,
-          })
-          setTimeout(() => {
-            navigate('/printing')
-          }, 1600)
-          return
-        }
+        let data = await res.json()
 
         // 2. Secondary fallback endpoint: /api/print/verify-pin
-        const res2 = await fetch(`${apiUrl}/api/print/verify-pin`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ kioskId, pin: pinToVerify }),
-        })
-        const data2 = await res2.json()
-
-        if (data2.success || data2.valid) {
-          setSuccessInfo({
-            orderNumber: data2.data?.orderNumber || data2.orderNumber || 'PRINT-JOB',
-            fileName: data2.data?.fileName || data2.fileName || 'Document',
-            pageCount: data2.data?.pageCount || data2.pageCount || 1,
+        if (!data.success && !data.valid) {
+          const res2 = await fetch(`${apiUrl}/api/print/verify-pin`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kioskId, pin: codeToVerify }),
           })
+          data = await res2.json()
+        }
+
+        if (data.success || data.valid) {
+          setIsOk(true)
+          buzz([30, 40, 60])
+          setMsg({ text: '✓ Code verified successfully!', isErr: false })
+
+          const ord = data.order || data.data || data
+          const orderNum = ord?.orderNumber || ord?.orderId || 'PB-' + Math.floor(100000 + Math.random() * 900000)
+          const fileNm = ord?.fileName || 'Document.pdf'
+          const pCount = Number(ord?.pageCount || 1)
+          const cMode = ord?.colourMode || ord?.colour || 'BW'
+
+          sessionStorage.setItem('pb_order_id', orderNum)
+          sessionStorage.setItem('pb_file_name', fileNm)
+          sessionStorage.setItem('pb_page_count', String(pCount))
+          sessionStorage.setItem('pb_colour_mode', cMode)
+          sessionStorage.setItem('pb_release_pin', codeToVerify)
+
+          setVerifiedInfo({
+            orderNumber: orderNum,
+            fileName: fileNm,
+            pageCount: pCount,
+          })
+
           setTimeout(() => {
-            navigate('/printing')
-          }, 1600)
+            setShowDone(true)
+            setTimeout(() => {
+              navigate('/printing')
+            }, 1200)
+          }, 600)
           return
         }
 
-        // If both failed, display error
-        setErrorMsg(
-          data.error ||
-            data2.error ||
-            'Invalid or expired PIN. Please check the code on your phone screen.'
-        )
-        setIsShaking(true)
-        setTimeout(() => setIsShaking(false), 500)
+        // Invalid code
+        setShake(true)
+        buzz([60, 40, 60])
+        setMsg({ text: data.error || 'Incorrect OTP code. Please try again.', isErr: true })
+        setTimeout(() => {
+          setShake(false)
+          setPin('')
+          setBusy(false)
+        }, 650)
       } catch (err: any) {
-        setErrorMsg('Could not contact station print server. Please check connection.')
-        setIsShaking(true)
-        setTimeout(() => setIsShaking(false), 500)
-      } finally {
-        setLoading(false)
+        setShake(true)
+        buzz([60, 40, 60])
+        setMsg({ text: 'Could not connect to station spooler.', isErr: true })
+        setTimeout(() => {
+          setShake(false)
+          setPin('')
+          setBusy(false)
+        }, 650)
       }
     },
     [apiUrl, kioskId, navigate]
   )
 
-  const handleKeyPress = useCallback(
-    (char: string) => {
-      if (loading || successInfo) return
-      setErrorMsg('')
-      if (pin.length < 6) {
-        const nextPin = pin + char
+  const handlePress = useCallback(
+    (k: string, btn?: HTMLElement, e?: React.PointerEvent) => {
+      if (busy || showDone) return
+      idleRef.current = 0
+      if (btn) ripple(btn, e)
+      buzz(12)
+      setMsg({ text: 'Enter the 4-digit code sent to your phone', isErr: false })
+
+      if (k === '⌫') {
+        setPin(prev => prev.slice(0, -1))
+      } else if (k === 'clear') {
+        setPin('')
+      } else if (pin.length < 4) {
+        const nextPin = pin + k
         setPin(nextPin)
-        if (nextPin.length === 6) {
-          verifyPin(nextPin)
+        if (nextPin.length === 4) {
+          verifyOtp(nextPin)
         }
       }
     },
-    [loading, successInfo, pin, verifyPin]
+    [busy, showDone, pin, verifyOtp]
   )
 
-  const handleBackspace = useCallback(() => {
-    if (loading || successInfo) return
-    setErrorMsg('')
-    setPin(prev => prev.slice(0, -1))
-  }, [loading, successInfo])
-
-  const handleClear = useCallback(() => {
-    if (loading || successInfo) return
-    setErrorMsg('')
-    setPin('')
-  }, [loading, successInfo])
-
-  const handleSubmit = useCallback(() => {
-    if (loading || successInfo) return
-    if (!pin) {
-      setErrorMsg('Please enter your pickup PIN')
-      return
+  // Physical keyboard support
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (busy || showDone) return
+      const k = /^\d$/.test(e.key) ? e.key : e.key === 'Backspace' ? '⌫' : e.key === 'Escape' ? 'clear' : null
+      if (!k) return
+      const b = document.querySelector(`[data-k="${k}"]`) as HTMLElement | null
+      if (b) {
+        b.classList.add('p')
+        setTimeout(() => b.classList.remove('p'), 130)
+      }
+      handlePress(k, b || undefined)
     }
-    verifyPin(pin)
-  }, [loading, successInfo, pin, verifyPin])
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [busy, showDone, handlePress])
 
   return (
-    <div className="kiosk-screen">
-      <div className="kiosk-bg-mesh" />
+    <div className="kiosk-otp-root">
+      {/* 3D WebGL Particle Background */}
+      <ParticleBackground />
 
-      {/* Top Station Status Bar */}
-      <div className="kiosk-statusbar">
-        <div className="statusbar__left">
-          <div className="statusbar__dot" />
-          <span className="statusbar__kiosk">{kioskId}</span>
-          <span>{kioskName}</span>
+      {/* SVG Liquid Glass Filter */}
+      <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true">
+        <defs>
+          <filter id="lg" x="-10%" y="-10%" width="120%" height="120%" colorInterpolationFilters="sRGB">
+            <feTurbulence type="fractalNoise" baseFrequency="0.011 0.016" numOctaves={2} seed={7} result="n">
+              <animate attributeName="baseFrequency" dur="14s" values="0.011 0.016;0.016 0.011;0.011 0.016" repeatCount="indefinite" />
+            </feTurbulence>
+            <feGaussianBlur in="n" stdDeviation={2} result="nb" />
+            <feDisplacementMap in="SourceGraphic" in2="nb" scale={24} xChannelSelector="R" yChannelSelector="G" />
+          </filter>
+        </defs>
+      </svg>
+
+      {/* Floating Station Top Bar */}
+      <header className="kiosk-otp-topbar">
+        <div className="kiosk-otp-topbar-pill">
+          <span className="kiosk-otp-topbar-dot" />
+          <span>{kioskId} • {kioskName}</span>
         </div>
-        <div className="statusbar__right">
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Printer size={15} weight="bold" color="var(--clr-accent-light)" />
-            Printer: Ready
-          </span>
-          <span>Paper: 100%</span>
-          <span>{timeStr}</span>
-        </div>
-      </div>
 
-      {/* Main Dual-Column Interactive Surface */}
-      <div className="kiosk-pin-screen-layout kiosk-enter">
-        {/* Left Column: Enter PIN & Custom Touch Keyboard */}
-        <div className="kiosk-pin-main-col">
-          <div className="kiosk-pin-badge">
-            <Key size={15} weight="fill" />
-            <span>Walk-up Print Release</span>
-          </div>
-
-          <h1 className="kiosk-pin-title">Enter Pickup PIN</h1>
-          <p className="kiosk-pin-sub">
-            Type the 6-digit release code displayed on your phone after completing payment.
-          </p>
-
-          {/* 6 Digit Display Slots */}
-          <div
-            className={`kiosk-pin-slots-row ${isShaking ? 'is-error' : ''}`}
-            aria-label="PIN Code Input"
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            type="button"
+            className="kiosk-otp-qr-action-btn"
+            onClick={() => setShowQrModal(true)}
+            title="Scan QR to upload file from mobile phone"
           >
-            {[0, 1, 2, 3, 4, 5].map(idx => {
-              const digit = pin[idx]
-              const isCurrent = pin.length === idx && !loading && !successInfo
-              const isFilled = Boolean(digit)
-
-              return (
-                <div
-                  key={idx}
-                  className={`kiosk-pin-slot ${isFilled ? 'is-filled' : ''} ${
-                    isCurrent ? 'is-active' : ''
-                  }`}
-                >
-                  {digit ? (
-                    digit
-                  ) : isCurrent ? (
-                    <div className="kiosk-pin-cursor" />
-                  ) : (
-                    ''
-                  )}
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Status Alert Banners */}
-          {loading && (
-            <div className="kiosk-feedback-box loading">
-              <div className="kiosk-spinner-dot" />
-              <span>Verifying PIN with local printer spooler…</span>
-            </div>
-          )}
-
-          {errorMsg && !loading && (
-            <div className="kiosk-feedback-box error">
-              <XCircle size={18} weight="bold" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
-
-          {successInfo && (
-            <div className="kiosk-feedback-box success">
-              <CheckCircle size={20} weight="fill" />
-              <span>
-                PIN Verified! Releasing order {successInfo.orderNumber} ({successInfo.fileName})…
-              </span>
-            </div>
-          )}
-
-          {/* Custom On-Screen Virtual Keyboard */}
-          <CustomKioskKeyboard
-            onKeyPress={handleKeyPress}
-            onBackspace={handleBackspace}
-            onClear={handleClear}
-            onSubmit={handleSubmit}
-            disabled={loading || Boolean(successInfo)}
-            submitLabel={loading ? 'VERIFYING…' : 'PRINT NOW'}
-            showAlphaToggle={true}
-          />
-        </div>
-
-        {/* Right Column: Scan QR to Upload from Phone */}
-        <div className="kiosk-pin-side-col">
-          <div className="kiosk-qr-box">
-            <QRCodeSVG
-              value={kioskQrUrl}
-              size={180}
-              level="H"
-              includeMargin={false}
-              fgColor="#06110D"
-              bgColor="#ffffff"
-            />
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--clr-accent-light)', marginBottom: 6 }}>
-            <QrCode size={18} weight="bold" />
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em' }}>
-              DIRECT MOBILE UPLOAD
-            </span>
-          </div>
-
-          <h3 className="kiosk-qr-title">Don't Have a PIN Yet?</h3>
-          <p className="kiosk-qr-sub">
-            Scan this QR code with your phone camera to select documents, choose print settings, and get your instant PIN.
-          </p>
+            <QrCode size={18} weight="bold" color="var(--red)" />
+            <span>Scan QR to Upload</span>
+          </button>
 
           <button
             type="button"
-            className="kiosk-usb-opt-btn"
+            className="kiosk-otp-qr-action-btn"
             onClick={() => navigate('/upload/usb')}
+            title="Print directly from USB flash drive"
           >
-            <Usb size={20} weight="bold" color="var(--clr-accent-light)" />
-            <span>Or Print from USB Flash Drive</span>
+            <Usb size={18} weight="bold" color="var(--red)" />
+            <span>USB Drive</span>
           </button>
+
+          <div className="kiosk-otp-topbar-pill">
+            <Printer size={16} weight="bold" color="var(--red)" />
+            <span>Ready • {timeStr}</span>
+          </div>
         </div>
-      </div>
+      </header>
+
+      {/* Main Glass Neomorphic OTP Card */}
+      <main className={`kiosk-card ${showDone ? 'leave' : ''}`} id="card">
+        <div className="pane" />
+
+        {/* Lock Icon */}
+        <div className="lock">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+            <rect x="4" y="11" width="16" height="10" rx="3" />
+            <path d="M8 11V8a4 4 0 018 0v3" />
+          </svg>
+        </div>
+
+        <h1>Enter OTP</h1>
+        <p>Enter the 4-digit code sent to your phone</p>
+
+        {/* 4 OTP Digits Display */}
+        <div className={`otp ${shake ? 'shake' : ''} ${isOk ? 'ok' : ''}`} id="otp">
+          {[0, 1, 2, 3].map(i => {
+            const digit = pin[i] || ''
+            const isCurrent = i === pin.length && !busy
+            const isFilled = Boolean(digit)
+
+            return (
+              <div
+                key={i}
+                className={`box ${isFilled ? 'filled' : ''} ${isCurrent ? 'active' : ''}`}
+                data-c={digit}
+              >
+                {digit && (
+                  <>
+                    <span className="d">{digit}</span>
+                    <i className="ring" />
+                  </>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Status Message Line */}
+        <div className={`msg ${msg.isErr ? 'err' : ''}`} id="msg">
+          {msg.text}
+        </div>
+
+        {/* 3x4 Neomorphic Keypad */}
+        <div className="pad" id="pad">
+          {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', '⌫'].map(k => (
+            <button
+              key={k}
+              type="button"
+              className={`k ${k.length > 1 && k !== '⌫' ? 'fn' : ''}`}
+              data-k={k}
+              onPointerDown={e => {
+                e.preventDefault()
+                const btn = e.currentTarget
+                btn.classList.add('p')
+                setTimeout(() => btn.classList.remove('p'), 200)
+                handlePress(k, btn, e)
+              }}
+            >
+              <span className="t">{k === 'clear' ? 'Clear' : k}</span>
+            </button>
+          ))}
+        </div>
+      </main>
+
+      {/* Success "Verified" Screen */}
+      <section className={`done ${showDone ? 'show' : ''}`} id="done">
+        <div className="badge">
+          <svg viewBox="0 0 110 110">
+            <circle cx="55" cy="55" r="48" />
+            <path d="M33 57l16 16 29-32" />
+          </svg>
+        </div>
+        <h2>Verified</h2>
+        <span>
+          {verifiedInfo?.orderNumber
+            ? `Releasing Order ${verifiedInfo.orderNumber} • Dispensing to printer…`
+            : 'Starting hardware print… Please collect your pages!'}
+        </span>
+      </section>
+
+      {/* Direct Mobile Upload QR Modal */}
+      {showQrModal && (
+        <div className="kiosk-qr-modal-backdrop" onClick={() => setShowQrModal(false)}>
+          <div className="kiosk-qr-modal-card" onClick={e => e.stopPropagation()}>
+            <button
+              type="button"
+              className="kiosk-qr-close-btn"
+              onClick={() => setShowQrModal(false)}
+            >
+              ✕
+            </button>
+
+            <div style={{ margin: '0 auto 16px', display: 'inline-flex', padding: 12, borderRadius: 24, background: '#f8fafc', boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.06)' }}>
+              <QRCodeSVG
+                value={kioskQrUrl}
+                size={200}
+                level="H"
+                includeMargin={false}
+                fgColor="#111827"
+                bgColor="#ffffff"
+              />
+            </div>
+
+            <h3 style={{ fontSize: '1.4rem', fontWeight: 800, margin: '0 0 6px', color: 'var(--tx)' }}>
+              Scan with Phone Camera
+            </h3>
+            <p style={{ fontSize: '0.95rem', color: 'var(--mu)', margin: '0 0 20px', lineHeight: 1.4 }}>
+              Upload your documents, choose print settings, and get your 4-digit pickup code right on your screen.
+            </p>
+
+            <button
+              type="button"
+              className="kiosk-otp-qr-action-btn"
+              style={{ width: '100%', justifyContent: 'center', padding: '12px 20px', fontSize: '0.95rem' }}
+              onClick={() => setShowQrModal(false)}
+            >
+              I Have My 4-Digit Code
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

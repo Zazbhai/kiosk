@@ -46,6 +46,7 @@ class KioskWsClient:
         self.is_running = True
         self.print_callbacks = []
         self.staged_jobs = {}  # Indexed by order_id and releasePin
+        self.printed_orders = set()
 
 
         print("════════════════════════════════════════════════════════")
@@ -133,7 +134,18 @@ class KioskWsClient:
                     asyncio.create_task(self._prefetch_document(order_id, payload))
 
                 elif msg_type == "PIN_VERIFIED":
-                    print(f"[WSS Kiosk Client] 🔑 PIN Verified on Kiosk for Order {order_id}! Starting physical print...")
+                    print(f"[WSS Kiosk Client] 🔑 PIN Verified on Kiosk for Order {order_id}!")
+                    # If this host machine already dispatched the print via Windows GDI, skip duplicate spool
+                    if payload.get("dispatchedLocally") or (sys.platform == "win32" and not payload.get("forceKioskPrint")):
+                        print(f"[WSS Kiosk Client] ℹ Order {order_id} handled directly by Windows host engine. Skipping duplicate spool.")
+                        if order_id:
+                            self.printed_orders.add(order_id)
+                        continue
+                    if order_id and order_id in self.printed_orders:
+                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already spooled. Skipping duplicate spool.")
+                        continue
+                    if order_id:
+                        self.printed_orders.add(order_id)
                     staged_job = self.staged_jobs.get(order_id) or {}
                     merged_payload = {**staged_job, **payload}
                     asyncio.create_task(self._handle_print_order(order_id, merged_payload))
@@ -142,9 +154,24 @@ class KioskWsClient:
                     print(f"[WSS Kiosk Client] 📄 Incoming file received via WS: {payload.get('fileName')} (Order: {order_id})")
 
                 elif msg_type in ("PAYMENT_CAPTURED", "PRINT_EXECUTE"):
-                    print(f"[WSS Kiosk Client] ⚡ Order Paid / Print Trigger: {order_id}!")
+                    print(f"[WSS Kiosk Client] ⚡ Order Event: {msg_type} for Order {order_id}")
                     staged_job = self.staged_jobs.get(order_id) or {}
                     merged_payload = {**staged_job, **payload}
+                    release_pin = merged_payload.get("releasePin") or merged_payload.get("otp") or merged_payload.get("pickupCode")
+                    # If order requires PIN verification at the kiosk, DO NOT auto-print on payment capture!
+                    if release_pin and not merged_payload.get("pinVerified") and not merged_payload.get("immediate"):
+                        print(f"[WSS Kiosk Client] ⏸ Order {order_id} requires PIN entry at kiosk. Awaiting PIN verification.")
+                        continue
+                    if payload.get("dispatchedLocally") or (sys.platform == "win32" and not payload.get("forceKioskPrint")):
+                        print(f"[WSS Kiosk Client] ℹ Order {order_id} dispatched locally by host. Skipping duplicate spool.")
+                        if order_id:
+                            self.printed_orders.add(order_id)
+                        continue
+                    if order_id and order_id in self.printed_orders:
+                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already spooled. Skipping duplicate spool.")
+                        continue
+                    if order_id:
+                        self.printed_orders.add(order_id)
                     asyncio.create_task(self._handle_print_order(order_id, merged_payload))
 
             except Exception as e:
@@ -177,14 +204,17 @@ class KioskWsClient:
 
         file_name = payload.get("fileName") or "document.pdf"
         copies = int(payload.get("copies") or 1)
-        colour_mode = str(payload.get("colourMode") or payload.get("colour") or "BW").upper()
+        raw_col = str(payload.get("colourMode") or payload.get("colour") or "BW").upper().replace("&", "")
+        colour_mode = "COLOUR" if raw_col in ("COLOUR", "COLOR") else "BW"
         duplex = str(payload.get("duplex") or "SINGLE").upper()
         paper_size = str(payload.get("paperSize") or "A4").upper()
         page_range = str(payload.get("pageRange") or payload.get("pages") or "ALL").strip()
         scaling = str(payload.get("scaling") or "FIT").strip()
         pages_per_sheet = int(payload.get("pagesPerSheet") or 1)
 
-        print(f"\n[WSS Kiosk Client] 🖨 Starting CUPS Print for Order {order_id}: {file_name}")
+        self.printed_orders.add(order_id)
+
+        print(f"\n[WSS Kiosk Client] 🖨 Starting Print for Order {order_id}: {file_name}")
         print(f"  Settings: {copies} copies | {colour_mode} | {duplex} | {paper_size} | Pages: {page_range} | Scaling: {scaling} | N-Up: {pages_per_sheet}")
 
         # Resolve local document path

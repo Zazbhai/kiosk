@@ -168,13 +168,14 @@ class KioskBrainDaemon:
                 print_settings = {}
 
         copies = int(order.get("copies") or print_settings.get("copies") or 1)
-        colour_mode = str(
+        raw_col = str(
             order.get("colourMode")
             or order.get("colour")
             or print_settings.get("colour")
             or print_settings.get("colourMode")
             or "BW"
-        ).upper()
+        ).upper().replace("&", "")
+        colour_mode = "COLOUR" if raw_col in ("COLOUR", "COLOR") else "BW"
         duplex = str(
             order.get("duplex")
             or print_settings.get("duplex")

@@ -291,11 +291,14 @@ class CupsController:
                     _sys.path.insert(0, root)
                 from services.printer.windows_printer import print_file as win_print_file
 
-                print(f"[WindowsPrinter] Dispatching '{p_path.name}' to '{printer}'")
+                raw_c = str(colour_mode or "BW").upper().replace("&", "")
+                norm_colour = "COLOUR" if raw_c in ("COLOUR", "COLOR") else "BW"
+
+                print(f"[WindowsPrinter] Dispatching '{p_path.name}' to '{printer}' (Mode: {norm_colour})")
                 res = win_print_file(
                     file_path=str(p_path.resolve()),
                     copies=copies,
-                    colour=colour_mode,
+                    colour=norm_colour,
                     page_range=page_range or "ALL",
                     printer_name=printer,
                     duplex=duplex,
