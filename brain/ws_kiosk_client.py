@@ -51,10 +51,19 @@ class KioskWsClient:
         self._was_printer_online = False
         self._last_usb_connected: Optional[bool] = None
 
+        hw_init = self.monitor.get_hardware_status()
+        init_printer = hw_init.get("printerName") or hw_init.get("activePrinter") or self.printer_name
+        init_model = hw_init.get("printerModel") or hw_init.get("usbDevice") or init_printer
+        init_wifi = hw_init.get("wifiName") or "Offline"
+        init_host = hw_init.get("hostname") or "kiosk"
+
         print("════════════════════════════════════════════════════════")
         print(f"  PrintBooth Kiosk WSS Client Initialized")
-        print(f"  Station ID : {self.kiosk_id}")
-        print(f"  WSS Relay  : {self.ws_url}")
+        print(f"  Station ID       : {self.kiosk_id}")
+        print(f"  Hostname         : {init_host}")
+        print(f"  Printer Name     : {init_printer} ({init_model})")
+        print(f"  Connected Wi-Fi  : {init_wifi}")
+        print(f"  WSS Relay        : {self.ws_url}")
         print("════════════════════════════════════════════════════════\n")
 
     async def connect(self):
@@ -92,12 +101,17 @@ class KioskWsClient:
             return
         hw = self.monitor.get_hardware_status()
         is_online = hw["isOnline"]
+        active_printer = hw.get("printerName") or hw.get("activePrinter") or self.printer_name
+        printer_model = hw.get("printerModel") or hw.get("usbDevice") or active_printer
+        wifi_ssid = hw.get("wifiName") or "Offline"
+        hostname = hw.get("hostname") or "kiosk"
+
         if is_online != self._was_printer_online:
             self._was_printer_online = is_online
             if is_online:
-                print(f"[WSS Kiosk Client] 🟢 Printer online & ready: {hw.get('activePrinter')}")
+                print(f"[WSS Kiosk Client] [ONLINE] Printer: {active_printer} ({printer_model}) | Wi-Fi: {wifi_ssid} | Host: {hostname}")
             else:
-                print(f"[WSS Kiosk Client] 🔴 Printer offline: {hw.get('activePrinter')}. Auto-recovering...")
+                print(f"[WSS Kiosk Client] [OFFLINE] Printer offline: {active_printer}. Auto-recovering...")
 
         payload = {
             "type": "KIOSK_HEARTBEAT",
@@ -105,12 +119,17 @@ class KioskWsClient:
             "payload": {
                 "status": "ONLINE" if is_online else "OFFLINE",
                 "printerStatus": hw["printerStatus"],
-                "activePrinter": hw.get("activePrinter"),
+                "activePrinter": active_printer,
+                "printerName": active_printer,
+                "printerModel": printer_model,
+                "hostname": hostname,
+                "wifiName": wifi_ssid,
+                "connectedWifi": wifi_ssid,
                 "allPrinters": hw.get("allPrinters", []),
                 "paperLevel": hw["paperLevel"],
                 "tonerLevel": hw["tonerLevel"],
                 "usbConnected": hw.get("usbConnected", True),
-                "usbDevice": hw.get("usbDevice"),
+                "usbDevice": hw.get("usbDevice") or printer_model,
                 "usbInfo": hw.get("usbInfo"),
                 "diagnostics": hw.get("diagnostics", {}),
                 "network": hw.get("network", {}),

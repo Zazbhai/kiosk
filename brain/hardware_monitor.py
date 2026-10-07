@@ -62,6 +62,121 @@ class HardwareMonitor:
             "platform": sys.platform,
         }
 
+    def get_hostname(self) -> str:
+        """Discovers the actual system hostname (e.g. 'kiosk')."""
+        import socket
+        try:
+            h = socket.gethostname()
+            if h and h.strip():
+                return h.strip()
+        except Exception:
+            pass
+
+        if sys.platform != "win32":
+            try:
+                if os.path.exists("/etc/hostname"):
+                    with open("/etc/hostname", "r", encoding="utf-8") as f:
+                        h = f.read().strip()
+                        if h:
+                            return h
+            except Exception:
+                pass
+
+        return "kiosk"
+
+    def get_connected_wifi_ssid(self, iface: str = "wlan0") -> str:
+        """Discovers the currently active/connected Wi-Fi SSID on Linux or Windows."""
+        if sys.platform != "win32":
+            # Method 1: nmcli dev wifi (look for yes:SSID)
+            try:
+                res = subprocess.run(
+                    ["nmcli", "-t", "-f", "active,ssid", "dev", "wifi"],
+                    capture_output=True, text=True, timeout=2, stdin=subprocess.DEVNULL
+                )
+                if res.returncode == 0 and res.stdout:
+                    for line in res.stdout.splitlines():
+                        if line.startswith("yes:"):
+                            ssid = line.split("yes:", 1)[1].strip()
+                            if ssid and not ssid.startswith("\\"):
+                                return ssid
+            except Exception:
+                pass
+
+            # Method 2: nmcli active connection
+            try:
+                res = subprocess.run(
+                    ["nmcli", "-t", "-f", "name,type", "connection", "show", "--active"],
+                    capture_output=True, text=True, timeout=2, stdin=subprocess.DEVNULL
+                )
+                if res.returncode == 0 and res.stdout:
+                    for line in res.stdout.splitlines():
+                        if ":802-11-wireless" in line or ":wifi" in line:
+                            ssid = line.split(":")[0].strip()
+                            if ssid:
+                                return ssid
+            except Exception:
+                pass
+
+            # Method 3: iwgetid
+            try:
+                res = subprocess.run(
+                    ["iwgetid", "-r", iface],
+                    capture_output=True, text=True, timeout=2, stdin=subprocess.DEVNULL
+                )
+                if res.returncode == 0 and res.stdout.strip():
+                    return res.stdout.strip()
+            except Exception:
+                pass
+
+            # Method 4: iw dev <iface> link
+            try:
+                res = subprocess.run(
+                    ["iw", "dev", iface, "link"],
+                    capture_output=True, text=True, timeout=2, stdin=subprocess.DEVNULL
+                )
+                if res.returncode == 0 and res.stdout:
+                    for line in res.stdout.splitlines():
+                        if "SSID:" in line:
+                            ssid = line.split("SSID:", 1)[1].strip()
+                            if ssid:
+                                return ssid
+            except Exception:
+                pass
+
+            # Method 5: wpa_cli status
+            try:
+                res = subprocess.run(
+                    ["wpa_cli", "-i", iface, "status"],
+                    capture_output=True, text=True, timeout=2, stdin=subprocess.DEVNULL
+                )
+                if res.returncode == 0 and res.stdout:
+                    for line in res.stdout.splitlines():
+                        if line.startswith("ssid="):
+                            ssid = line.split("ssid=", 1)[1].strip()
+                            if ssid:
+                                return ssid
+            except Exception:
+                pass
+        else:
+            # Windows platform fallback for dev/testing
+            try:
+                res = subprocess.run(
+                    ["netsh", "wlan", "show", "interfaces"],
+                    capture_output=True, text=True, timeout=2
+                )
+                if res.returncode == 0 and res.stdout:
+                    for line in res.stdout.splitlines():
+                        if "SSID" in line and "BSSID" not in line:
+                            parts = line.split(":", 1)
+                            if len(parts) == 2:
+                                ssid = parts[1].strip()
+                                if ssid:
+                                    return ssid
+            except Exception:
+                pass
+
+        return "Offline"
+
     def get_network_telemetry(self) -> Dict[str, Any]:
         """Detects whether Pi is connected via Ethernet or Wi-Fi, and discovers IP address."""
         import socket
@@ -74,8 +189,10 @@ class HardwareMonitor:
         wifi_connected = False
         wifi_ip = None
         wifi_mac = None
-        wifi_ssid = "Offline"
         wifi_signal = 0
+
+        hostname = self.get_hostname()
+        wifi_ssid = self.get_connected_wifi_ssid("wlan0")
 
         # Try to find default route
         if sys.platform != "win32":
@@ -125,14 +242,10 @@ class HardwareMonitor:
                                 wifi_mac = f.read().strip()
                     except Exception:
                         pass
-                    if wifi_connected:
-                        try:
-                            ssid_out = subprocess.check_output(["iwgetid", "-r", iface], text=True, timeout=2)
-                            if ssid_out.strip():
-                                wifi_ssid = ssid_out.strip()
-                        except Exception:
-                            pass
                     break
+
+            if wifi_ssid and wifi_ssid not in ("Offline", "Disconnected"):
+                wifi_connected = True
         else:
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -144,15 +257,17 @@ class HardwareMonitor:
                 wifi_ip = primary_ip
             except Exception:
                 pass
+            if wifi_ssid and wifi_ssid not in ("Offline", "Disconnected"):
+                wifi_connected = True
 
         if active_type == "OFFLINE" and primary_ip != "127.0.0.1":
-            active_type = "ETHERNET" if eth_connected else "WIFI"
+            active_type = "ETHERNET" if eth_connected else ("WIFI" if wifi_connected else "OFFLINE")
 
         return {
             "activeConnectionType": active_type,
             "primaryIp": primary_ip,
             "isOnline": active_type != "OFFLINE",
-            "hostname": "raspberrypi",
+            "hostname": hostname,
             "ethernet": {
                 "connected": eth_connected,
                 "cableConnected": eth_cable,
@@ -283,22 +398,40 @@ class HardwareMonitor:
                         is_online = active.get("is_online", True)
                         printer_status = "READY" if is_online else "OFFLINE"
 
+        # Determine printer hardware model name
+        printer_model_name = usb_info.get("printerFound") or "Brother DCP-T420W"
+        if printers:
+            active_p_obj = next((p for p in printers if p.get("name") == active_printer_name), None)
+            if active_p_obj and active_p_obj.get("info"):
+                p_info = active_p_obj.get("info", "").strip()
+                if p_info and p_info != active_printer_name:
+                    printer_model_name = p_info
+
+        net_telemetry = self.get_network_telemetry()
+        current_hostname = net_telemetry.get("hostname") or "kiosk"
+        current_wifi_ssid = net_telemetry.get("wifi", {}).get("ssid") or "Offline"
+
         return {
             "isOnline": is_online,
             "printerStatus": printer_status,
             "activePrinter": active_printer_name,
+            "printerName": active_printer_name,
+            "printerModel": printer_model_name,
+            "hostname": current_hostname,
+            "wifiName": current_wifi_ssid,
+            "connectedWifi": current_wifi_ssid,
             "usbConnected": is_usb_connected,
-            "usbDevice": usb_info.get("printerFound"),
+            "usbDevice": usb_info.get("printerFound") or printer_model_name,
             "usbInfo": usb_info,
             "allPrinters": printers if printers else ([{
-                "name": "Brother_DCP_T420W",
-                "info": "Brother DCP-T420W (USB / CUPS)",
+                "name": active_printer_name if active_printer_name != "None" else "Brother_DCP_T420W",
+                "info": printer_model_name,
                 "is_default": True,
-                "is_online": True,
+                "is_online": is_online,
                 "connection_type": "USB"
             }] if is_usb_connected else []),
             "paperLevel": self.estimated_paper,
             "tonerLevel": self.estimated_toner,
             "diagnostics": self.get_system_telemetry(),
-            "network": self.get_network_telemetry(),
+            "network": net_telemetry,
         }
