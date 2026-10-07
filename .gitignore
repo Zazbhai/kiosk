@@ -1,7 +1,9 @@
 # Environment configuration
 .env
-.env.local
+.env*
 *.env
+*.env.*
+!.env.example
 
 # Python artifacts & virtual environments
 __pycache__/
