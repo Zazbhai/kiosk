@@ -324,6 +324,17 @@ class CupsController:
                 except Exception:
                     pass
 
+            # 6. Ensure default options for queue (copies=1, job-sheets=none,none)
+            subprocess.run(
+                ["lpoptions", "-p", target, "-o", "copies=1", "-o", "job-sheets=none,none"],
+                capture_output=True, stdin=subprocess.DEVNULL, timeout=2,
+            )
+            subprocess.run(
+                ["sudo", "-n", "lpadmin", "-p", target, "-o", "job-sheets-default=none,none", "-o", "copies-default=1"],
+                capture_output=True, stdin=subprocess.DEVNULL, timeout=2,
+            )
+            actions.append("set queue default copies=1 & job-sheets=none,none")
+
             print(f"[CUPS Auto-Recover] Actions executed for '{target}': {', '.join(actions)}")
             return {"success": True, "actions": actions}
         except Exception as e:
@@ -536,49 +547,95 @@ class CupsController:
 
         return {"success": True, "activePrinter": clean_name, "actions": actions}
 
-    def prepare_monochrome_file(self, file_path: Path) -> Path:
+    def prepare_printable_file(self, file_path: Path, colour_mode: str = "BW") -> Path:
         """
-        Enforces true monochrome hardware rendering by converting images or PDFs to pure 
-        grayscale before dispatching to CUPS. This physically prevents inkjet printers 
-        (e.g. Brother DCP-T420W) from using Cyan, Magenta, or Yellow inks.
+        Converts raster images (PNG, JPEG, Draw.io) to exact single-page A4 PDFs:
+        1. Guarantees true monochrome (DeviceGray / mode 'L') when colour_mode == 'BW' to prevent CMYK ink usage.
+        2. Fits and centers image on a single A4 page canvas, physically preventing CUPS imagetoraster
+           from slicing/tiling large diagrams across multiple sheets.
+        3. Converts color PDFs to DeviceGray via Ghostscript when colour_mode == 'BW'.
         """
-        suffix = file_path.suffix.lower()
+        p_path = Path(file_path)
+        suffix = p_path.suffix.lower()
+        is_color = str(colour_mode).upper() in ("COLOR", "COLOUR")
 
-        # 1. Raster Image Grayscale Conversion
+        # 1. Raster Image conversion to standardized A4 PDF
         if suffix in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".gif"):
+            # Ensure PIL is available, auto-installing in venv if needed
             try:
                 from PIL import Image
-                with Image.open(file_path) as im:
-                    if im.mode != "L":
-                        mono_path = file_path.parent / f"mono_{file_path.name}"
-                        # If image has an alpha channel, composite onto crisp white background first
+            except ImportError:
+                try:
+                    print("[CUPS Controller] Pillow missing in Python environment; auto-installing via pip...")
+                    subprocess.run([sys.executable, "-m", "pip", "install", "pillow"], timeout=45, capture_output=True)
+                    from PIL import Image
+                except Exception as e:
+                    print(f"[CUPS Controller] Auto-install pip notice: {e}")
+                    Image = None
+
+            if Image:
+                try:
+                    with Image.open(p_path) as im:
+                        pdf_name = f"{'color' if is_color else 'mono'}_{p_path.stem}.pdf"
+                        pdf_path = p_path.parent / pdf_name
+
+                        # Composite transparent alpha onto pure white background
                         if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
                             bg = Image.new("RGB", im.size, (255, 255, 255))
                             rgba_im = im.convert("RGBA")
                             bg.paste(rgba_im, mask=rgba_im.split()[-1])
-                            mono = bg.convert("L")
+                            base_im = bg
                         else:
-                            mono = im.convert("L")
-                        mono.save(mono_path)
-                        print(f"[CUPS Controller] [MONO] Pre-processed color image '{file_path.name}' to pure 8-bit Grayscale -> '{mono_path.name}'")
-                        return mono_path
-                    return file_path
-            except Exception as e:
-                print(f"[CUPS Controller] Pillow image grayscale conversion notice: {e}")
-                # Try ImageMagick CLI fallback on Linux
-                if sys.platform != "win32":
-                    try:
-                        if shutil.which("convert"):
-                            mono_path = file_path.parent / f"mono_{file_path.name}"
-                            subprocess.run(["convert", str(file_path), "-colorspace", "Gray", str(mono_path)], check=True, timeout=10)
-                            return mono_path
-                    except Exception:
-                        pass
+                            base_im = im
+
+                        # Target mode: 'L' for pure monochrome, 'RGB' for color
+                        target_im = base_im.convert("L") if not is_color else base_im.convert("RGB")
+
+                        # Standard A4 at 300 DPI: 2480 x 3508 pixels
+                        a4_w, a4_h = 2480, 3508
+                        margin = 100
+                        avail_w = a4_w - (margin * 2)
+                        avail_h = a4_h - (margin * 2)
+
+                        # Scale preserving aspect ratio to fit within printable bounds
+                        resample_filter = getattr(Image, "Resampling", Image).LANCZOS
+                        target_im.thumbnail((avail_w, avail_h), resample_filter)
+
+                        # Create crisp white A4 canvas and center the image
+                        canvas_bg = 255 if not is_color else (255, 255, 255)
+                        canvas = Image.new("L" if not is_color else "RGB", (a4_w, a4_h), canvas_bg)
+                        offset_x = (a4_w - target_im.size[0]) // 2
+                        offset_y = (a4_h - target_im.size[1]) // 2
+                        canvas.paste(target_im, (offset_x, offset_y))
+
+                        # Save as single-page PDF with exact 300 DPI metadata
+                        canvas.save(pdf_path, "PDF", resolution=300.0)
+                        mode_label = "COLOR" if is_color else "8-bit Monochrome"
+                        print(f"[CUPS Controller] [CONVERT] Pre-processed image '{p_path.name}' to single-page A4 PDF ({mode_label}) -> '{pdf_path.name}'")
+                        return pdf_path
+                except Exception as e:
+                    print(f"[CUPS Controller] Pillow image processing notice: {e}")
+
+            # Fallback for Linux if ImageMagick convert exists
+            if sys.platform != "win32" and shutil.which("convert"):
+                try:
+                    pdf_name = f"{'color' if is_color else 'mono'}_{p_path.stem}.pdf"
+                    pdf_path = p_path.parent / pdf_name
+                    args = ["convert", str(p_path), "-page", "A4", "-gravity", "center", "-resize", "2280x3308>"]
+                    if not is_color:
+                        args.extend(["-colorspace", "Gray"])
+                    args.append(str(pdf_path))
+                    subprocess.run(args, check=True, timeout=15)
+                    if pdf_path.exists() and pdf_path.stat().st_size > 0:
+                        print(f"[CUPS Controller] [CONVERT] ImageMagick converted image '{p_path.name}' -> '{pdf_path.name}'")
+                        return pdf_path
+                except Exception:
+                    pass
 
         # 2. PDF Grayscale Conversion
-        elif suffix == ".pdf":
+        elif suffix == ".pdf" and not is_color:
             try:
-                mono_path = file_path.parent / f"mono_{file_path.name}"
+                mono_path = p_path.parent / f"mono_{p_path.name}"
                 gs_bin = shutil.which("gs") or ("/usr/bin/gs" if os.path.exists("/usr/bin/gs") else None)
                 if gs_bin:
                     gs_cmd = [
@@ -590,16 +647,20 @@ class CupsController:
                         "-dNOPAUSE",
                         "-dBATCH",
                         f"-sOutputFile={mono_path}",
-                        str(file_path),
+                        str(p_path),
                     ]
                     res = subprocess.run(gs_cmd, capture_output=True, timeout=25)
                     if res.returncode == 0 and mono_path.exists() and mono_path.stat().st_size > 0:
-                        print(f"[CUPS Controller] [MONO] Pre-processed PDF '{file_path.name}' to pure DeviceGray via Ghostscript -> '{mono_path.name}'")
+                        print(f"[CUPS Controller] [MONO] Pre-processed PDF '{p_path.name}' to pure DeviceGray via Ghostscript -> '{mono_path.name}'")
                         return mono_path
             except Exception as e:
                 print(f"[CUPS Controller] Ghostscript PDF grayscale conversion notice: {e}")
 
-        return file_path
+        return p_path
+
+    def prepare_monochrome_file(self, file_path: Path) -> Path:
+        """Backwards compatibility alias for prepare_printable_file in monochrome mode."""
+        return self.prepare_printable_file(file_path, colour_mode="BW")
 
     def build_cups_options(
         self,
@@ -625,10 +686,14 @@ class CupsController:
             ppd_paper = norm_paper.capitalize()
 
         options: Dict[str, str] = {
-            "copies": str(max(1, copies)),
+            "copies": str(max(1, int(copies or 1))),
             "media": ppd_paper,
             "PageSize": ppd_paper,
             "BRMediaType": "Plain",
+            "job-sheets": "none,none",
+            "fit-to-page": "true",
+            "fitplot": "true",
+            "scaling": "100",
         }
 
         # Color vs Monochrome (BRMonoColor is the exact PPD key for Brother DCP-T420W)
@@ -653,10 +718,6 @@ class CupsController:
         # Page Ranges
         if page_range and page_range.upper() not in ("ALL", ""):
             options["page-ranges"] = str(page_range).replace(" ", "")
-
-        # Scaling / Fit to page
-        if str(scaling).upper() in ("FIT", "FILL", "TRUE", "FIT_PRINTABLE", "FIT_PAPER"):
-            options["fit-to-page"] = "true"
 
         # N-Up (pages per sheet)
         if pages_per_sheet and int(pages_per_sheet) > 1:
@@ -696,14 +757,15 @@ class CupsController:
         if not printer:
             return {"success": False, "error": "No CUPS printer available on this station"}
 
-        # Pre-process file to pure monochrome if B&W is selected
         is_color = colour_mode.upper() in ("COLOR", "COLOUR")
-        target_path = p_path
-        if not is_color:
-            target_path = self.prepare_monochrome_file(p_path)
+        clean_copies = max(1, int(copies or 1))
+
+        # Pre-process file: converts raster images to exact 1-page A4 PDFs (monochrome or color)
+        # to physically prevent CUPS imagetoraster from slicing images across multiple pages
+        target_path = self.prepare_printable_file(p_path, colour_mode=colour_mode)
 
         cups_opts = self.build_cups_options(
-            copies=copies,
+            copies=clean_copies,
             colour_mode=colour_mode,
             duplex=duplex,
             paper_size=paper_size,
@@ -715,32 +777,34 @@ class CupsController:
         print(f"[CUPS] Dispatching '{target_path.name}' to printer '{printer}'")
         print(f"[CUPS] Hardware Options applied: {cups_opts}")
 
-        # Primary execution via Linux lp CLI on Raspberry Pi (guarantees -n copies and -P page-ranges)
+        # Primary execution via Linux lp CLI on Raspberry Pi
         if sys.platform != "win32":
             # Attempt hardware mode sync if Brother utility exists
             for br_bin in ["/usr/bin/brprintconf_dcpt420w", "/opt/brother/Printers/dcpt420w/lpd/brprintconf_dcpt420w"]:
                 if os.path.exists(br_bin):
                     try:
                         col_arg = "COLOR" if is_color else "MONO"
-                        subprocess.run([br_bin, "-col", col_arg], timeout=2, capture_output=True)
+                        # Set BOTH -col (color mode) and -cp (exact copy count) on Brother hardware
+                        subprocess.run([br_bin, "-col", col_arg, "-cp", str(clean_copies)], timeout=2, capture_output=True)
                     except Exception:
                         pass
                     break
 
             try:
                 cmd = ["lp", "-d", printer]
-                # Always use -n for copies in CUPS CLI; never pass duplicate -o copies=N to prevent multiplication
-                if copies and int(copies) > 1:
-                    cmd.extend(["-n", str(copies)])
+                # ALWAYS explicitly pass -n <copies> (even for 1 copy) so CUPS CLI never falls back to an unwanted queue default!
+                cmd.extend(["-n", str(clean_copies)])
+
                 if page_range and page_range.upper() not in ("ALL", ""):
                     clean_range = str(page_range).replace(" ", "")
                     cmd.extend(["-P", clean_range])
+
                 for k, v in cups_opts.items():
                     if k == "copies":
-                        # CRITICAL: Do NOT pass -o copies=N when -n N is already in cmd!
-                        # Passing both causes CUPS driver filters to multiply: copies = N x N!
+                        # We already explicitly passed -n <copies> to CUPS CLI; skip duplicate -o copies
                         continue
                     cmd.extend(["-o", f"{k}={v}"])
+
                 cmd.append(str(target_path.resolve()))
                 print(f"[CUPS CLI] Executing: {' '.join(cmd)}")
                 out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)

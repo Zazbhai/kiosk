@@ -2,6 +2,8 @@
 requests>=2.31.0
 python-dotenv>=1.0.0
 psutil>=5.9.0
+websockets>=12.0
+pillow>=10.0.0
 
 # Note: pycups requires libcups2-dev on Linux:
 # sudo apt-get install -y libcups2-dev
