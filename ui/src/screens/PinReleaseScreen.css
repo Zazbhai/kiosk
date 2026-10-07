@@ -478,9 +478,147 @@
   transform: scale(0.92);
 }
 
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+/* ── Station Configuration Modal ── */
+.kiosk-topbar-interactive {
+  cursor: pointer;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+
+.kiosk-topbar-interactive:active {
+  transform: scale(0.96);
+}
+
+.msg-fix-btn {
+  margin-left: 8px;
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.config-modal-card {
+  text-align: left;
+  max-width: 440px;
+}
+
+.config-modal-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: #fee2e2;
+  display: grid;
+  place-items: center;
+  margin-bottom: 14px;
+}
+
+.config-form-group label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--tx);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.config-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid #d1d5db;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+  font-family: inherit;
+  background: #f9fafb;
+  color: #111827;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.config-input:focus {
+  border-color: var(--red);
+  background: #ffffff;
+}
+
+.config-quick-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.config-quick-chips button {
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #4b5563;
+  cursor: pointer;
+}
+
+.config-quick-chips button:active {
+  background: #e5e7eb;
+}
+
+.config-ping-box {
+  margin-top: 14px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.config-ping-box.ok {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.config-ping-box.err {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.config-modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.config-btn-secondary {
+  flex: 1;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  font-weight: 700;
+  color: #374151;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.config-btn-primary {
+  flex: 1.5;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--red);
+  border: none;
+  font-weight: 700;
+  color: #ffffff;
+  font-size: 0.9rem;
+  cursor: pointer;
 }
 
 @media (max-height: 740px) {

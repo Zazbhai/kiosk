@@ -30,8 +30,38 @@ if ! pgrep -f "daemon.py" > /dev/null; then
     python3 daemon.py >> /tmp/printbooth_daemon.log 2>&1 &
 fi
 
-# 4. Ensure Touchscreen UI is running locally
-DISPLAY_URL="${KIOSK_DISPLAY_URL:-http://localhost:5175}"
+# 4. Extract Backend Spooler API URL from brain/.env or environment
+TARGET_API="http://localhost:5000"
+STATION_ID="PB-001"
+if [ -f "$BRAIN_DIR/.env" ]; then
+    ENV_API=$(grep -E "^PRINTBOOTH_API_URL=" "$BRAIN_DIR/.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" | sed 's|/api$||')
+    if [ -n "$ENV_API" ]; then
+        TARGET_API="$ENV_API"
+    fi
+    ENV_ID=$(grep -E "^KIOSK_ID=" "$BRAIN_DIR/.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'")
+    if [ -n "$ENV_ID" ]; then
+        STATION_ID="$ENV_ID"
+    fi
+fi
+if [ -n "$PRINTBOOTH_API_URL" ]; then
+    TARGET_API="$PRINTBOOTH_API_URL"
+fi
+if [ -n "$KIOSK_ID" ]; then
+    STATION_ID="$KIOSK_ID"
+fi
+
+# Ensure pre-built dist has up-to-date runtime config.json
+if [ -d "$UI_DIR/dist" ]; then
+    cat << EOF > "$UI_DIR/dist/config.json"
+{
+  "apiUrl": "$TARGET_API",
+  "kioskId": "$STATION_ID"
+}
+EOF
+fi
+
+# 5. Ensure Touchscreen UI is running locally
+DISPLAY_URL="${KIOSK_DISPLAY_URL:-http://localhost:5175/?api=${TARGET_API}&kioskId=${STATION_ID}}"
 LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
 
 if [ -d "$UI_DIR/dist" ] && ! curl -s --connect-timeout 1 "$DISPLAY_URL" > /dev/null 2>&1; then
@@ -44,6 +74,7 @@ echo "════════════════════════�
 echo "  PrintBooth Kiosk UI is LIVE! 🚀"
 echo "  • Local (on Pi HDMI) : http://localhost:5175"
 echo "  • On your PC Monitor : http://${LOCAL_IP}:5175"
+echo "  • Spooler Backend    : ${TARGET_API}"
 echo "════════════════════════════════════════════════════════"
 
 # 5. Launch Chromium in strict fullscreen Kiosk Mode if display exists
