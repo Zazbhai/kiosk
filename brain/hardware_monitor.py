@@ -176,7 +176,7 @@ class HardwareMonitor:
                 # 1. Use nmcli on Linux
                 res = subprocess.run(
                     ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY,CHAN", "dev", "wifi", "list"],
-                    capture_output=True, text=True, timeout=8
+                    capture_output=True, stdin=subprocess.DEVNULL, text=True, timeout=8
                 )
                 if res.returncode == 0 and res.stdout.strip():
                     networks = []

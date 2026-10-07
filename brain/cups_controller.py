@@ -36,6 +36,11 @@ class CupsController:
             try:
                 cups.setServer(self.host)
                 cups.setPort(self.port)
+                # Suppress interactive password prompts on stdin/terminal
+                try:
+                    cups.setPasswordCB(lambda prompt: "")
+                except Exception:
+                    pass
                 self._conn = cups.Connection()
             except Exception as e:
                 self._conn = None
@@ -171,20 +176,22 @@ class CupsController:
         try:
             # 1. Ensure kernel usblp module is loaded
             if not os.path.exists("/dev/usb/lp0") and self._is_usb_printer_present():
-                subprocess.run(["sudo", "modprobe", "usblp"], capture_output=True, timeout=2)
+                subprocess.run(["sudo", "-n", "modprobe", "usblp"], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
                 actions.append("modprobe usblp")
 
             # 2. Re-enable CUPS queue and accept incoming jobs
-            subprocess.run(["cupsenable", target], capture_output=True, timeout=2)
-            subprocess.run(["cupsaccept", target], capture_output=True, timeout=2)
-            subprocess.run(["sudo", "cupsenable", target], capture_output=True, timeout=2)
-            subprocess.run(["sudo", "cupsaccept", target], capture_output=True, timeout=2)
+            # Using stdin=subprocess.DEVNULL and sudo -n completely prevents interactive password prompts
+            subprocess.run(["cupsenable", target], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
+            subprocess.run(["cupsaccept", target], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
+            subprocess.run(["sudo", "-n", "cupsenable", target], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
+            subprocess.run(["sudo", "-n", "cupsaccept", target], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
             actions.append(f"unpaused {target}")
 
             # 3. Ensure error policy is retry-current-job (prevents CUPS from disabling queue on power restart)
             subprocess.run(
-                ["sudo", "lpadmin", "-p", target, "-o", "printer-error-policy=retry-current-job"],
+                ["sudo", "-n", "lpadmin", "-p", target, "-o", "printer-error-policy=retry-current-job"],
                 capture_output=True,
+                stdin=subprocess.DEVNULL,
                 timeout=2,
             )
             actions.append("set retry-current-job error policy")
@@ -203,6 +210,7 @@ class CupsController:
                     lpinfo_out = subprocess.run(
                         ["lpinfo", "-v"],
                         capture_output=True,
+                        stdin=subprocess.DEVNULL,
                         text=True,
                         timeout=3,
                     ).stdout
@@ -218,8 +226,9 @@ class CupsController:
 
                     if active_uri:
                         subprocess.run(
-                            ["sudo", "lpadmin", "-p", target, "-v", active_uri],
+                            ["sudo", "-n", "lpadmin", "-p", target, "-v", active_uri],
                             capture_output=True,
+                            stdin=subprocess.DEVNULL,
                             timeout=2,
                         )
                         actions.append(f"re-bound URI to {active_uri}")
@@ -415,11 +424,11 @@ class CupsController:
         # 2. lpadmin on Linux (Raspberry Pi)
         if sys.platform != "win32":
             try:
-                subprocess.run(["lpadmin", "-d", clean_name], check=True, timeout=5)
+                subprocess.run(["lpadmin", "-d", clean_name], check=True, stdin=subprocess.DEVNULL, capture_output=True, timeout=5)
                 actions.append("lpadmin -d")
             except Exception as e:
                 try:
-                    subprocess.run(["sudo", "lpadmin", "-d", clean_name], check=True, timeout=5)
+                    subprocess.run(["sudo", "-n", "lpadmin", "-d", clean_name], check=True, stdin=subprocess.DEVNULL, capture_output=True, timeout=5)
                     actions.append("sudo lpadmin -d")
                 except Exception as e2:
                     actions.append(f"lpadmin failed: {e2}")

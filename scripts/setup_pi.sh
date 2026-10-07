@@ -64,6 +64,12 @@ EOF
 sudo udevadm control --reload-rules 2>/dev/null || true
 sudo udevadm trigger 2>/dev/null || true
 
+# Grant passwordless sudo for CUPS commands and hardware recovery
+sudo tee /etc/sudoers.d/printbooth-cups > /dev/null << 'EOF'
+ALL ALL=(ALL) NOPASSWD: /usr/sbin/cupsenable, /usr/sbin/cupsaccept, /usr/sbin/lpadmin, /usr/sbin/cupsctl, /usr/sbin/cupsfilter, /sbin/modprobe, /bin/systemctl restart cups, /bin/systemctl status cups
+EOF
+sudo chmod 0440 /etc/sudoers.d/printbooth-cups
+
 # 4. Setup Python Virtual Environment
 echo -e "\n[4/7] Setting up Python virtual environment for Kiosk Brain..."
 cd "$BRAIN_DIR"

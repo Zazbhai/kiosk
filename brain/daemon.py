@@ -71,7 +71,31 @@ class KioskBrainDaemon:
         print(f"  Printed History: {len(self.processed_orders)} order(s) already completed")
         print("========================================================\n")
 
+        self._ensure_ws_client()
         self._wait_for_printer_startup(warmup_seconds=60)
+
+    def _ensure_ws_client(self):
+        """Ensures the real-time WebSocket client (ws_kiosk_client.py) runs alongside the daemon."""
+        try:
+            ws_script = Path(__file__).resolve().parent / "ws_kiosk_client.py"
+            if not ws_script.exists():
+                return
+            import subprocess
+            if sys.platform != "win32":
+                check = subprocess.run(["pgrep", "-f", "ws_kiosk_client.py"], stdout=subprocess.PIPE)
+                if check.returncode == 0:
+                    return
+            python_bin = sys.executable
+            subprocess.Popen(
+                [python_bin, str(ws_script)],
+                cwd=str(Path(__file__).resolve().parent),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True if sys.platform != "win32" else False,
+            )
+            print("[Kiosk Brain] 🚀 Spawned real-time WebSocket client (ws_kiosk_client.py).")
+        except Exception as e:
+            print(f"[Kiosk Brain] Notice starting ws client: {e}")
 
     def _wait_for_printer_startup(self, warmup_seconds: int = 60):
         """

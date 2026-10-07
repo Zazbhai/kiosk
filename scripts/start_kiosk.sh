@@ -30,6 +30,16 @@ if ! pgrep -f "daemon.py" > /dev/null; then
     python3 daemon.py >> /tmp/printbooth_daemon.log 2>&1 &
 fi
 
+# 3b. Start WSS Kiosk Client in background (if not already running)
+if ! pgrep -f "ws_kiosk_client.py" > /dev/null; then
+    echo "[Start Kiosk] Launching WSS Kiosk Client..."
+    cd "$BRAIN_DIR"
+    if [ -d "venv" ]; then
+        source venv/bin/activate
+    fi
+    python3 ws_kiosk_client.py >> /tmp/printbooth_ws.log 2>&1 &
+fi
+
 # 4. Extract Backend Spooler API URL from brain/.env or environment
 TARGET_API="http://localhost:5000"
 STATION_ID="PB-001"
