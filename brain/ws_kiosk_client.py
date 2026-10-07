@@ -42,13 +42,14 @@ class KioskWsClient:
         
         self.cups = CupsController()
         self.monitor = HardwareMonitor(self.cups)
+        self.printer_name = PRINTER_NAME
         self.ws = None
         self.is_running = True
         self.print_callbacks = []
         self.staged_jobs = {}  # Indexed by order_id and releasePin
         self.printed_orders = set()
         self._was_printer_online = False
-
+        self._last_usb_connected: Optional[bool] = None
 
         print("════════════════════════════════════════════════════════")
         print(f"  PrintBooth Kiosk WSS Client Initialized")
@@ -67,12 +68,13 @@ class KioskWsClient:
                     reconnect_delay = 2
                     print(f"[WSS Kiosk Client] ✓ Connected to WSS Relay!")
 
-                    # Start concurrent tasks: heartbeat sender and message receiver
+                    # Start concurrent tasks: heartbeat sender, USB monitor (every 1 min), and message receiver
                     heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+                    usb_monitor_task = asyncio.create_task(self._usb_monitor_loop())
                     receive_task = asyncio.create_task(self._receive_loop())
 
                     done, pending = await asyncio.wait(
-                        [heartbeat_task, receive_task],
+                        [heartbeat_task, usb_monitor_task, receive_task],
                         return_when=asyncio.FIRST_COMPLETED
                     )
                     for t in pending:
@@ -84,36 +86,79 @@ class KioskWsClient:
                 await asyncio.sleep(reconnect_delay)
                 reconnect_delay = min(reconnect_delay * 1.5, 15)
 
+    async def _send_heartbeat(self):
+        """Constructs and sends hardware heartbeat to API server."""
+        if not self.ws:
+            return
+        hw = self.monitor.get_hardware_status()
+        is_online = hw["isOnline"]
+        if is_online != self._was_printer_online:
+            self._was_printer_online = is_online
+            if is_online:
+                print(f"[WSS Kiosk Client] 🟢 Printer online & ready: {hw.get('activePrinter')}")
+            else:
+                print(f"[WSS Kiosk Client] 🔴 Printer offline: {hw.get('activePrinter')}. Auto-recovering...")
+
+        payload = {
+            "type": "KIOSK_HEARTBEAT",
+            "kioskId": self.kiosk_id,
+            "payload": {
+                "status": "ONLINE" if is_online else "OFFLINE",
+                "printerStatus": hw["printerStatus"],
+                "activePrinter": hw.get("activePrinter"),
+                "allPrinters": hw.get("allPrinters", []),
+                "paperLevel": hw["paperLevel"],
+                "tonerLevel": hw["tonerLevel"],
+                "usbConnected": hw.get("usbConnected", True),
+                "usbDevice": hw.get("usbDevice"),
+                "usbInfo": hw.get("usbInfo"),
+                "diagnostics": hw.get("diagnostics", {}),
+                "network": hw.get("network", {}),
+            },
+            "timestamp": int(time.time() * 1000)
+        }
+        await self.ws.send(json.dumps(payload))
+
     async def _heartbeat_loop(self):
         """Sends live hardware telemetry every 10 seconds."""
         while self.is_running and self.ws:
             try:
-                hw = self.monitor.get_hardware_status()
-                is_online = hw["isOnline"]
-                if is_online != self._was_printer_online:
-                    self._was_printer_online = is_online
-                    if is_online:
-                        print(f"[WSS Kiosk Client] 🟢 Printer online & ready: {hw['activePrinter']}")
-                    else:
-                        print(f"[WSS Kiosk Client] 🔴 Printer offline: {hw['activePrinter']}. Auto-recovering...")
-
-                payload = {
-                    "type": "KIOSK_HEARTBEAT",
-                    "kioskId": self.kiosk_id,
-                    "payload": {
-                        "status": "ONLINE" if is_online else "OFFLINE",
-                        "printerStatus": hw["printerStatus"],
-                        "paperLevel": hw["paperLevel"],
-                        "tonerLevel": hw["tonerLevel"],
-                        "diagnostics": hw["diagnostics"],
-                    },
-                    "timestamp": int(time.time() * 1000)
-                }
-                await self.ws.send(json.dumps(payload))
+                await self._send_heartbeat()
             except Exception as e:
                 print(f"[WSS Kiosk Client] Heartbeat error: {e}")
                 break
             await asyncio.sleep(10)
+
+    async def _usb_monitor_loop(self):
+        """
+        Background physical USB scanner loop running every 60 seconds (1 minute).
+        Executes 'lsusb' probe to verify Brother printer connection.
+        Logs status and broadcasts heartbeat immediately if connection state changes.
+        """
+        print("[WSS Kiosk Client] ⏱ 1-minute physical USB scanner loop (lsusb) initialized.")
+        while self.is_running and self.ws:
+            try:
+                loop = asyncio.get_event_loop()
+                usb_info = await loop.run_in_executor(None, self.cups.check_usb_printer)
+                is_connected = bool(usb_info.get("connected", False))
+                printer_found = usb_info.get("printerFound") or "Brother Printer"
+
+                if self._last_usb_connected is None or is_connected != self._last_usb_connected:
+                    self._last_usb_connected = is_connected
+                    if is_connected:
+                        print(f"[WSS Kiosk Client] [1-min USB Monitor] 🟢 Brother printer DETECTED on USB via lsusb: '{printer_found}'")
+                    else:
+                        print(f"[WSS Kiosk Client] [1-min USB Monitor] 🔴 Brother printer NOT DETECTED via lsusb! USB cable unplugged or printer powered off.")
+                    await self._send_heartbeat()
+                else:
+                    if is_connected:
+                        print(f"[WSS Kiosk Client] [1-min USB Monitor] ✓ Heartbeat tick: Brother printer connected via USB ({printer_found}).")
+                    else:
+                        print(f"[WSS Kiosk Client] [1-min USB Monitor] ⚠️ Heartbeat tick: Brother printer offline (lsusb not detecting printer).")
+            except Exception as e:
+                print(f"[WSS Kiosk Client] [1-min USB Monitor] Error probing USB printer: {e}")
+
+            await asyncio.sleep(60)
 
     async def _receive_loop(self):
         """Processes real-time events relayed from the API."""
@@ -126,6 +171,62 @@ class KioskWsClient:
 
                 if msg_type == "CONNECTED":
                     print(f"[WSS Kiosk Client] Handshake confirmed: {payload.get('message')}")
+                    # Send initial heartbeat immediately upon connecting
+                    asyncio.create_task(self._send_heartbeat())
+
+                elif msg_type in ("CHECK_USB_PRINTER", "PROBE_USB"):
+                    print(f"[WSS Kiosk Client] 🔍 On-demand USB probe requested (e.g. file upload verification)")
+                    loop = asyncio.get_event_loop()
+                    usb_info = await loop.run_in_executor(None, self.cups.check_usb_printer)
+                    response_msg = {
+                        "type": "USB_PRINTER_STATUS",
+                        "kioskId": self.kiosk_id,
+                        "payload": usb_info,
+                        "timestamp": int(time.time() * 1000)
+                    }
+                    if self.ws:
+                        await self.ws.send(json.dumps(response_msg))
+                    asyncio.create_task(self._send_heartbeat())
+
+                elif msg_type == "SET_DEFAULT_PRINTER":
+                    printer_name = payload.get("printerName") or payload.get("name")
+                    print(f"[WSS Kiosk Client] 🖨 Setting Raspberry Pi CUPS default printer to '{printer_name}'...")
+                    if printer_name:
+                        self.cups.set_default_printer(printer_name)
+                        asyncio.create_task(self._send_heartbeat())
+
+                elif msg_type in ("SCAN_PRINTERS", "GET_PRINTERS"):
+                    print(f"[WSS Kiosk Client] 🔍 Merchant requested physical printer scan on Raspberry Pi")
+                    asyncio.create_task(self._send_heartbeat())
+
+                elif msg_type == "SCAN_WIFI":
+                    print(f"[WSS Kiosk Client] 📡 Merchant requested Wi-Fi scan on Raspberry Pi")
+                    loop = asyncio.get_event_loop()
+                    networks = await loop.run_in_executor(None, self.monitor.scan_wifi)
+                    resp = {
+                        "type": "WIFI_SCAN_RESULT",
+                        "kioskId": self.kiosk_id,
+                        "payload": {"networks": networks},
+                        "timestamp": int(time.time() * 1000)
+                    }
+                    if self.ws:
+                        await self.ws.send(json.dumps(resp))
+
+                elif msg_type == "CONNECT_WIFI":
+                    ssid = payload.get("ssid", "")
+                    password = payload.get("password", "")
+                    print(f"[WSS Kiosk Client] 📶 Merchant requested Raspberry Pi Wi-Fi connection to '{ssid}'")
+                    loop = asyncio.get_event_loop()
+                    res = await loop.run_in_executor(None, lambda: self.monitor.connect_wifi(ssid, password))
+                    resp = {
+                        "type": "WIFI_CONNECT_RESULT",
+                        "kioskId": self.kiosk_id,
+                        "payload": res,
+                        "timestamp": int(time.time() * 1000)
+                    }
+                    if self.ws:
+                        await self.ws.send(json.dumps(resp))
+                    asyncio.create_task(self._send_heartbeat())
 
                 elif msg_type == "PRINT_JOB_STAGED":
                     # Order paid & staged with release PIN / OTP
@@ -144,9 +245,8 @@ class KioskWsClient:
 
                 elif msg_type == "PIN_VERIFIED":
                     print(f"[WSS Kiosk Client] 🔑 PIN Verified on Kiosk for Order {order_id}!")
-                    # If this host machine already dispatched the print via Windows GDI, skip duplicate spool
-                    if payload.get("dispatchedLocally") or (sys.platform == "win32" and not payload.get("forceKioskPrint")):
-                        print(f"[WSS Kiosk Client] ℹ Order {order_id} handled directly by Windows host engine. Skipping duplicate spool.")
+                    if payload.get("dispatchedLocally") and not payload.get("forceKioskPrint"):
+                        print(f"[WSS Kiosk Client] ℹ Order {order_id} handled directly by host engine. Skipping duplicate spool.")
                         if order_id:
                             self.printed_orders.add(order_id)
                         continue
@@ -171,7 +271,7 @@ class KioskWsClient:
                     if release_pin and not merged_payload.get("pinVerified") and not merged_payload.get("immediate"):
                         print(f"[WSS Kiosk Client] ⏸ Order {order_id} requires PIN entry at kiosk. Awaiting PIN verification.")
                         continue
-                    if payload.get("dispatchedLocally") or (sys.platform == "win32" and not payload.get("forceKioskPrint")):
+                    if payload.get("dispatchedLocally") and not payload.get("forceKioskPrint"):
                         print(f"[WSS Kiosk Client] ℹ Order {order_id} dispatched locally by host. Skipping duplicate spool.")
                         if order_id:
                             self.printed_orders.add(order_id)

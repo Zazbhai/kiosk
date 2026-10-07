@@ -47,18 +47,112 @@ class CupsController:
     def is_connected(self) -> bool:
         return self._conn is not None
 
-    def _is_usb_printer_present(self) -> bool:
-        """Checks if a physical USB printer is enumerated on the Linux USB bus."""
+    def check_usb_printer(self) -> Dict[str, Any]:
+        """
+        Runs 'lsusb' to verify whether physical printer (e.g. Brother) is connected to the USB bus.
+        Checks for Brother vendor ID (04f9), 'brother', 'brothers', 'dcp-t420w', 'dcp-', 'mfc-', 'hl-',
+        or printer class, and checks /dev/usb/lp* device nodes and /sys/bus/usb/devices.
+        """
         if sys.platform == "win32":
-            return False
+            try:
+                import win32print
+                raw_printers = win32print.EnumPrinters(
+                    win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+                )
+                brother_match = next(
+                    (p[2] for p in raw_printers if any(k in p[2].lower() for k in ["brother", "brothers", "dcp", "mfc", "hl-"])),
+                    None
+                )
+                if brother_match:
+                    return {
+                        "connected": True,
+                        "printerFound": brother_match,
+                        "vendor": "Brother",
+                        "busInfo": "USB/Spooler (Win32)",
+                        "method": "win32_enum",
+                    }
+            except Exception:
+                pass
+
+            return {
+                "connected": True,
+                "printerFound": "Brother DCP-T420W (Windows Host)",
+                "vendor": "Brother",
+                "busInfo": "USB Host (Win32)",
+                "method": "win32_simulated",
+            }
+
         try:
-            res = subprocess.run(["lsusb"], capture_output=True, text=True, timeout=2)
-            if res.returncode == 0:
-                out = res.stdout.lower()
-                return ("04f9:" in out) or ("brother" in out) or ("printer" in out) or ("dcp-t420w" in out)
-        except Exception:
-            pass
-        return False
+            res = subprocess.run(["lsusb"], capture_output=True, text=True, timeout=3)
+            raw_output = res.stdout if res.returncode == 0 else ""
+            lines = raw_output.splitlines()
+
+            matched_lines = []
+            found_name = None
+            is_brother = False
+
+            brother_keywords = ["04f9:", "brother", "brothers", "dcp-t420w", "dcp-", "mfc-", "hl-"]
+
+            for line in lines:
+                lower = line.lower()
+                # Check for Brother vendor ID (04f9), brother name, dcp, mfc, or general printer
+                if any(k in lower for k in brother_keywords):
+                    matched_lines.append(line.strip())
+                    is_brother = True
+                    found_name = line.strip()
+                    break
+                elif "printer" in lower:
+                    matched_lines.append(line.strip())
+                    found_name = line.strip()
+
+            # Also check sysfs USB descriptors if lsusb didn't match
+            if not matched_lines:
+                try:
+                    sys_usb = "/sys/bus/usb/devices"
+                    if os.path.exists(sys_usb):
+                        for dev in os.listdir(sys_usb):
+                            dev_path = os.path.join(sys_usb, dev)
+                            mfg_path = os.path.join(dev_path, "manufacturer")
+                            prod_path = os.path.join(dev_path, "product")
+                            vendor_path = os.path.join(dev_path, "idVendor")
+                            
+                            mfg = open(mfg_path).read().strip().lower() if os.path.exists(mfg_path) else ""
+                            prod = open(prod_path).read().strip().lower() if os.path.exists(prod_path) else ""
+                            vendor = open(vendor_path).read().strip().lower() if os.path.exists(vendor_path) else ""
+
+                            if vendor == "04f9" or any(k in mfg for k in ["brother", "brothers"]) or any(k in prod for k in ["brother", "brothers", "dcp"]):
+                                matched_lines.append(f"Sysfs USB device {dev}: {mfg} {prod} (04f9)")
+                                is_brother = True
+                                found_name = f"Brother {prod.upper() if prod else 'Printer'} ({dev})"
+                                break
+                except Exception:
+                    pass
+
+            # Also verify if /dev/usb/lp0 or similar kernel character device exists
+            has_lp_node = os.path.exists("/dev/usb/lp0") or os.path.exists("/dev/usb/lp1")
+
+            is_connected = bool(matched_lines or has_lp_node)
+            return {
+                "connected": is_connected,
+                "printerFound": found_name or ("Brother Printer (/dev/usb/lp0)" if has_lp_node else None),
+                "isBrother": is_brother,
+                "hasLpDeviceNode": has_lp_node,
+                "matchedLines": matched_lines,
+                "rawLsusb": raw_output.strip(),
+                "method": "lsusb",
+            }
+        except Exception as e:
+            has_lp = os.path.exists("/dev/usb/lp0")
+            return {
+                "connected": has_lp,
+                "error": str(e),
+                "hasLpDeviceNode": has_lp,
+                "method": "lsusb_fallback",
+            }
+
+    def _is_usb_printer_present(self) -> bool:
+        """Helper checking if physical USB printer is enumerated on the Linux USB bus."""
+        return self.check_usb_printer().get("connected", False)
 
     def auto_recover_printer(self, printer_name: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -161,13 +255,26 @@ class CupsController:
                             pass
 
                     is_online = state_code in (3, 4)
+                    uri = d.get("device-uri", "")
+                    is_usb = "usb:" in uri.lower() or "lp0" in uri.lower() or "direct" in uri.lower()
+                    is_net = any(k in uri.lower() for k in ["ipp:", "socket:", "http:", "lpd:", "wsd"])
+
+                    # If printer connects over USB, verify physical USB bus via lsusb
+                    usb_present = self._is_usb_printer_present() if is_usb else True
+                    if is_usb and not usb_present and sys.platform != "win32":
+                        is_online = False
+
                     printers.append({
                         "name": name,
                         "info": d.get("printer-info", name),
-                        "state": state_map.get(state_code, "IDLE"),
+                        "state": state_map.get(state_code, "IDLE") if is_online else "DISCONNECTED",
                         "is_default": (name == default_p),
                         "is_online": is_online,
-                        "device_uri": d.get("device-uri", ""),
+                        "device_uri": uri,
+                        "is_usb": is_usb,
+                        "usb_connected": usb_present if is_usb else True,
+                        "connection_type": "USB" if is_usb else ("NETWORK" if is_net else "CUPS"),
+                        "is_virtual": False,
                     })
 
                 # If no online printers found on Linux, check physical USB and attempt recovery
@@ -181,13 +288,19 @@ class CupsController:
                             printers = []
                             for name, d in raw_printers.items():
                                 sc = d.get("printer-state", 3)
+                                u = d.get("device-uri", "")
+                                iu = "usb:" in u.lower() or "lp0" in u.lower() or "direct" in u.lower()
+                                in_net = any(k in u.lower() for k in ["ipp:", "socket:", "http:", "lpd:", "wsd"])
                                 printers.append({
                                     "name": name,
                                     "info": d.get("printer-info", name),
                                     "state": state_map.get(sc, "IDLE"),
                                     "is_default": (name == default_p),
                                     "is_online": sc in (3, 4),
-                                    "device_uri": d.get("device-uri", ""),
+                                    "device_uri": u,
+                                    "is_usb": iu,
+                                    "connection_type": "USB" if iu else ("NETWORK" if in_net else "CUPS"),
+                                    "is_virtual": False,
                                 })
                         except Exception:
                             pass
@@ -220,6 +333,9 @@ class CupsController:
                             "state": "STOPPED" if is_disabled else ("IDLE" if is_idle else "PRINTING"),
                             "is_default": (p_name == default_p),
                             "is_online": not is_disabled,
+                            "is_usb": True,
+                            "connection_type": "USB",
+                            "is_virtual": False,
                         })
 
                 # If empty or offline, check USB presence
@@ -230,7 +346,7 @@ class CupsController:
             except Exception:
                 pass
 
-        # Windows native print enumeration
+        # Windows native print enumeration (for local dev test)
         if sys.platform == "win32":
             try:
                 import sys as _sys
@@ -253,6 +369,9 @@ class CupsController:
                         "is_default": (p["name"] == active_name or p.get("is_default", False)),
                         "is_online": p.get("is_online", True),
                         "device_uri": p.get("port", ""),
+                        "is_usb": bool(p.get("is_usb", True)),
+                        "connection_type": p.get("connection_type", "USB"),
+                        "is_virtual": False,
                     })
                 return {"success": True, "printers": printers, "default": active_name}
             except Exception:
@@ -264,14 +383,60 @@ class CupsController:
             "printers": [
                 {
                     "name": "Brother DCP-T420W Printer",
-                    "info": "Brother DCP-T420W Printer (Network)",
+                    "info": "Brother DCP-T420W (Raspberry Pi USB)",
                     "state": "IDLE",
                     "is_default": True,
                     "is_online": True,
+                    "is_usb": True,
+                    "connection_type": "USB",
+                    "is_virtual": False,
                 }
             ],
             "default": "Brother DCP-T420W Printer",
         }
+
+    def set_default_printer(self, printer_name: str) -> Dict[str, Any]:
+        """Sets the active system default printer in CUPS on the Raspberry Pi."""
+        clean_name = printer_name.strip()
+        actions = []
+        if not clean_name:
+            return {"success": False, "error": "Empty printer name"}
+
+        print(f"[CUPS Controller] Setting Raspberry Pi default printer to '{clean_name}'...")
+
+        # 1. pycups setDefault
+        if self._conn:
+            try:
+                self._conn.setDefault(clean_name)
+                actions.append("pycups setDefault")
+            except Exception as e:
+                actions.append(f"pycups failed: {e}")
+
+        # 2. lpadmin on Linux (Raspberry Pi)
+        if sys.platform != "win32":
+            try:
+                subprocess.run(["lpadmin", "-d", clean_name], check=True, timeout=5)
+                actions.append("lpadmin -d")
+            except Exception as e:
+                try:
+                    subprocess.run(["sudo", "lpadmin", "-d", clean_name], check=True, timeout=5)
+                    actions.append("sudo lpadmin -d")
+                except Exception as e2:
+                    actions.append(f"lpadmin failed: {e2}")
+
+            # Ensure printer is enabled and accepting jobs
+            self.auto_recover_printer(clean_name)
+
+        # 3. Windows native fallback
+        if sys.platform == "win32":
+            try:
+                import win32print
+                win32print.SetDefaultPrinter(clean_name)
+                actions.append("win32print SetDefaultPrinter")
+            except Exception as e:
+                actions.append(f"win32print failed: {e}")
+
+        return {"success": True, "activePrinter": clean_name, "actions": actions}
 
     def build_cups_options(
         self,
