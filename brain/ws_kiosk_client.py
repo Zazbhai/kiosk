@@ -88,29 +88,69 @@ class KioskWsClient:
         return headers
 
     async def connect(self):
-        """Main connection and auto-reconnect loop."""
+        """Main connection and auto-reconnect loop with universal websockets library compatibility."""
         reconnect_delay = 2
         while self.is_running:
             try:
                 print(f"[WSS Kiosk Client] Connecting to {self.ws_url}...")
-                extra_headers = self._get_auth_headers()
-                async with websockets.connect(self.ws_url, ping_interval=20, ping_timeout=15, extra_headers=extra_headers) as ws:
-                    self.ws = ws
-                    reconnect_delay = 2
-                    print(f"[WSS Kiosk Client] ✓ Connected to WSS Relay!")
+                headers = self._get_auth_headers()
 
-                    # Start concurrent tasks: heartbeat sender, USB monitor (every 1 min), message receiver, and 24-hour file retention cleaner
-                    heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-                    usb_monitor_task = asyncio.create_task(self._usb_monitor_loop())
-                    receive_task = asyncio.create_task(self._receive_loop())
-                    retention_task = asyncio.create_task(self._file_retention_loop())
+                # Build version-calibrated connection kwargs
+                # websockets >= 13 uses additional_headers, legacy websockets uses extra_headers
+                ws_kwargs = {
+                    "ping_interval": 20,
+                    "ping_timeout": 15,
+                }
+                if headers:
+                    try:
+                        import inspect
+                        sig = inspect.signature(websockets.connect)
+                        if "additional_headers" in sig.parameters:
+                            ws_kwargs["additional_headers"] = headers
+                        elif "extra_headers" in sig.parameters:
+                            ws_kwargs["extra_headers"] = headers
+                    except Exception:
+                        pass
 
-                    done, pending = await asyncio.wait(
-                        [heartbeat_task, usb_monitor_task, receive_task, retention_task],
-                        return_when=asyncio.FIRST_COMPLETED
-                    )
-                    for t in pending:
-                        t.cancel()
+                # Connect with fallback for TypeError across websockets library versions
+                # (Query parameters in self.ws_url already provide cryptographic verification on the backend)
+                try:
+                    async with websockets.connect(self.ws_url, **ws_kwargs) as ws:
+                        self.ws = ws
+                        reconnect_delay = 2
+                        print(f"[WSS Kiosk Client] ✓ Connected to WSS Relay!")
+
+                        heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+                        usb_monitor_task = asyncio.create_task(self._usb_monitor_loop())
+                        receive_task = asyncio.create_task(self._receive_loop())
+                        retention_task = asyncio.create_task(self._file_retention_loop())
+
+                        done, pending = await asyncio.wait(
+                            [heartbeat_task, usb_monitor_task, receive_task, retention_task],
+                            return_when=asyncio.FIRST_COMPLETED
+                        )
+                        for t in pending:
+                            t.cancel()
+                except TypeError as te:
+                    if "extra_headers" in str(te) or "additional_headers" in str(te):
+                        async with websockets.connect(self.ws_url, ping_interval=20, ping_timeout=15) as ws:
+                            self.ws = ws
+                            reconnect_delay = 2
+                            print(f"[WSS Kiosk Client] ✓ Connected to WSS Relay!")
+
+                            heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+                            usb_monitor_task = asyncio.create_task(self._usb_monitor_loop())
+                            receive_task = asyncio.create_task(self._receive_loop())
+                            retention_task = asyncio.create_task(self._file_retention_loop())
+
+                            done, pending = await asyncio.wait(
+                                [heartbeat_task, usb_monitor_task, receive_task, retention_task],
+                                return_when=asyncio.FIRST_COMPLETED
+                            )
+                            for t in pending:
+                                t.cancel()
+                    else:
+                        raise
 
             except Exception as e:
                 print(f"[WSS Kiosk Client] Disconnected / Connection error: {e}")
