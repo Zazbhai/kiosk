@@ -5,9 +5,6 @@ export interface PrinterStatusInfo {
   printerStatus: string
   reason: string
   detail: string
-  isDismissed: boolean
-  isTestMode: boolean
-  dismiss: () => void
   checkNow: () => void
 }
 
@@ -18,15 +15,6 @@ export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: stri
   const [printerStatus, setPrinterStatus] = useState(forceOffline ? 'OFFLINE' : 'READY')
   const [reason, setReason] = useState('Printer is currently offline or rebooting after a power cycle.')
   const [detail, setDetail] = useState('The station is auto-recovering and will resume automatically as soon as the printer is ready.')
-  const [isDismissed, setIsDismissed] = useState(false)
-
-  const isTestMode = (() => {
-    if (urlParams.get('test') === '1' || urlParams.get('mode') === 'test') return true
-    const envMode = (import.meta.env.VITE_PRINT_MODE || '').toLowerCase()
-    if (envMode === 'test') return true
-    const sessionMode = (sessionStorage.getItem('pb_print_mode') || '').toLowerCase()
-    return sessionMode === 'test'
-  })()
 
   const apiUrl = (
     customApiUrl ||
@@ -64,7 +52,6 @@ export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: stri
             return
           } else {
             setIsOffline(false)
-            setIsDismissed(false)
             return
           }
         }
@@ -90,7 +77,7 @@ export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: stri
             pStatus === 'STOPPED' ||
             Boolean(k.isOffline)
 
-          if (isProblem && !isTestMode) {
+          if (isProblem) {
             setIsOffline(true)
             setReason(
               k.printerStatus === 'OFFLINE'
@@ -101,7 +88,6 @@ export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: stri
             return
           } else {
             setIsOffline(false)
-            setIsDismissed(false)
             return
           }
         }
@@ -114,13 +100,12 @@ export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: stri
         const detRes = await fetch(`${apiUrl}/api/print/detect`, { signal: AbortSignal.timeout(3000) })
         if (detRes.ok) {
           const detData = await detRes.json()
-          if (!detData.isOnline && !isTestMode) {
+          if (!detData.isOnline) {
             setIsOffline(true)
             setPrinterStatus('OFFLINE')
             return
           } else {
             setIsOffline(false)
-            setIsDismissed(false)
             return
           }
         }
@@ -128,7 +113,7 @@ export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: stri
     } finally {
       checkingRef.current = false
     }
-  }, [apiUrl, kioskId, isTestMode])
+  }, [apiUrl, kioskId, forceOffline])
 
   useEffect(() => {
     checkStatus()
@@ -138,18 +123,11 @@ export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: stri
     return () => clearInterval(timer)
   }, [checkStatus, isOffline])
 
-  const dismiss = useCallback(() => {
-    setIsDismissed(true)
-  }, [])
-
   return {
     isOffline,
     printerStatus,
     reason,
     detail,
-    isDismissed,
-    isTestMode,
-    dismiss,
     checkNow: checkStatus,
   }
 }

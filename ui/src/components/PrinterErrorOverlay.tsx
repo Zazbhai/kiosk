@@ -1,7 +1,6 @@
-import React, { useEffect, useState, useRef } from 'react'
+import React from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'motion/react'
-import { X } from '@phosphor-icons/react'
 import './PrinterErrorOverlay.css'
 
 export interface PrinterErrorOverlayProps {
@@ -11,8 +10,6 @@ export interface PrinterErrorOverlayProps {
   detail?: string
   kioskId?: string
   kioskName?: string
-  isTestMode?: boolean
-  onDismiss?: () => void
 }
 
 export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
@@ -22,40 +19,7 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
   detail,
   kioskId = 'PB-001',
   kioskName,
-  isTestMode: propIsTestMode,
-  onDismiss,
 }) => {
-  // Determine if running in TEST mode
-  const [isTestMode, setIsTestMode] = useState<boolean>(() => {
-    if (typeof propIsTestMode === 'boolean') return propIsTestMode
-    const urlParams = new URLSearchParams(window.location.search)
-    if (urlParams.get('test') === '1' || urlParams.get('mode') === 'test') return true
-    const envMode = (import.meta.env.VITE_PRINT_MODE || '').toLowerCase()
-    if (envMode === 'test') return true
-    const sessionMode = (sessionStorage.getItem('pb_print_mode') || '').toLowerCase()
-    return sessionMode === 'test'
-  })
-
-  // Admin secret 5-tap bypass for shop testing without hardware
-  const tapCountRef = useRef(0)
-  const lastTapRef = useRef(0)
-  const handleSecretTap = () => {
-    const now = Date.now()
-    if (now - lastTapRef.current > 1500) {
-      tapCountRef.current = 1
-    } else {
-      tapCountRef.current += 1
-    }
-    lastTapRef.current = now
-
-    if (tapCountRef.current >= 5) {
-      tapCountRef.current = 0
-      if (onDismiss) {
-        onDismiss()
-      }
-    }
-  }
-
   if (!isOpen) return null
 
   const displayTitle = title || 'PRINTER OFFLINE'
@@ -75,28 +39,14 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
         aria-labelledby="oopss-title"
       >
         {/* Top-left station info badge */}
-        <div className="oopss-station-badge" onClick={handleSecretTap}>
+        <div className="oopss-station-badge">
           <span className="oopss-station-dot" />
           <span>{kioskId} {kioskName ? `• ${kioskName}` : ''}</span>
         </div>
 
-        {/* Close Button — Rendered when test mode is active */}
-        {(isTestMode || Boolean(onDismiss)) && (
-          <button
-            type="button"
-            className="oopss-test-close-btn"
-            onClick={onDismiss}
-            title="Dismiss error (Test Mode only)"
-            aria-label="Dismiss error (Test Mode only)"
-          >
-            <span className="oopss-test-badge">TEST MODE</span>
-            <X size={16} weight="bold" />
-          </button>
-        )}
-
         <div id="error-text">
           {/* Full-Page Animated Sad Face Illustration */}
-          <div className="oopss-img-wrap" onClick={handleSecretTap}>
+          <div className="oopss-img-wrap">
             <img
               src="/sad404.svg"
               onError={(e) => {
@@ -107,7 +57,7 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
           </div>
 
           {/* Headline */}
-          <span id="oopss-title" className="oopss-title" onClick={handleSecretTap}>
+          <span id="oopss-title" className="oopss-title">
             {displayTitle}
           </span>
 
@@ -126,7 +76,6 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
             <span className="oopss-live-dot" />
             <span className="oopss-live-text">Monitoring hardware connection & auto-recovering…</span>
           </div>
-
         </div>
       </motion.div>
     </AnimatePresence>,
@@ -135,3 +84,4 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
 }
 
 export default PrinterErrorOverlay
+

@@ -1,10 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PrinterErrorOverlay } from '../components/PrinterErrorOverlay'
 
 export default function PrinterOfflineScreen() {
   const navigate = useNavigate()
-  const [isDismissed, setIsDismissed] = useState(false)
 
   // Polling to see if printer recovers
   useEffect(() => {
@@ -43,14 +42,10 @@ export default function PrinterOfflineScreen() {
 
   return (
     <PrinterErrorOverlay
-      isOpen={!isDismissed}
+      isOpen={true}
       title="PRINTER OFFLINE"
       reason="The printer is currently offline or rebooting after a power cycle."
       detail="The station is auto-recovering and will resume automatically as soon as the printer is ready."
-      onDismiss={() => {
-        setIsDismissed(true)
-        navigate('/')
-      }}
     />
   )
 }

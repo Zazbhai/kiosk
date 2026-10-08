@@ -31,7 +31,7 @@ export default function App() {
     import.meta.env.VITE_KIOSK_NAME ||
     'Station 1'
 
-  const { isOffline, reason, detail, isDismissed, dismiss, isTestMode } = usePrinterStatus(kioskId)
+  const { isOffline, reason, detail } = usePrinterStatus(kioskId)
 
   return (
     <>
@@ -56,14 +56,12 @@ export default function App() {
 
       {/* Global Printer Offline Overlay — Displays when printer is disconnected or cold-booting */}
       <PrinterErrorOverlay
-        isOpen={isOffline && !isDismissed}
+        isOpen={isOffline}
         title="PRINTER OFFLINE"
         reason={reason}
         detail={detail}
         kioskId={kioskId}
         kioskName={kioskName}
-        isTestMode={isTestMode}
-        onDismiss={dismiss}
       />
     </>
   )
