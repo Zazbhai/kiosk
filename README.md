@@ -177,19 +177,29 @@ python test_hardware.py --print
 
 ---
 
-## 🖥️ Touchscreen Kiosk Mode & Auto-Boot
+## 🖥️ Autonomous Kiosk Appliance (Zero-Desktop & Custom Bootloader)
 
-To configure the Raspberry Pi to boot directly into fullscreen kiosk mode without user intervention:
+To configure the Raspberry Pi as a commercial-grade kiosk appliance where **the desktop is never shown** and boots with a custom PrintBooth bootloader splash:
 
+### 1-Click Master Appliance Setup:
 ```bash
-bash scripts/configure_kiosk_mode.sh
+sudo bash scripts/setup_kiosk_appliance.sh
 ```
 
-This:
-- Enables system desktop autologin.
-- Hides the mouse cursor after 0.5s of inactivity using `unclutter`.
-- Disables screen saver, DPMS, and blanking (`xset s off -dpms`).
-- Registers `printbooth-display.service` to launch Chromium in kiosk mode (`--kiosk --disable-pinch --overscroll-history-navigation=0`).
+This single command configures:
+1. **Silent Custom Bootloader & Splash (`setup_custom_bootloader.sh`)**:
+   - Disables the 4-color rainbow splash square (`disable_splash=1`).
+   - Silences all Linux kernel and dmesg scrolling text (`console=tty3 quiet loglevel=3 logo.nologo`).
+   - Suppresses blinking cursor (`vt.global_cursor_default=0`).
+   - Installs branded PrintBooth Obsidian (`#06110D`) Plymouth bootloader theme and early framebuffer splash.
+2. **Zero-Desktop Dedicated Kiosk Session (`setup_zero_desktop.sh`)**:
+   - Replaces the default desktop environment with a dedicated standalone Openbox session.
+   - Completely removes taskbars (`lxpanel`, `wf-panel-pi`), desktop icons, wallpapers, and right-click menus.
+   - Paints an instant obsidian black backdrop (`#06110D`) so the desktop is **never exposed** even for 1 frame.
+3. **Dynamic Self-Healing Kiosk Watchdog (`start_kiosk.sh`)**:
+   - Automatically cleans Chromium crash flags (`SingletonLock`, `--disable-session-crashed-bubble`).
+   - Supervises Chromium in GPU-accelerated kiosk mode and restarts it in <1s if closed or interrupted.
+   - Flushes CUPS hardware queues on startup (`cancel -a -x`) to ensure zero lingering print jobs.
 
 To start the display manually at any time:
 ```bash

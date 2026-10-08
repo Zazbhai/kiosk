@@ -23,22 +23,29 @@ current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
 
-from config import KIOSK_ID, KIOSK_NAME, API_URL, PRINTER_NAME, TEMP_JOBS_DIR
+from config import KIOSK_ID, KIOSK_NAME, KIOSK_SECRET, API_URL, PRINTER_NAME, TEMP_JOBS_DIR
 from hardware_monitor import HardwareMonitor
 from cups_controller import CupsController
+from order_tracker import (
+    load_processed_orders,
+    mark_order_processed,
+    is_order_processed,
+    purge_temp_job_files,
+)
 
 
 class KioskWsClient:
     def __init__(self, kiosk_id: str = KIOSK_ID, api_url: str = API_URL):
         self.kiosk_id = kiosk_id.upper()
+        self.kiosk_secret = KIOSK_SECRET
         self.api_url = api_url.rstrip("/")
         
-        # Derive WS URL from HTTP API URL
+        # Derive WS URL from HTTP API URL with cryptographic device authentication
         # e.g. http://localhost:5000/api -> ws://localhost:5000/ws
         base_host = self.api_url.replace("http://", "ws://").replace("https://", "wss://")
         if base_host.endswith("/api"):
             base_host = base_host[:-4]
-        self.ws_url = f"{base_host}/ws?role=kiosk&kioskId={self.kiosk_id}"
+        self.ws_url = f"{base_host}/ws?role=kiosk&kioskId={self.kiosk_id}&secret={self.kiosk_secret}"
         
         self.cups = CupsController()
         self.monitor = HardwareMonitor(self.cups)
@@ -47,9 +54,13 @@ class KioskWsClient:
         self.is_running = True
         self.print_callbacks = []
         self.staged_jobs = {}  # Indexed by order_id and releasePin
-        self.printed_orders = set()
+        self.printed_orders = load_processed_orders()
         self._was_printer_online = False
         self._last_usb_connected: Optional[bool] = None
+
+        # Clean boot: Flush stale CUPS hardware queue and orphaned files
+        self.cups.purge_all_jobs(self.printer_name)
+        purge_temp_job_files()
 
         hw_init = self.monitor.get_hardware_status()
         init_printer = hw_init.get("printerName") or hw_init.get("activePrinter") or self.printer_name
@@ -66,24 +77,36 @@ class KioskWsClient:
         print(f"  WSS Relay        : {self.ws_url}")
         print("════════════════════════════════════════════════════════\n")
 
+    def _get_auth_headers(self):
+        headers = {
+            "X-Kiosk-Id": self.kiosk_id,
+            "Accept": "application/json",
+        }
+        if self.kiosk_secret:
+            headers["X-Kiosk-Secret"] = self.kiosk_secret
+            headers["Authorization"] = f"Bearer {self.kiosk_secret}"
+        return headers
+
     async def connect(self):
         """Main connection and auto-reconnect loop."""
         reconnect_delay = 2
         while self.is_running:
             try:
                 print(f"[WSS Kiosk Client] Connecting to {self.ws_url}...")
-                async with websockets.connect(self.ws_url, ping_interval=20, ping_timeout=15) as ws:
+                extra_headers = self._get_auth_headers()
+                async with websockets.connect(self.ws_url, ping_interval=20, ping_timeout=15, extra_headers=extra_headers) as ws:
                     self.ws = ws
                     reconnect_delay = 2
                     print(f"[WSS Kiosk Client] ✓ Connected to WSS Relay!")
 
-                    # Start concurrent tasks: heartbeat sender, USB monitor (every 1 min), and message receiver
+                    # Start concurrent tasks: heartbeat sender, USB monitor (every 1 min), message receiver, and 24-hour file retention cleaner
                     heartbeat_task = asyncio.create_task(self._heartbeat_loop())
                     usb_monitor_task = asyncio.create_task(self._usb_monitor_loop())
                     receive_task = asyncio.create_task(self._receive_loop())
+                    retention_task = asyncio.create_task(self._file_retention_loop())
 
                     done, pending = await asyncio.wait(
-                        [heartbeat_task, usb_monitor_task, receive_task],
+                        [heartbeat_task, usb_monitor_task, receive_task, retention_task],
                         return_when=asyncio.FIRST_COMPLETED
                     )
                     for t in pending:
@@ -178,6 +201,28 @@ class KioskWsClient:
                 print(f"[WSS Kiosk Client] [1-min USB Monitor] Error probing USB printer: {e}")
 
             await asyncio.sleep(60)
+
+    async def _file_retention_loop(self):
+        """
+        Periodically sweeps local temporary jobs directory every 15 minutes.
+        Permanently purges any staged files older than 24 hours (86,400 seconds).
+        """
+        while self.is_running and self.ws:
+            try:
+                cutoff = time.time() - 86400  # 24 hours
+                if TEMP_JOBS_DIR.exists():
+                    for item in TEMP_JOBS_DIR.iterdir():
+                        if item.is_file() and item.name not in (".spool_claims.lock", ".spool_claims.json"):
+                            try:
+                                if item.stat().st_mtime < cutoff:
+                                    item.unlink()
+                                    print(f"[WSS Kiosk Client] 🧹 Purged local print file exceeding 24h retention: {item.name}")
+                            except Exception:
+                                pass
+            except Exception as e:
+                print(f"[WSS Kiosk Client] Error in file retention sweep: {e}")
+
+            await asyncio.sleep(15 * 60)
 
     async def _receive_loop(self):
         """Processes real-time events relayed from the API."""
@@ -287,19 +332,22 @@ class KioskWsClient:
 
                     if payload.get("dispatchedLocally") and not payload.get("forceKioskPrint"):
                         print(f"[WSS Kiosk Client] ℹ Order {order_id} handled directly by host engine. Skipping duplicate spool.")
-                        self.printed_orders.update(all_ids)
+                        mark_order_processed(order_id, aliases)
+                        self.printed_orders = load_processed_orders()
                         continue
 
-                    if any(i in self.printed_orders for i in all_ids):
+                    if is_order_processed(order_id, aliases) or any(i in self.printed_orders for i in all_ids):
                         print(f"[WSS Kiosk Client] ℹ Order {order_id} already spooled. Skipping duplicate spool.")
                         continue
 
                     if not self.cups.claim_order_for_spooling(order_id, aliases):
                         print(f"[WSS Kiosk Client] ℹ Order {order_id} already claimed/spooled. Skipping duplicate spool.")
-                        self.printed_orders.update(all_ids)
+                        mark_order_processed(order_id, aliases)
+                        self.printed_orders = load_processed_orders()
                         continue
 
-                    self.printed_orders.update(all_ids)
+                    mark_order_processed(order_id, aliases)
+                    self.printed_orders = load_processed_orders()
                     merged_payload = {**staged_job, **payload}
                     asyncio.create_task(self._handle_print_order(order_id, merged_payload))
 
@@ -369,7 +417,11 @@ class KioskWsClient:
         try:
             print(f"[WSS Kiosk Client] ⚡ Pre-fetching document from {file_url}...")
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, urllib.request.urlretrieve, file_url, str(local_target))
+            def _download_with_auth():
+                dl_req = urllib.request.Request(file_url, headers=self._get_auth_headers())
+                with urllib.request.urlopen(dl_req, timeout=25) as resp, open(local_target, "wb") as f:
+                    f.write(resp.read())
+            await loop.run_in_executor(None, _download_with_auth)
             print(f"[WSS Kiosk Client] ✓ Pre-fetched {file_name} ({local_target.stat().st_size} bytes)")
         except Exception as e:
             print(f"[WSS Kiosk Client] Pre-fetch notice: {e}")
@@ -395,7 +447,9 @@ class KioskWsClient:
         order_number = payload.get("orderNumber")
         release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")
         aliases = [a for a in [order_number, release_pin] if a and a != order_id]
-        self.printed_orders.update({order_id} | set(aliases))
+        
+        mark_order_processed(order_id, aliases)
+        self.printed_orders = load_processed_orders()
 
         print(f"\n[WSS Kiosk Client] 🖨 Starting Print for Order {order_id}: {file_name}")
         print(f"  Settings: {copies} copies | {colour_mode} | {duplex} | {paper_size} | Pages: {page_range} | Scaling: {scaling} | N-Up: {pages_per_sheet} | Custom Colors: {bool(page_colours)}")
@@ -474,6 +528,14 @@ class KioskWsClient:
                 print(f"[WSS Kiosk Client] ✓ Print complete relayed for Order {order_id}!")
             except Exception:
                 pass
+
+        # Privacy Enforcement: Immediately and permanently delete user's printed document
+        try:
+            if local_target.exists():
+                local_target.unlink()
+                print(f"[WSS Kiosk Client] 🗑 PERMANENTLY DELETED user document for Order {order_id}: {local_target.name}")
+        except Exception as del_err:
+            print(f"[WSS Kiosk Client] Warning deleting local document {local_target}: {del_err}")
 
 
 

@@ -25,3 +25,7 @@ HEARTBEAT_INTERVAL_SECONDS = int(os.environ.get("HEARTBEAT_INTERVAL_SECONDS", "1
 
 TEMP_JOBS_DIR = Path(os.environ.get("TEMP_JOBS_DIR", "/tmp/printbooth_jobs" if os.name != "nt" else "./temp_jobs"))
 TEMP_JOBS_DIR.mkdir(parents=True, exist_ok=True)
+
+# Persistent data directory that survives Pi reboots (stored in project root or /var/lib/printbooth, NOT in /tmp)
+DATA_DIR = Path(os.environ.get("DATA_DIR", current_dir / "data"))
+DATA_DIR.mkdir(parents=True, exist_ok=True)

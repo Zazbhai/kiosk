@@ -119,6 +119,27 @@ export default function PinReleaseScreen() {
 
   const verifyOtp = useCallback(
     async (codeToVerify: string) => {
+      // 0. Instant local guard: Reject if PIN was already used on this station
+      const localUsed: string[] = (() => {
+        try {
+          return JSON.parse(localStorage.getItem('pb_used_pins') || '[]')
+        } catch {
+          return []
+        }
+      })()
+
+      if (localUsed.includes(codeToVerify)) {
+        setShake(true)
+        buzz([60, 40, 60])
+        setMsg({ text: 'This PIN has already been used and is no longer valid.', isErr: true })
+        setTimeout(() => {
+          setShake(false)
+          setPin('')
+          setBusy(false)
+        }, 1500)
+        return
+      }
+
       setBusy(true)
       setMsg({ text: 'Verifying code with station spooler…', isErr: false })
 
@@ -141,6 +162,12 @@ export default function PinReleaseScreen() {
         }
 
         if (data.success || data.valid) {
+          // Permanently record in local used PIN list
+          try {
+            const updated = [...localUsed, codeToVerify].slice(-200)
+            localStorage.setItem('pb_used_pins', JSON.stringify(updated))
+          } catch {}
+
           setIsOk(true)
           buzz([30, 40, 60])
           setMsg({ text: '✓ Code verified successfully!', isErr: false })
@@ -172,15 +199,16 @@ export default function PinReleaseScreen() {
           return
         }
 
-        // Invalid code
+        // Invalid or already used code
         setShake(true)
         buzz([60, 40, 60])
-        setMsg({ text: 'Invalid OTP', isErr: true })
+        const errorText = data?.error || 'Invalid OTP'
+        setMsg({ text: errorText, isErr: true })
         setTimeout(() => {
           setShake(false)
           setPin('')
           setBusy(false)
-        }, 650)
+        }, 1500)
       } catch (err: any) {
         setShake(true)
         buzz([60, 40, 60])

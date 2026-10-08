@@ -45,6 +45,12 @@ from config import (
 )
 from cups_controller import CupsController
 from hardware_monitor import HardwareMonitor
+from order_tracker import (
+    load_processed_orders,
+    mark_order_processed,
+    is_order_processed,
+    purge_temp_job_files,
+)
 
 
 class KioskBrainDaemon:
@@ -57,9 +63,15 @@ class KioskBrainDaemon:
         self.cups = CupsController()
         self.monitor = HardwareMonitor(self.cups)
         self.last_heartbeat = 0
-        self.history_file = TEMP_JOBS_DIR / "printed_orders_history.json"
-        self.processed_orders = self._load_processed_history()
+        self.processed_orders = load_processed_orders()
         self._was_printer_online = False
+
+        # BOOT PURGE 1: Clear any lingering ghost jobs in the CUPS hardware spooler from previous boot/sessions
+        print("[Kiosk Brain] 🧹 Sanitizing CUPS hardware queue on startup (cancelling all ghost jobs)...")
+        self.cups.purge_all_jobs(self.printer_name)
+
+        # BOOT PURGE 2: Securely purge any orphaned temporary document files from disk
+        purge_temp_job_files()
 
         print("========================================================")
         print(f"  PrintBooth Kiosk Brain Daemon -- Initialized")
@@ -68,7 +80,7 @@ class KioskBrainDaemon:
         print(f"  Backend API : {self.api_url}")
         print(f"  Printer Target: {self.printer_name}")
         print(f"  Auth Status : {'Secured (Token Loaded)' if self.kiosk_secret else 'Warning (No KIOSK_SECRET configured)'}")
-        print(f"  Printed History: {len(self.processed_orders)} order(s) already completed")
+        print(f"  Printed History: {len(self.processed_orders)} order(s) already completed (persistent)")
         print("========================================================\n")
 
         self._ensure_ws_client()
@@ -132,20 +144,11 @@ class KioskBrainDaemon:
         return headers
 
     def _load_processed_history(self) -> set:
-        try:
-            if self.history_file.exists():
-                data = json.loads(self.history_file.read_text(encoding="utf-8"))
-                return set(data)
-        except Exception:
-            pass
-        return set()
+        return load_processed_orders()
 
-    def _mark_order_processed(self, order_id: str):
-        self.processed_orders.add(order_id)
-        try:
-            self.history_file.write_text(json.dumps(list(self.processed_orders)), encoding="utf-8")
-        except Exception:
-            pass
+    def _mark_order_processed(self, order_id: str, aliases: Optional[List[str]] = None):
+        mark_order_processed(order_id, aliases)
+        self.processed_orders = load_processed_orders()
 
     def send_heartbeat(self):
         """Sends live hardware telemetry to the PrintBooth backend."""
@@ -216,66 +219,28 @@ class KioskBrainDaemon:
         all_ids = {order_id} | set(aliases)
         order_status = (order.get("status") or "").upper()
 
-        # Skip already completed or already printed jobs
-        if not order_id or any(i in self.processed_orders for i in all_ids) or order_status in ("PRINTED", "COMPLETED", "READY_FOR_COLLECTION"):
+        if not order_id or is_order_processed(order_id, aliases):
             return
 
-        file_name = order.get("fileName", "print_document.pdf")
-        
-        # Deep extraction of all print settings configured by customer
-        print_settings = order.get("printSettings") or {}
-        if isinstance(print_settings, str):
-            try:
-                print_settings = json.loads(print_settings)
-            except Exception:
-                print_settings = {}
+        # Skip already completed or already printed jobs or burned PINs
+        if (
+            order_status in ("PRINTED", "COMPLETED", "READY_FOR_COLLECTION")
+            or order.get("isPinUsed")
+            or order.get("pinUsedAt")
+        ):
+            self._mark_order_processed(order_id, aliases)
+            return
 
-        copies = int(order.get("copies") or print_settings.get("copies") or 1)
-        raw_col = str(
-            order.get("colourMode")
-            or order.get("colour")
-            or print_settings.get("colour")
-            or print_settings.get("colourMode")
-            or "BW"
-        ).upper().replace("&", "")
-        colour_mode = "COLOUR" if raw_col in ("COLOUR", "COLOR") else "BW"
-        duplex = str(
-            order.get("duplex")
-            or print_settings.get("duplex")
-            or "SINGLE"
-        ).upper()
-        paper_size = str(
-            order.get("paperSize")
-            or print_settings.get("paperSize")
-            or "A4"
-        ).upper()
-        page_range = str(
-            order.get("pageRange")
-            or order.get("pages")
-            or print_settings.get("pages")
-            or print_settings.get("pageRange")
-            or "ALL"
-        ).strip()
-        scaling = str(
-            order.get("scaling")
-            or print_settings.get("scaling")
-            or "FIT"
-        ).strip()
-        pages_per_sheet = int(
-            order.get("pagesPerSheet")
-            or print_settings.get("pagesPerSheet")
-            or 1
-        )
+        # MANDATORY CORRESPONDING PIN ENFORCEMENT:
+        # Every document must have a corresponding PIN to be eligible to print.
+        # If an order has NO PIN or PIN was already unset/used, DO NOT print!
+        if not release_pin:
+            self._mark_order_processed(order_id, aliases)
+            return
 
-        # Resolve document download URL (always download from configured backend API)
-        local_target = TEMP_JOBS_DIR / f"{order_id}_{file_name}"
-        download_url = f"{self.api_url}/print/download/{order_id}"
-
-        release_pin = order.get("releasePin") or order.get("otp") or order.get("pickupCode")
-
-        # STRICT OTP ENFORCEMENT:
-        # If an order has a release_pin and is NOT verified yet, prefetch/stage the file and wait!
-        if release_pin and order_status not in ("PRINTING", "VERIFIED"):
+        # If user has NOT entered their corresponding PIN on the touchscreen yet:
+        # Wait until order_status is VERIFIED! DO NOT auto-print.
+        if order_status != "VERIFIED":
             if not local_target.exists():
                 print(f"[Kiosk Brain] 📥 Staged Order {order_id} (Awaiting customer to enter PIN {release_pin} on kiosk)")
                 try:
@@ -290,12 +255,11 @@ class KioskBrainDaemon:
         # Atomic cross-process spool claiming: prevents duplicate prints if WSS client is running!
         if not self.cups.claim_order_for_spooling(order_id, aliases):
             print(f"[Kiosk Brain] ℹ Order {order_id} already claimed/spooled by WSS client. Skipping duplicate print.")
-            for i in all_ids:
-                self._mark_order_processed(i)
+            self._mark_order_processed(order_id, aliases)
             return
 
-        # PIN is verified (status is PRINTING/VERIFIED) or no PIN required -> Proceed with physical print
-        print(f"\n[Kiosk Brain] 🖨 PIN Verified / Authorized! Starting Print for Order {order_id} ({file_name})")
+        # PIN is verified (status is VERIFIED) -> Proceed with physical print
+        print(f"\n[Kiosk Brain] 🖨 PIN Verified on Kiosk! Starting Print for Order {order_id} ({file_name})")
 
         if not local_target.exists() or local_target.stat().st_size == 0:
             try:
@@ -332,10 +296,16 @@ class KioskBrainDaemon:
 
         if result.get("success"):
             print(f"[Kiosk Brain] [OK] Print dispatched successfully via {result.get('printer')}!")
-            for i in all_ids:
-                self._mark_order_processed(i)
+            self._mark_order_processed(order_id, aliases)
             self.monitor.estimated_paper = max(0, self.monitor.estimated_paper - copies)
             self.notify_order_completed(order_id)
+            # PRIVACY & ZERO-LEFTOVER ENFORCEMENT: Immediately purge customer file from disk
+            if local_target.exists():
+                try:
+                    local_target.unlink()
+                    print(f"[Kiosk Brain] 🛡 Securely deleted printed document from disk: {local_target.name}")
+                except Exception as e:
+                    print(f"[Kiosk Brain] Notice deleting printed file: {e}")
         else:
             print(f"[Kiosk Brain] [ERROR] Print error: {result.get('error')}")
 

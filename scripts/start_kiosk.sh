@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# PrintBooth Kiosk — Start Touchscreen Terminal & Brain
+# PrintBooth Kiosk — Supervised Autonomous Touchscreen Terminal & Brain
 # ==============================================================================
-# Launches background brain daemon and opens Chromium in fullscreen kiosk mode.
+# 1. Purges ghost print jobs from previous sessions on boot
+# 2. Enforces pure Obsidian black canvas (#06110D) — ZERO desktop leak
+# 3. Starts Brain Daemon and WSS Client
+# 4. Cleans Chromium crash flags and SingletonLock
+# 5. Supervises Chromium in high-performance GPU kiosk mode with auto-restart watchdog
 # ==============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,17 +14,38 @@ KIOSK_ROOT="$(dirname "$SCRIPT_DIR")"
 BRAIN_DIR="$KIOSK_ROOT/brain"
 UI_DIR="$KIOSK_ROOT/ui"
 
-echo "[Start Kiosk] Initializing PrintBooth Station..."
+echo "[Start Kiosk] Initializing PrintBooth Autonomous Appliance..."
 
-# 1. Hide mouse cursor on touchscreen after 1 second of inactivity
-unclutter -idle 1 -root &
+# 0. Flush any stale/lingering print queue left from previous sessions
+if command -v cancel > /dev/null 2>&1; then
+    echo "[Start Kiosk] Purging any stale CUPS hardware print queue on boot..."
+    cancel -a -x 2>/dev/null || true
+    cancel -a 2>/dev/null || true
+fi
 
-# 2. Disable screen blanking / screensaver
-xset s noblank || true
-xset s off || true
-xset -dpms || true
+# 1. Enforce Obsidian black background immediately (Zero desktop exposure)
+if command -v xsetroot > /dev/null 2>&1; then
+    xsetroot -solid "#06110D" 2>/dev/null || true
+fi
 
-# 3. Start Python Brain Daemon in background (if not already running via systemd)
+# 1b. Display instant pre-Chromium hardware splash if available
+SPLASH_PNG="/etc/printbooth/boot_splash.png"
+if [ ! -f "$SPLASH_PNG" ] && [ -f "$SCRIPT_DIR/splash_assets/boot_splash_1080p.png" ]; then
+    SPLASH_PNG="$SCRIPT_DIR/splash_assets/boot_splash_1080p.png"
+fi
+if command -v feh > /dev/null 2>&1 && [ -f "$SPLASH_PNG" ]; then
+    feh --bg-fill "$SPLASH_PNG" 2>/dev/null || true
+fi
+
+# 2. Suppress mouse cursor on touchscreen
+unclutter -idle 0.1 -root &
+
+# 3. Disable screen blanking / screensaver
+xset s noblank 2>/dev/null || true
+xset s off 2>/dev/null || true
+xset -dpms 2>/dev/null || true
+
+# 4. Start Python Brain Daemon in background (if not already running via systemd)
 if ! pgrep -f "daemon.py" > /dev/null; then
     echo "[Start Kiosk] Launching Kiosk Brain Daemon..."
     cd "$BRAIN_DIR"
@@ -30,7 +55,7 @@ if ! pgrep -f "daemon.py" > /dev/null; then
     python3 daemon.py >> /tmp/printbooth_daemon.log 2>&1 &
 fi
 
-# 3b. Start WSS Kiosk Client in background (if not already running)
+# 4b. Start WSS Kiosk Client in background (if not already running)
 if ! pgrep -f "ws_kiosk_client.py" > /dev/null; then
     echo "[Start Kiosk] Launching WSS Kiosk Client..."
     cd "$BRAIN_DIR"
@@ -40,7 +65,7 @@ if ! pgrep -f "ws_kiosk_client.py" > /dev/null; then
     python3 ws_kiosk_client.py >> /tmp/printbooth_ws.log 2>&1 &
 fi
 
-# 4. Extract Backend Spooler API URL from brain/.env or environment
+# 5. Extract Backend Spooler API URL from brain/.env or environment
 TARGET_API="http://localhost:5000"
 STATION_ID="PB-001"
 if [ -f "$BRAIN_DIR/.env" ]; then
@@ -70,21 +95,9 @@ if [ -d "$UI_DIR/dist" ]; then
 EOF
 fi
 
-# 5. Ensure Touchscreen UI is running locally
+# 6. Ensure Touchscreen UI HTTP server is running locally on port 5175
 DISPLAY_URL="${KIOSK_DISPLAY_URL:-http://localhost:5175/?api=${TARGET_API}&kioskId=${STATION_ID}}"
 LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
-
-# Trap Ctrl+C (SIGINT) and SIGTERM to immediately terminate Chromium and kiosk mode
-cleanup_and_exit() {
-    echo ""
-    echo "[Start Kiosk] 🛑 Ctrl+C detected! Terminating Kiosk Mode..."
-    pkill -f chromium 2>/dev/null || true
-    pkill -f chromium-browser 2>/dev/null || true
-    pkill -f serve_kiosk_ui.py 2>/dev/null || true
-    pkill -f unclutter 2>/dev/null || true
-    exit 0
-}
-trap cleanup_and_exit SIGINT SIGTERM
 
 if [ -d "$UI_DIR/dist" ] && ! curl -s --connect-timeout 1 "$DISPLAY_URL" > /dev/null 2>&1; then
     echo "[Start Kiosk] Serving pre-built Kiosk UI on port 5175 with instant exit listener..."
@@ -93,14 +106,14 @@ if [ -d "$UI_DIR/dist" ] && ! curl -s --connect-timeout 1 "$DISPLAY_URL" > /dev/
 fi
 
 echo "════════════════════════════════════════════════════════"
-echo "  PrintBooth Kiosk UI is LIVE! 🚀"
+echo "  PrintBooth Kiosk Appliance is LIVE! 🚀"
 echo "  • Local (on Pi HDMI) : http://localhost:5175"
-echo "  • On your PC Monitor : http://${LOCAL_IP}:5175"
+echo "  • LAN IP             : http://${LOCAL_IP}:5175"
 echo "  • Spooler Backend    : ${TARGET_API}"
-echo "  • Press Ctrl+C anytime to exit Kiosk Mode"
+echo "  • Press Ctrl+C anytime to exit Supervisor"
 echo "════════════════════════════════════════════════════════"
 
-# 6. Launch Chromium in strict fullscreen Kiosk Mode with GPU hardware acceleration
+# Identify Chromium command
 CHROMIUM_CMD=""
 if command -v chromium >/dev/null 2>&1; then
     CHROMIUM_CMD="chromium"
@@ -108,11 +121,58 @@ elif command -v chromium-browser >/dev/null 2>&1; then
     CHROMIUM_CMD="chromium-browser"
 fi
 
-if [ -n "$CHROMIUM_CMD" ]; then
-    if [ -z "$DISPLAY" ]; then
-        export DISPLAY=:0
-    fi
-    echo "[Start Kiosk] Launching Hardware-Accelerated Touchscreen Display..."
+if [ -z "$CHROMIUM_CMD" ]; then
+    echo "[!] Chromium not installed. UI accessible remotely at http://${LOCAL_IP}:5175"
+    exit 1
+fi
+
+if [ -z "$DISPLAY" ]; then
+    export DISPLAY=:0
+fi
+
+# Function to clean Chromium crash locks & bubbles
+clean_chromium_crash_state() {
+    # Remove process Singleton lock files
+    rm -rf ~/.config/chromium/Singleton* 2>/dev/null || true
+    rm -rf ~/.config/chromium-browser/Singleton* 2>/dev/null || true
+
+    # Strip crash flag from Preferences so the "Restore pages" bubble never appears
+    for pref in ~/.config/chromium/Default/Preferences ~/.config/chromium-browser/Default/Preferences; do
+        if [ -f "$pref" ]; then
+            python3 -c "
+import json, sys
+try:
+    p = '$pref'
+    with open(p, 'r') as f: data = json.load(f)
+    if 'profile' in data:
+        data['profile']['exit_type'] = 'Normal'
+        data['profile']['exited_cleanly'] = True
+    with open(p, 'w') as f: json.dump(data, f)
+except Exception: pass
+" 2>/dev/null || true
+        fi
+    done
+}
+
+# Trap Ctrl+C (SIGINT) and SIGTERM for technician clean exit
+EXIT_REQUESTED=0
+cleanup_and_exit() {
+    EXIT_REQUESTED=1
+    echo ""
+    echo "[Start Kiosk] 🛑 Termination signal received. Stopping Kiosk processes..."
+    pkill -f "$CHROMIUM_CMD" 2>/dev/null || true
+    pkill -f serve_kiosk_ui.py 2>/dev/null || true
+    pkill -f unclutter 2>/dev/null || true
+    exit 0
+}
+trap cleanup_and_exit SIGINT SIGTERM
+
+# 7. Dynamic Kiosk Supervisor Loop (Self-Healing Crash Watchdog)
+CRASH_COUNT=0
+while [ "$EXIT_REQUESTED" -eq 0 ]; do
+    clean_chromium_crash_state
+
+    echo "[Start Kiosk] Spawning Hardware-Accelerated Kiosk Display (Instance #$((CRASH_COUNT + 1)))..."
     "$CHROMIUM_CMD" \
         --kiosk \
         --noerrdialogs \
@@ -132,12 +192,26 @@ if [ -n "$CHROMIUM_CMD" ]; then
         --disable-background-timer-throttling \
         --disable-renderer-backgrounding \
         --disable-backgrounding-occluded-windows \
+        --autoplay-policy=no-user-gesture-required \
+        --hide-scrollbars \
         --num-raster-threads=2 \
         "$DISPLAY_URL"
     
-    # When Chromium closes (via Ctrl+C or window.close), clean up everything
-    cleanup_and_exit
-else
-    echo "[!] Chromium not installed. You can interact with the UI directly from your PC at: http://${LOCAL_IP}:5175"
-fi
+    EXIT_CODE=$?
+    echo "[Start Kiosk] Chromium exited with status $EXIT_CODE"
 
+    if [ "$EXIT_REQUESTED" -eq 1 ]; then
+        break
+    fi
+
+    CRASH_COUNT=$((CRASH_COUNT + 1))
+    echo "[Start Kiosk] ⚠️ Kiosk window closed unexpectedly. Relaunching in 1s (crash protection active)..."
+    
+    # Keep screen solid obsidian during quick reload
+    if command -v xsetroot > /dev/null 2>&1; then
+        xsetroot -solid "#06110D" 2>/dev/null || true
+    fi
+    sleep 1
+done
+
+cleanup_and_exit

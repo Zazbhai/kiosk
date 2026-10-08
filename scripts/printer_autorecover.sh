@@ -120,11 +120,20 @@ if [ $QUEUE_EXISTS -eq 1 ]; then
     sudo lpadmin -p "$PRINTER_NAME" -o printer-error-policy=retry-current-job 2>/dev/null || true
     sudo lpadmin -d "$PRINTER_NAME" 2>/dev/null || true
 
+    # PURGE GHOST JOBS: Flush any lingering or unprinted queue residue from prior sessions
+    log "Purging any stale jobs from CUPS queue..."
+    sudo cancel -a -x "$PRINTER_NAME" 2>/dev/null || true
+    sudo cancel -a 2>/dev/null || true
+    sudo lprm - 2>/dev/null || true
+
+    # Prevent CUPS from retaining printed files in /var/spool/cups
+    sudo cupsctl PreserveJobHistory=No PreserveJobFiles=No 2>/dev/null || true
+
     # Unpause and enable queue
     sudo cupsenable "$PRINTER_NAME" 2>/dev/null || true
     sudo cupsaccept "$PRINTER_NAME" 2>/dev/null || true
     sudo lpoptions -p "$PRINTER_NAME" -o media=A4 2>/dev/null || true
-    log "✓ Unpaused and enabled queue '$PRINTER_NAME' (policy: retry-current-job)"
+    log "✓ Unpaused and enabled queue '$PRINTER_NAME' (policy: retry-current-job, queue purged)"
 else
     # Queue doesn't exist yet; if Brother PPD exists, register it
     PPD_PATH="/usr/share/cups/model/Brother/brother_dcpt420w_printer_en.ppd"

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- PrintBooth Kiosk Window Manager Configuration (Openbox) -->
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <resistance>
+    <strength>10</strength>
+    <screen_edge_strength>20</screen_edge_strength>
+  </resistance>
+  <focus>
+    <focusNew>yes</focusNew>
+    <followMouse>no</followMouse>
+  </focus>
+  <placement>
+    <policy>Smart</policy>
+    <center>yes</center>
+  </placement>
+  <theme>
+    <name>Clearlooks</name>
+    <titleLayout></titleLayout>
+  </theme>
+  
+  <!-- Lock down all windows: no borders, no titlebars, forced fullscreen -->
+  <applications>
+    <application class="*">
+      <decor>no</decor>
+      <fullscreen>yes</fullscreen>
+      <maximized>yes</maximized>
+    </application>
+    <application name="chromium-browser">
+      <decor>no</decor>
+      <fullscreen>yes</fullscreen>
+      <maximized>yes</maximized>
+    </application>
+    <application name="chromium">
+      <decor>no</decor>
+      <fullscreen>yes</fullscreen>
+      <maximized>yes</maximized>
+    </application>
+  </applications>
+
+  <!-- Disable all mouse actions on root desktop (No right-click menu, no middle-click menu) -->
+  <mouse>
+    <context name="Root">
+      <!-- Empty: Zero desktop menu on touch or right-click -->
+    </context>
+  </mouse>
+
+  <!-- Restrict keyboard shortcuts (Allow only technician escape key sequence: Ctrl+Alt+Shift+Q) -->
+  <keyboard>
+    <keybind key="C-A-S-q">
+      <action name="Exit" />
+    </keybind>
+  </keyboard>
+</openbox_config>

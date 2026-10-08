@@ -23,8 +23,6 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
   if (!isOpen) return null
 
   const displayTitle = title || 'PRINTER OFFLINE'
-  const displayReason = reason || 'The printer is currently offline or rebooting after a power cycle.'
-  const displayDetail = detail || 'The station is auto-recovering and will resume automatically as soon as the printer is ready.'
 
   return createPortal(
     <AnimatePresence>
@@ -38,12 +36,6 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
         aria-modal="true"
         aria-labelledby="oopss-title"
       >
-        {/* Top-left station info badge */}
-        <div className="oopss-station-badge">
-          <span className="oopss-station-dot" />
-          <span>{kioskId} {kioskName ? `• ${kioskName}` : ''}</span>
-        </div>
-
         <div id="error-text">
           {/* Full-Page Animated Sad Face Illustration */}
           <div className="oopss-img-wrap">
@@ -60,22 +52,6 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
           <span id="oopss-title" className="oopss-title">
             {displayTitle}
           </span>
-
-          {/* Primary Reason */}
-          <p className="p-a">
-            {displayReason}
-          </p>
-
-          {/* Secondary Subtitle */}
-          <p className="p-b">
-            {displayDetail}
-          </p>
-
-          {/* Live Status Heartbeat Indicator */}
-          <div className="oopss-live-indicator">
-            <span className="oopss-live-dot" />
-            <span className="oopss-live-text">Monitoring hardware connection & auto-recovering…</span>
-          </div>
         </div>
       </motion.div>
     </AnimatePresence>,

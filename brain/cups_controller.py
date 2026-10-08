@@ -27,9 +27,11 @@ except ImportError:
     CUPS_AVAILABLE = False
 
 try:
-    from config import TEMP_JOBS_DIR
+    from config import DATA_DIR, TEMP_JOBS_DIR
 except Exception:
+    DATA_DIR = Path("./data")
     TEMP_JOBS_DIR = Path("/tmp/printbooth_jobs" if os.name != "nt" else "./temp_jobs")
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 TEMP_JOBS_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -38,6 +40,7 @@ def claim_order_for_spooling(order_id: str, aliases: Optional[List[str]] = None)
     Atomically claims an order ID (and aliases like orderNumber, releasePin)
     across all processes (ws_kiosk_client, daemon, retry handlers).
     Returns True if successfully claimed (first time), False if already claimed (duplicate).
+    Stores claims in persistent DATA_DIR to survive reboots.
     """
     if not order_id:
         return True
@@ -48,11 +51,11 @@ def claim_order_for_spooling(order_id: str, aliases: Optional[List[str]] = None)
             if a and str(a).strip():
                 all_keys.append(str(a).strip())
 
-    lock_file = TEMP_JOBS_DIR / ".spool_claims.lock"
-    claims_file = TEMP_JOBS_DIR / ".spool_claims.json"
+    lock_file = DATA_DIR / ".spool_claims.lock"
+    claims_file = DATA_DIR / ".spool_claims.json"
 
     try:
-        TEMP_JOBS_DIR.mkdir(parents=True, exist_ok=True)
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
         with open(lock_file, "a+", encoding="utf-8") as lf:
             if sys.platform != "win32":
                 try:
@@ -140,6 +143,53 @@ class CupsController:
     @property
     def is_connected(self) -> bool:
         return self._conn is not None
+
+    def purge_all_jobs(self, printer_name: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Purges and cancels all pending, held, or queued jobs from CUPS.
+        Guarantees that on Pi boot and between jobs, no leftover jobs or ghost queue exists.
+        """
+        actions = []
+        # 1. pycups cancelJob for all existing jobs
+        if self._conn:
+            try:
+                jobs = self._conn.getJobs(which_jobs="all", my_jobs=False)
+                for jid in list(jobs.keys()):
+                    try:
+                        self._conn.cancelJob(jid, purge_job=True)
+                        actions.append(f"Cancelled CUPS job #{jid}")
+                    except Exception:
+                        try:
+                            self._conn.cancelJob(jid)
+                            actions.append(f"Cancelled CUPS job #{jid}")
+                        except Exception:
+                            pass
+            except Exception as e:
+                actions.append(f"pycups jobs query notice: {e}")
+
+        # 2. Linux CLI cancel -a -x / cancel -a / lprm -
+        if sys.platform != "win32":
+            target = printer_name or (self.get_printers().get("default") if hasattr(self, "get_printers") else None)
+            cmd_lists = [
+                ["cancel", "-a", "-x"],
+                ["cancel", "-a"],
+                ["lprm", "-"],
+            ]
+            if target and target != "auto":
+                cmd_lists.insert(0, ["cancel", "-a", "-x", target])
+                cmd_lists.insert(1, ["cancel", "-a", target])
+
+            for cmd in cmd_lists:
+                try:
+                    subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, timeout=5)
+                except Exception:
+                    pass
+                try:
+                    subprocess.run(["sudo", "-n"] + cmd, stdin=subprocess.DEVNULL, capture_output=True, timeout=5)
+                except Exception:
+                    pass
+
+        return {"success": True, "actions": actions}
 
     def check_usb_printer(self) -> Dict[str, Any]:
         """
@@ -692,9 +742,27 @@ class CupsController:
             "BRMediaType": "Plain",
             "job-sheets": "none,none",
             "fit-to-page": "true",
-            "fitplot": "true",
-            "scaling": "100",
+            "position": "center",
+            "BRResolution": "600dpi",
         }
+
+        # Scaling / Margins:
+        # Avoid 'fitplot=true' or 'scaling=100' because in CUPS filters they override fit-to-page
+        # and anchor coordinates to unprintable edge (0,0), cutting off top headers (~4mm).
+        norm_scale = str(scaling or "FIT").upper().strip()
+        if norm_scale in ("BORDERLESS", "FILL"):
+            if ppd_paper == "A4":
+                options["PageSize"] = "BrA4_B"
+                options["media"] = "BrA4_B"
+            options["fit-to-page"] = "true"
+            options["position"] = "center"
+        elif norm_scale in ("ACTUAL", "NONE"):
+            options.pop("fit-to-page", None)
+            options["position"] = "center"
+        else:
+            # Default FIT: scales cleanly into ImageableArea and centers with equal margins
+            options["fit-to-page"] = "true"
+            options["position"] = "center"
 
         # Color vs Monochrome (BRMonoColor is the exact PPD key for Brother DCP-T420W)
         raw_c = str(colour_mode or "BW").upper().replace("&", "").strip()
@@ -724,6 +792,128 @@ class CupsController:
 
         return options
 
+    @staticmethod
+    def _parse_page_range(range_str: Optional[str], total_pages: int) -> List[int]:
+        """Parses human page ranges into 1-indexed page list. E.g. '1,3' -> [1, 3]"""
+        if total_pages <= 0:
+            return [1]
+        val = (range_str or "").strip().lower()
+        if val in ("", "all", "*"):
+            return list(range(1, total_pages + 1))
+        selected = set()
+        for part in val.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if "-" in part:
+                pieces = part.split("-", 1)
+                try:
+                    s, e = int(pieces[0]), int(pieces[1])
+                    for x in range(s, e + 1):
+                        if 1 <= x <= total_pages:
+                            selected.add(x)
+                except ValueError:
+                    pass
+            else:
+                try:
+                    x = int(part)
+                    if 1 <= x <= total_pages:
+                        selected.add(x)
+                except ValueError:
+                    pass
+        return sorted(selected) if selected else list(range(1, total_pages + 1))
+
+    @staticmethod
+    def _get_pdf_page_count(path: Path) -> int:
+        """Determines total pages in a PDF document using PyMuPDF, pypdf, or pdfinfo."""
+        try:
+            import pymupdf  # type: ignore
+            doc = pymupdf.open(str(path))
+            cnt = len(doc)
+            doc.close()
+            if cnt > 0:
+                return cnt
+        except Exception:
+            pass
+
+        try:
+            import pypdf  # type: ignore
+            reader = pypdf.PdfReader(str(path))
+            cnt = len(reader.pages)
+            if cnt > 0:
+                return cnt
+        except Exception:
+            pass
+
+        if shutil.which("pdfinfo"):
+            try:
+                res = subprocess.run(["pdfinfo", str(path)], capture_output=True, text=True, timeout=5)
+                for line in res.stdout.splitlines():
+                    if line.startswith("Pages:"):
+                        return int(line.split(":", 1)[1].strip())
+            except Exception:
+                pass
+
+        return 1
+
+    @staticmethod
+    def _extract_pdf_pages(src_path: Path, pages_1_indexed: List[int], dest_path: Path) -> bool:
+        """Extracts specific pages (1-indexed) from a PDF into dest_path."""
+        try:
+            import pymupdf  # type: ignore
+            src = pymupdf.open(str(src_path))
+            dst = pymupdf.open()
+            for p in pages_1_indexed:
+                if 1 <= p <= len(src):
+                    dst.insert_pdf(src, from_page=p - 1, to_page=p - 1)
+            dst.save(str(dest_path))
+            dst.close()
+            src.close()
+            if dest_path.exists() and dest_path.stat().st_size > 0:
+                return True
+        except Exception as e:
+            print(f"[CUPS] PyMuPDF page extract notice: {e}")
+
+        try:
+            import pypdf  # type: ignore
+            reader = pypdf.PdfReader(str(src_path))
+            writer = pypdf.PdfWriter()
+            for p in pages_1_indexed:
+                if 1 <= p <= len(reader.pages):
+                    writer.add_page(reader.pages[p - 1])
+            with open(dest_path, "wb") as f:
+                writer.write(f)
+            if dest_path.exists() and dest_path.stat().st_size > 0:
+                return True
+        except Exception as e:
+            print(f"[CUPS] pypdf page extract notice: {e}")
+
+        return False
+
+    @staticmethod
+    def _convert_pdf_to_monochrome(src_path: Path, dest_path: Path) -> bool:
+        """Converts PDF pages into pure DeviceGray via Ghostscript."""
+        gs_bin = shutil.which("gs") or ("/usr/bin/gs" if os.path.exists("/usr/bin/gs") else None)
+        if gs_bin:
+            try:
+                gs_cmd = [
+                    gs_bin,
+                    "-sDEVICE=pdfwrite",
+                    "-dColorConversionStrategy=Gray",
+                    "-dProcessColorModel=/DeviceGray",
+                    "-dCompatibilityLevel=1.4",
+                    "-dNOPAUSE",
+                    "-dBATCH",
+                    f"-sOutputFile={dest_path}",
+                    str(src_path),
+                ]
+                res = subprocess.run(gs_cmd, capture_output=True, timeout=25)
+                if res.returncode == 0 and dest_path.exists() and dest_path.stat().st_size > 0:
+                    return True
+            except Exception as e:
+                print(f"[CUPS] Ghostscript mono conversion notice: {e}")
+        return False
+
     def print_file(
         self,
         file_path: str,
@@ -739,7 +929,7 @@ class CupsController:
         page_colours: Optional[Any] = None,
         page_copies: Optional[Any] = None,
     ) -> Dict[str, Any]:
-        """Dispatches a document file directly to the CUPS spooler."""
+        """Dispatches a document file directly to the CUPS spooler with per-page color support."""
         p_path = Path(file_path)
         if not p_path.exists():
             return {"success": False, "error": f"File does not exist: {file_path}"}
@@ -760,6 +950,136 @@ class CupsController:
         is_color = raw_c in ("COLOR", "COLOUR")
         clean_copies = max(1, int(copies or 1))
 
+        # Parse per-page colour map
+        parsed_page_colours = {}
+        if page_colours:
+            if isinstance(page_colours, str):
+                try:
+                    parsed_page_colours = json.loads(page_colours)
+                except Exception:
+                    parsed_page_colours = {}
+            elif isinstance(page_colours, dict):
+                parsed_page_colours = page_colours
+
+        col_map: Dict[int, str] = {}
+        for k, v in parsed_page_colours.items():
+            try:
+                p_num = int(k)
+                v_norm = str(v).upper().replace("&", "").strip()
+                col_map[p_num] = "COLOUR" if v_norm in ("COLOUR", "COLOR") else "BW"
+            except (ValueError, TypeError):
+                continue
+
+        # Inspect pages
+        suffix = p_path.suffix.lower()
+        is_pdf = suffix == ".pdf"
+        total_pages = self._get_pdf_page_count(p_path) if is_pdf else 1
+        selected_pages = self._parse_page_range(page_range, total_pages)
+
+        # Map each selected page to its exact color mode
+        page_modes: Dict[int, str] = {}
+        for p in selected_pages:
+            if p in col_map:
+                page_modes[p] = col_map[p]
+            else:
+                page_modes[p] = "COLOUR" if is_color else "BW"
+
+        has_mixed_colors = is_pdf and len(selected_pages) > 1 and len(set(page_modes.values())) > 1
+
+        print(
+            f"[CUPS] Print job '{p_path.name}' | Total pages: {total_pages} | "
+            f"Selected: {selected_pages} | Mixed colors: {has_mixed_colors}"
+        )
+
+        # ── Mixed Colour & Monochrome Pages (Raspberry Pi / Linux) ──
+        # Brother hardware cannot switch between Mono and FullColor mid-spool in a single job.
+        # Partition contiguous pages into matching color mode groups and dispatch sequentially.
+        if has_mixed_colors and sys.platform != "win32":
+            groups = []
+            for p in selected_pages:
+                p_mode = page_modes[p]
+                if not groups or groups[-1]["mode"] != p_mode:
+                    groups.append({"mode": p_mode, "pages": [p]})
+                else:
+                    groups[-1]["pages"].append(p)
+
+            print(f"[CUPS] Dispatching mixed print in {len(groups)} sequential group(s):")
+            for idx, grp in enumerate(groups, 1):
+                print(f"  Group {idx}: Pages {grp['pages']} -> Mode {grp['mode']}")
+
+            outputs = []
+            temp_files_to_clean = []
+
+            try:
+                for copy_idx in range(1, clean_copies + 1):
+                    for grp_idx, grp in enumerate(groups, 1):
+                        grp_mode = grp["mode"]
+                        grp_pages = grp["pages"]
+                        is_grp_color = (grp_mode == "COLOUR")
+
+                        # Extract sub-PDF for this specific group
+                        grp_sub_name = f"sub_{p_path.stem}_c{copy_idx}_g{grp_idx}_{grp_mode.lower()}.pdf"
+                        grp_sub_path = p_path.parent / grp_sub_name
+                        temp_files_to_clean.append(grp_sub_path)
+
+                        if not self._extract_pdf_pages(p_path, grp_pages, grp_sub_path):
+                            print(f"[CUPS] Page extraction fallback: using target file with -P")
+                            grp_sub_path = p_path
+                            grp_range_arg = ",".join(str(x) for x in grp_pages)
+                        else:
+                            grp_range_arg = None
+                            if not is_grp_color:
+                                mono_out = p_path.parent / f"mono_{grp_sub_name}"
+                                if self._convert_pdf_to_monochrome(grp_sub_path, mono_out):
+                                    temp_files_to_clean.append(mono_out)
+                                    grp_sub_path = mono_out
+
+                        # Configure Brother hardware register for this group
+                        for br_bin in ["/usr/bin/brprintconf_dcpt420w", "/opt/brother/Printers/dcpt420w/lpd/brprintconf_dcpt420w"]:
+                            if os.path.exists(br_bin):
+                                try:
+                                    corm_arg = "FullColor" if is_grp_color else "Mono"
+                                    subprocess.run([br_bin, "-corm", corm_arg, "-copies", "1"], timeout=2, capture_output=True)
+                                    print(f"[CUPS] Brother hardware register set: {br_bin} -corm {corm_arg} -copies 1")
+                                except Exception as e:
+                                    print(f"[CUPS] Brother hardware config notice: {e}")
+                                break
+
+                        grp_opts = self.build_cups_options(
+                            copies=1,
+                            colour_mode=grp_mode,
+                            duplex=duplex,
+                            paper_size=paper_size,
+                            scaling=scaling,
+                            pages_per_sheet=pages_per_sheet,
+                        )
+
+                        cmd = ["lp", "-d", printer, "-n", "1"]
+                        if grp_range_arg:
+                            cmd.extend(["-P", grp_range_arg])
+
+                        for k, v in grp_opts.items():
+                            if k == "copies":
+                                continue
+                            cmd.extend(["-o", f"{k}={v}"])
+
+                        cmd.append(str(grp_sub_path.resolve()))
+                        print(f"[CUPS CLI] Submitting Group {grp_idx}/{len(groups)} (Copy {copy_idx}/{clean_copies}): {' '.join(cmd)}")
+                        out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
+                        outputs.append(out.strip())
+                        time.sleep(0.5)
+
+                return {"success": True, "output": "; ".join(outputs), "printer": printer}
+            finally:
+                # Cleanup temporary sub-files
+                for tf in temp_files_to_clean:
+                    try:
+                        if tf.exists() and tf != p_path:
+                            tf.unlink()
+                    except Exception:
+                        pass
+
+        # ── Uniform Color Mode Execution (All B&W or All Colour) ──
         # Pre-process file: converts raster images to exact 1-page A4 PDFs (monochrome or color)
         # to physically prevent CUPS imagetoraster from slicing images across multiple pages
         target_path = self.prepare_printable_file(p_path, colour_mode=colour_mode)

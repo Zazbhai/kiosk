@@ -131,7 +131,7 @@
   font-weight: 900;
   letter-spacing: -0.03em;
   text-transform: uppercase;
-  margin-bottom: clamp(10px, 1.8vh, 16px);
+  margin-bottom: 0;
   color: #ffffff;
   line-height: 1.1;
   text-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);

@@ -42,6 +42,9 @@ sudo apt-get install -y \
     unclutter \
     xdotool \
     x11-xserver-utils \
+    openbox \
+    plymouth \
+    feh \
     curl \
     git
 
@@ -112,6 +115,7 @@ echo "  Setup Complete! 🎉"
 echo "  1. Connect printer via USB and power it on."
 echo "  2. Test printer connection: bash $SCRIPT_DIR/test_printer_connection.sh --print"
 echo "  3. Start brain daemon: sudo systemctl start printbooth-brain"
-echo "  4. Configure fullscreen kiosk auto-boot: bash $SCRIPT_DIR/configure_kiosk_mode.sh"
+echo "  4. Setup Zero-Desktop Kiosk & Custom Bootloader:"
+echo "     bash $SCRIPT_DIR/setup_kiosk_appliance.sh"
 echo "  5. Start display now: bash $SCRIPT_DIR/start_kiosk.sh"
 echo "════════════════════════════════════════════════════════"
