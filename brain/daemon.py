@@ -238,6 +238,21 @@ class KioskBrainDaemon:
             self._mark_order_processed(order_id, aliases)
             return
 
+        settings = order.get("printSettings") or {}
+        file_name = order.get("fileName") or settings.get("fileName") or "document.pdf"
+        copies = int(order.get("copies") or settings.get("copies") or 1)
+        raw_c = str(order.get("colourMode") or settings.get("colourMode") or "BW").upper().replace("&", "")
+        colour_mode = "COLOUR" if raw_c in ("COLOR", "COLOUR") else "BW"
+        duplex = str(order.get("duplex") or settings.get("duplex") or "SINGLE").upper()
+        paper_size = str(order.get("paperSize") or settings.get("paperSize") or "A4").upper()
+        page_range = str(order.get("pageRange") or settings.get("pageRange") or "ALL").strip()
+        scaling = str(order.get("scaling") or settings.get("scaling") or "FIT").strip()
+        orientation = str(order.get("orientation") or settings.get("orientation") or "AUTO").upper().strip()
+        pages_per_sheet = int(order.get("pagesPerSheet") or settings.get("pagesPerSheet") or 1)
+
+        download_url = f"{self.api_url}/print/download/{order_id}"
+        local_target = TEMP_JOBS_DIR / f"{order_id}_{file_name}"
+
         # If user has NOT entered their corresponding PIN on the touchscreen yet:
         # Wait until order_status is VERIFIED! DO NOT auto-print.
         if order_status != "VERIFIED":
@@ -279,6 +294,7 @@ class KioskBrainDaemon:
         print(f"  • Paper Size : {paper_size}")
         print(f"  • Page Range : {page_range}")
         print(f"  • Scaling    : {scaling}")
+        print(f"  • Orientation: {orientation}")
         print(f"  • N-Up       : {pages_per_sheet}")
 
         result = self.cups.print_file(
@@ -292,6 +308,7 @@ class KioskBrainDaemon:
             pages_per_sheet=pages_per_sheet,
             printer_name=self.printer_name,
             job_title=f"Order {order_id} - {file_name}",
+            orientation=orientation,
         )
 
         if result.get("success"):

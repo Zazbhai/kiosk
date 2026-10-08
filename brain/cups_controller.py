@@ -597,19 +597,41 @@ class CupsController:
 
         return {"success": True, "activePrinter": clean_name, "actions": actions}
 
-    def prepare_printable_file(self, file_path: Path, colour_mode: str = "BW") -> Path:
+    def prepare_printable_file(
+        self,
+        file_path: Path,
+        colour_mode: str = "BW",
+        paper_size: str = "A4",
+        scaling: str = "FIT",
+        orientation: str = "AUTO",
+    ) -> Path:
         """
-        Converts raster images (PNG, JPEG, Draw.io) to exact single-page A4 PDFs:
+        Converts raster images (PNG, JPEG, WebP, etc.) to exact single-page PDFs:
         1. Guarantees true monochrome (DeviceGray / mode 'L') when colour_mode == 'BW' to prevent CMYK ink usage.
-        2. Fits and centers image on a single A4 page canvas, physically preventing CUPS imagetoraster
-           from slicing/tiling large diagrams across multiple sheets.
-        3. Converts color PDFs to DeviceGray via Ghostscript when colour_mode == 'BW'.
+        2. Fits and scales the image to fill the page (both upscale and downscale) while preserving aspect ratio,
+           preventing images from printing as tiny rectangles in the center of the page.
+        3. Supports intelligent Auto-Orientation: detects landscape images and automatically configures
+           landscape canvas/orientation so wide images utilize the full sheet width.
+        4. Converts color PDFs to DeviceGray via Ghostscript when colour_mode == 'BW'.
         """
         p_path = Path(file_path)
         suffix = p_path.suffix.lower()
         is_color = str(colour_mode).upper() in ("COLOR", "COLOUR")
+        norm_paper = str(paper_size or "A4").upper().strip()
+        norm_scale = str(scaling or "FIT").upper().strip()
+        norm_orient = str(orientation or "AUTO").upper().strip()
 
-        # 1. Raster Image conversion to standardized A4 PDF
+        # Paper pixel dimensions at 300 DPI
+        PAPER_DIMS_300DPI = {
+            "A4": (2480, 3508),
+            "LETTER": (2550, 3300),
+            "LEGAL": (2550, 4200),
+            "A3": (3508, 4960),
+            "A5": (1748, 2480),
+        }
+        base_w, base_h = PAPER_DIMS_300DPI.get(norm_paper, (2480, 3508))
+
+        # 1. Raster Image conversion to standardized full-page PDF
         if suffix in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".gif"):
             # Ensure PIL is available, auto-installing in venv if needed
             try:
@@ -626,6 +648,13 @@ class CupsController:
             if Image:
                 try:
                     with Image.open(p_path) as im:
+                        # Auto-orient EXIF camera orientation
+                        try:
+                            from PIL import ImageOps
+                            im = ImageOps.exif_transpose(im)
+                        except Exception:
+                            pass
+
                         pdf_name = f"{'color' if is_color else 'mono'}_{p_path.stem}.pdf"
                         pdf_path = p_path.parent / pdf_name
 
@@ -639,29 +668,75 @@ class CupsController:
                             base_im = im
 
                         # Target mode: 'L' for pure monochrome, 'RGB' for color
-                        target_im = base_im.convert("L") if not is_color else base_im.convert("RGB")
+                        target_im = base_im.convert("RGB") if is_color else base_im.convert("L")
+                        orig_w, orig_h = target_im.size
+                        is_img_landscape = orig_w > orig_h
 
-                        # Standard A4 at 300 DPI: 2480 x 3508 pixels
-                        a4_w, a4_h = 2480, 3508
-                        margin = 100
-                        avail_w = a4_w - (margin * 2)
-                        avail_h = a4_h - (margin * 2)
+                        # Determine sheet orientation
+                        if norm_orient == "LANDSCAPE":
+                            canvas_landscape = True
+                        elif norm_orient == "PORTRAIT":
+                            canvas_landscape = False
+                        else:  # AUTO: match the image aspect ratio
+                            canvas_landscape = is_img_landscape
 
-                        # Scale preserving aspect ratio to fit within printable bounds
+                        if canvas_landscape:
+                            canvas_w, canvas_h = max(base_w, base_h), min(base_w, base_h)
+                        else:
+                            canvas_w, canvas_h = min(base_w, base_h), max(base_w, base_h)
+
+                        # Define printable margins
+                        # Standard inkjets need ~3-4mm hardware margin unless borderless is selected
+                        if norm_scale in ("BORDERLESS", "FILL"):
+                            margin = 0
+                        else:
+                            margin = 40  # ~3.4mm at 300 DPI, maximizes printable area
+
+                        avail_w = max(100, canvas_w - (margin * 2))
+                        avail_h = max(100, canvas_h - (margin * 2))
+
                         resample_filter = getattr(Image, "Resampling", Image).LANCZOS
-                        target_im.thumbnail((avail_w, avail_h), resample_filter)
 
-                        # Create crisp white A4 canvas and center the image
-                        canvas_bg = 255 if not is_color else (255, 255, 255)
-                        canvas = Image.new("L" if not is_color else "RGB", (a4_w, a4_h), canvas_bg)
-                        offset_x = (a4_w - target_im.size[0]) // 2
-                        offset_y = (a4_h - target_im.size[1]) // 2
-                        canvas.paste(target_im, (offset_x, offset_y))
+                        if norm_scale == "FILL":
+                            # Fill canvas edge to edge, crop overflow
+                            scale = max(avail_w / orig_w, avail_h / orig_h)
+                            new_w = max(1, int(round(orig_w * scale)))
+                            new_h = max(1, int(round(orig_h * scale)))
+                            resized_im = target_im.resize((new_w, new_h), resample_filter)
+                            crop_x = (new_w - avail_w) // 2
+                            crop_y = (new_h - avail_h) // 2
+                            final_im = resized_im.crop((crop_x, crop_y, crop_x + avail_w, crop_y + avail_h))
+                            offset_x = margin
+                            offset_y = margin
+                        elif norm_scale in ("ACTUAL", "NONE"):
+                            # Don't upscale, but shrink if exceeds canvas
+                            scale = min(1.0, min(avail_w / orig_w, avail_h / orig_h))
+                            new_w = max(1, int(round(orig_w * scale)))
+                            new_h = max(1, int(round(orig_h * scale)))
+                            final_im = target_im.resize((new_w, new_h), resample_filter) if scale < 1.0 else target_im
+                            offset_x = (canvas_w - final_im.size[0]) // 2
+                            offset_y = (canvas_h - final_im.size[1]) // 2
+                        else:
+                            # Default "FIT": Proportional scale (UPSCALES and DOWNSCALES) to fit full page
+                            scale = min(avail_w / orig_w, avail_h / orig_h)
+                            new_w = max(1, int(round(orig_w * scale)))
+                            new_h = max(1, int(round(orig_h * scale)))
+                            final_im = target_im.resize((new_w, new_h), resample_filter)
+                            offset_x = (canvas_w - new_w) // 2
+                            offset_y = (canvas_h - new_h) // 2
+
+                        canvas_bg = (255, 255, 255) if is_color else 255
+                        canvas = Image.new("RGB" if is_color else "L", (canvas_w, canvas_h), canvas_bg)
+                        canvas.paste(final_im, (offset_x, offset_y))
 
                         # Save as single-page PDF with exact 300 DPI metadata
                         canvas.save(pdf_path, "PDF", resolution=300.0)
                         mode_label = "COLOR" if is_color else "8-bit Monochrome"
-                        print(f"[CUPS Controller] [CONVERT] Pre-processed image '{p_path.name}' to single-page A4 PDF ({mode_label}) -> '{pdf_path.name}'")
+                        orient_label = "Landscape" if canvas_landscape else "Portrait"
+                        print(
+                            f"[CUPS Controller] [CONVERT] Pre-processed image '{p_path.name}' "
+                            f"({orig_w}x{orig_h} -> scaled {final_im.size[0]}x{final_im.size[1]} on {canvas_w}x{canvas_h} {orient_label} {norm_paper} canvas, {mode_label}) -> '{pdf_path.name}'"
+                        )
                         return pdf_path
                 except Exception as e:
                     print(f"[CUPS Controller] Pillow image processing notice: {e}")
@@ -671,7 +746,8 @@ class CupsController:
                 try:
                     pdf_name = f"{'color' if is_color else 'mono'}_{p_path.stem}.pdf"
                     pdf_path = p_path.parent / pdf_name
-                    args = ["convert", str(p_path), "-page", "A4", "-gravity", "center", "-resize", "2280x3308>"]
+                    # Upscale or downscale to full A4 page
+                    args = ["convert", str(p_path), "-page", "A4", "-gravity", "center", "-resize", "2400x3428"]
                     if not is_color:
                         args.extend(["-colorspace", "Gray"])
                     args.append(str(pdf_path))
@@ -721,6 +797,7 @@ class CupsController:
         page_range: Optional[str] = None,
         scaling: str = "FIT",
         pages_per_sheet: int = 1,
+        orientation: str = "AUTO",
     ) -> Dict[str, str]:
         """Maps customer print options into standardized CUPS IPP and Brother PPD attributes."""
         # Normalize Paper Size
@@ -747,8 +824,6 @@ class CupsController:
         }
 
         # Scaling / Margins:
-        # Avoid 'fitplot=true' or 'scaling=100' because in CUPS filters they override fit-to-page
-        # and anchor coordinates to unprintable edge (0,0), cutting off top headers (~4mm).
         norm_scale = str(scaling or "FIT").upper().strip()
         if norm_scale in ("BORDERLESS", "FILL"):
             if ppd_paper == "A4":
@@ -763,6 +838,14 @@ class CupsController:
             # Default FIT: scales cleanly into ImageableArea and centers with equal margins
             options["fit-to-page"] = "true"
             options["position"] = "center"
+
+        # Orientation
+        norm_orient = str(orientation or "AUTO").upper().strip()
+        if norm_orient == "LANDSCAPE":
+            options["orientation-requested"] = "4"
+            options["landscape"] = "true"
+        elif norm_orient == "PORTRAIT":
+            options["orientation-requested"] = "3"
 
         # Color vs Monochrome (BRMonoColor is the exact PPD key for Brother DCP-T420W)
         raw_c = str(colour_mode or "BW").upper().replace("&", "").strip()
@@ -928,6 +1011,7 @@ class CupsController:
         job_title: str = "PrintBooth Document",
         page_colours: Optional[Any] = None,
         page_copies: Optional[Any] = None,
+        orientation: str = "AUTO",
     ) -> Dict[str, Any]:
         """Dispatches a document file directly to the CUPS spooler with per-page color support."""
         p_path = Path(file_path)
@@ -1052,6 +1136,7 @@ class CupsController:
                             paper_size=paper_size,
                             scaling=scaling,
                             pages_per_sheet=pages_per_sheet,
+                            orientation=orientation,
                         )
 
                         cmd = ["lp", "-d", printer, "-n", "1"]
@@ -1082,7 +1167,13 @@ class CupsController:
         # ── Uniform Color Mode Execution (All B&W or All Colour) ──
         # Pre-process file: converts raster images to exact 1-page A4 PDFs (monochrome or color)
         # to physically prevent CUPS imagetoraster from slicing images across multiple pages
-        target_path = self.prepare_printable_file(p_path, colour_mode=colour_mode)
+        target_path = self.prepare_printable_file(
+            p_path,
+            colour_mode=colour_mode,
+            paper_size=paper_size,
+            scaling=scaling,
+            orientation=orientation,
+        )
 
         cups_opts = self.build_cups_options(
             copies=clean_copies,
@@ -1092,6 +1183,7 @@ class CupsController:
             page_range=page_range,
             scaling=scaling,
             pages_per_sheet=pages_per_sheet,
+            orientation=orientation,
         )
 
         print(f"[CUPS] Dispatching '{target_path.name}' to printer '{printer}'")
@@ -1187,6 +1279,9 @@ class CupsController:
                     dpi=300,
                     page_colours=parsed_colours,
                     page_copies=parsed_copies,
+                    scaling=scaling,
+                    orientation=orientation,
+                    pages_per_sheet=pages_per_sheet,
                 )
                 return res
             except Exception as win_err:
