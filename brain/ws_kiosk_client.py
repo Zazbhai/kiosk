@@ -249,13 +249,16 @@ class KioskWsClient:
 
                 elif msg_type == "PRINT_JOB_STAGED":
                     # Order paid & staged with release PIN / OTP
+                    order_number = payload.get("orderNumber") or msg.get("orderNumber")
                     release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")
                     file_name = payload.get("fileName") or "document.pdf"
-                    print(f"[WSS Kiosk Client] 📥 Staged print job received: Order {order_id} | Release PIN / OTP: {release_pin} | File: {file_name}")
+                    print(f"[WSS Kiosk Client] 📥 Staged print job received: Order {order_id} ({order_number}) | Release PIN / OTP: {release_pin} | File: {file_name}")
 
                     # Index in memory for instant local and network verification
                     if order_id:
                         self.staged_jobs[order_id] = payload
+                    if order_number:
+                        self.staged_jobs[order_number] = payload
                     if release_pin:
                         self.staged_jobs[release_pin] = payload
 
@@ -266,6 +269,19 @@ class KioskWsClient:
                     print(f"[WSS Kiosk Client] 🔑 PIN Verified on Kiosk for Order {order_id}!")
                     order_number = payload.get("orderNumber") or msg.get("orderNumber")
                     release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")
+
+                    staged_job = (
+                        self.staged_jobs.get(order_id)
+                        or (self.staged_jobs.get(order_number) if order_number else None)
+                        or (self.staged_jobs.get(release_pin) if release_pin else None)
+                        or {}
+                    )
+
+                    if not order_number and staged_job.get("orderNumber"):
+                        order_number = staged_job.get("orderNumber")
+                    if not release_pin:
+                        release_pin = staged_job.get("releasePin") or staged_job.get("otp") or staged_job.get("pickupCode")
+
                     aliases = [a for a in [order_number, release_pin] if a and a != order_id]
                     all_ids = {order_id} | set(aliases)
 
@@ -284,12 +300,6 @@ class KioskWsClient:
                         continue
 
                     self.printed_orders.update(all_ids)
-                    staged_job = (
-                        self.staged_jobs.get(order_id)
-                        or (self.staged_jobs.get(order_number) if order_number else None)
-                        or (self.staged_jobs.get(release_pin) if release_pin else None)
-                        or {}
-                    )
                     merged_payload = {**staged_job, **payload}
                     asyncio.create_task(self._handle_print_order(order_id, merged_payload))
 
@@ -300,8 +310,6 @@ class KioskWsClient:
                     print(f"[WSS Kiosk Client] ⚡ Order Event: {msg_type} for Order {order_id}")
                     order_number = payload.get("orderNumber") or msg.get("orderNumber")
                     release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")
-                    aliases = [a for a in [order_number, release_pin] if a and a != order_id]
-                    all_ids = {order_id} | set(aliases)
 
                     staged_job = (
                         self.staged_jobs.get(order_id)
@@ -309,6 +317,15 @@ class KioskWsClient:
                         or (self.staged_jobs.get(release_pin) if release_pin else None)
                         or {}
                     )
+
+                    if not order_number and staged_job.get("orderNumber"):
+                        order_number = staged_job.get("orderNumber")
+                    if not release_pin:
+                        release_pin = staged_job.get("releasePin") or staged_job.get("otp") or staged_job.get("pickupCode")
+
+                    aliases = [a for a in [order_number, release_pin] if a and a != order_id]
+                    all_ids = {order_id} | set(aliases)
+
                     merged_payload = {**staged_job, **payload}
                     check_pin = merged_payload.get("releasePin") or merged_payload.get("otp") or merged_payload.get("pickupCode")
 

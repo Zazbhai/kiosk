@@ -65,14 +65,26 @@ if [ -f "/etc/cups/printers.conf" ]; then
     fi
 fi
 
-# 6. Auto-recovery trigger option
+# 6. Brother DCP-T420W Hardware Register Check
+echo "\n[6] Brother DCP-T420W Hardware Configuration Check:"
+for br in /usr/bin/brprintconf_dcpt420w /opt/brother/Printers/dcpt420w/lpd/brprintconf_dcpt420w; do
+    if [ -x "$br" ] || [ -f "$br" ]; then
+        echo "✓ Found Brother hardware configuration utility: $br"
+        # Reset hardware register to safe single-copy monochrome defaults
+        "$br" -copies 1 -corm Mono 2>/dev/null || true
+        echo "  Synchronized hardware register: -copies 1 -corm Mono"
+        break
+    fi
+done
+
+# 7. Auto-recovery trigger option
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ "$1" == "--recover" ] || [ "$1" == "-r" ]; then
-    echo "\n[6] Running full hardware auto-recovery..."
+    echo "\n[7] Running full hardware auto-recovery..."
     bash "$SCRIPT_DIR/printer_autorecover.sh"
 fi
 
-# 7. Test Print Prompt
+# 8. Test Print Prompt
 if [ "$1" == "--print" ] || [ "$1" == "-p" ]; then
     echo "\n[7] Sending Diagnostic Test Page to Default Printer..."
     TEST_FILE="/tmp/printbooth_diag_test.txt"

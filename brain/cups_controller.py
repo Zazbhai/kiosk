@@ -697,15 +697,14 @@ class CupsController:
         }
 
         # Color vs Monochrome (BRMonoColor is the exact PPD key for Brother DCP-T420W)
-        is_color = colour_mode.upper() in ("COLOR", "COLOUR")
+        raw_c = str(colour_mode or "BW").upper().replace("&", "").strip()
+        is_color = raw_c in ("COLOR", "COLOUR")
         if is_color:
             options["BRMonoColor"] = "FullColor"
             options["print-color-mode"] = "color"
-            options["ColorModel"] = "RGB"
         else:
             options["BRMonoColor"] = "Mono"
             options["print-color-mode"] = "monochrome"
-            options["ColorModel"] = "Gray"
 
         # Duplex
         if duplex.upper() in ("DOUBLE", "DUPLEX", "TWO_SIDED_LONG"):
@@ -757,7 +756,8 @@ class CupsController:
         if not printer:
             return {"success": False, "error": "No CUPS printer available on this station"}
 
-        is_color = colour_mode.upper() in ("COLOR", "COLOUR")
+        raw_c = str(colour_mode or "BW").upper().replace("&", "").strip()
+        is_color = raw_c in ("COLOR", "COLOUR")
         clean_copies = max(1, int(copies or 1))
 
         # Pre-process file: converts raster images to exact 1-page A4 PDFs (monochrome or color)
@@ -783,11 +783,12 @@ class CupsController:
             for br_bin in ["/usr/bin/brprintconf_dcpt420w", "/opt/brother/Printers/dcpt420w/lpd/brprintconf_dcpt420w"]:
                 if os.path.exists(br_bin):
                     try:
-                        col_arg = "COLOR" if is_color else "MONO"
-                        # Set BOTH -col (color mode) and -cp (exact copy count) on Brother hardware
-                        subprocess.run([br_bin, "-col", col_arg, "-cp", str(clean_copies)], timeout=2, capture_output=True)
-                    except Exception:
-                        pass
+                        corm_arg = "FullColor" if is_color else "Mono"
+                        # Set BOTH -corm (color mode) and -copies (exact copy count) on Brother hardware
+                        subprocess.run([br_bin, "-corm", corm_arg, "-copies", str(clean_copies)], timeout=2, capture_output=True)
+                        print(f"[CUPS] Brother hardware configured via {br_bin}: -corm {corm_arg} -copies {clean_copies}")
+                    except Exception as e:
+                        print(f"[CUPS] Brother hardware config notice: {e}")
                     break
 
             try:

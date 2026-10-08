@@ -210,10 +210,14 @@ class KioskBrainDaemon:
     def execute_order(self, order: Dict[str, Any]):
         """Executes a customer print job via CUPS only when PIN is verified."""
         order_id = order.get("orderId") or order.get("orderNumber") or order.get("_id")
+        order_number = order.get("orderNumber")
+        release_pin = order.get("releasePin") or order.get("otp") or order.get("pickupCode")
+        aliases = [a for a in [order_number, release_pin] if a and a != order_id]
+        all_ids = {order_id} | set(aliases)
         order_status = (order.get("status") or "").upper()
 
         # Skip already completed or already printed jobs
-        if not order_id or order_id in self.processed_orders or order_status in ("PRINTED", "COMPLETED", "READY_FOR_COLLECTION"):
+        if not order_id or any(i in self.processed_orders for i in all_ids) or order_status in ("PRINTED", "COMPLETED", "READY_FOR_COLLECTION"):
             return
 
         file_name = order.get("fileName", "print_document.pdf")
@@ -284,11 +288,10 @@ class KioskBrainDaemon:
             return
 
         # Atomic cross-process spool claiming: prevents duplicate prints if WSS client is running!
-        order_number = order.get("orderNumber")
-        aliases = [a for a in [order_number, release_pin] if a and a != order_id]
         if not self.cups.claim_order_for_spooling(order_id, aliases):
             print(f"[Kiosk Brain] ℹ Order {order_id} already claimed/spooled by WSS client. Skipping duplicate print.")
-            self._mark_order_processed(order_id)
+            for i in all_ids:
+                self._mark_order_processed(i)
             return
 
         # PIN is verified (status is PRINTING/VERIFIED) or no PIN required -> Proceed with physical print
@@ -329,7 +332,8 @@ class KioskBrainDaemon:
 
         if result.get("success"):
             print(f"[Kiosk Brain] [OK] Print dispatched successfully via {result.get('printer')}!")
-            self._mark_order_processed(order_id)
+            for i in all_ids:
+                self._mark_order_processed(i)
             self.monitor.estimated_paper = max(0, self.monitor.estimated_paper - copies)
             self.notify_order_completed(order_id)
         else:
