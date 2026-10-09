@@ -1470,7 +1470,7 @@ class CupsController:
                             orientation=orientation,
                         )
 
-                        cmd = ["lp", "-d", printer, "-n", "1"]
+                        cmd = ["lp", "-c", "-d", printer, "-n", "1"]
                         if grp_range_arg:
                             cmd.extend(["-P", grp_range_arg])
 
@@ -1552,7 +1552,7 @@ class CupsController:
                         break
 
                 try:
-                    cmd = ["lp", "-d", printer]
+                    cmd = ["lp", "-c", "-d", printer]
                     # ALWAYS explicitly pass -n <copies> (even for 1 copy) so CUPS CLI never falls back to an unwanted queue default!
                     cmd.extend(["-n", str(clean_copies)])
 

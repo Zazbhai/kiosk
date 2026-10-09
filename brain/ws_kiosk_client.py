@@ -649,6 +649,15 @@ class KioskWsClient:
         except Exception as prog_err:
             print(f"[WSS Kiosk Client] Progress simulation notice: {prog_err}")
 
+        # Ensure CUPS spooler has finished rasterizing and processing before completing & deleting
+        try:
+            job_match = re.search(r"request id is ([^\s]+)", str(result.get("output", ""))) if isinstance(result, dict) else None
+            submitted_job_id = job_match.group(1) if job_match else None
+            target_printer = (result.get("printer") if isinstance(result, dict) else None) or "PrintBooth_Printer"
+            await asyncio.to_thread(cups._wait_for_job_spool, target_printer, submitted_job_id, 35)
+        except Exception as spool_wait_err:
+            print(f"[WSS Kiosk Client] Spool wait notice: {spool_wait_err}")
+
         # Emit completion
         complete_msg = {
             "type": "PRINT_COMPLETE",
