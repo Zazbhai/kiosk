@@ -2,16 +2,17 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft } from '@phosphor-icons/react'
 import { QRCodeSVG } from 'qrcode.react'
+import { useKioskSiteUrl } from '../utils/siteConfig'
 import './KioskScreens.css'
 
 export default function QRUploadScreen() {
   const navigate = useNavigate()
   const [timeLeft, setTimeLeft] = useState(5 * 60)
 
-  const kioskId = import.meta.env.VITE_KIOSK_ID || 'PB-001'
-  const kioskName = import.meta.env.VITE_KIOSK_NAME || 'PrintBooth — Test Station'
-  const clientWebUrl = (import.meta.env.VITE_CLIENT_WEB_URL || 'http://localhost:5200').replace(/\/+$/, '')
-  const qrUrl = `${clientWebUrl}/print?id=${kioskId}`
+  const kioskId = localStorage.getItem('pb_kiosk_id') || import.meta.env.VITE_KIOSK_ID || 'PB-001'
+  const kioskName = localStorage.getItem('pb_kiosk_name') || import.meta.env.VITE_KIOSK_NAME || 'PrintBooth — Station 1'
+  const apiUrl = (localStorage.getItem('pb_api_url') || import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/api$/, '')
+  const { siteUrl, qrUrl, setSiteUrl } = useKioskSiteUrl(apiUrl, kioskId)
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -57,6 +58,42 @@ export default function QRUploadScreen() {
         <div className="kiosk-waiting" style={{ marginTop: '14px' }}>
           <div className="kiosk-waiting__dot" />
           <span>Awaiting document upload on mobile…</span>
+        </div>
+
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+          background: 'rgba(255, 255, 255, 0.08)',
+          padding: '6px 14px',
+          borderRadius: 12,
+          marginTop: '10px',
+          fontSize: '0.8rem',
+          color: 'var(--clr-text-3)',
+        }}>
+          <span>Upload Link: <strong style={{ color: 'var(--clr-text-1)' }}>{qrUrl}</strong></span>
+          <button
+            type="button"
+            onClick={() => {
+              const val = prompt('Enter custom site URL for phone uploads (e.g. https://your-site.com):', siteUrl)
+              if (val && val.trim()) {
+                setSiteUrl(val.trim())
+              }
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--clr-accent-light)',
+              fontWeight: 700,
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              padding: 0,
+            }}
+          >
+            Change
+          </button>
         </div>
 
         <div className="kiosk-timer">{minutes}:{seconds}</div>

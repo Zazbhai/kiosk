@@ -167,46 +167,40 @@ if [ -z "$DISPLAY" ]; then
     export DISPLAY=:0
 fi
 
+# Define safe per-user kiosk profile directory (avoids permission collisions with root)
+CURRENT_USER=$(id -un 2>/dev/null || echo "kiosk")
+USER_PROFILE_DIR="${HOME:-/tmp}/.config/printbooth-kiosk-profile"
+mkdir -p "$USER_PROFILE_DIR" 2>/dev/null || USER_PROFILE_DIR="/tmp/printbooth-kiosk-${CURRENT_USER}"
+mkdir -p "$USER_PROFILE_DIR" 2>/dev/null || true
+
 # Function to clean Chromium crash locks & bubbles
 clean_chromium_crash_state() {
     # 1. Kill any zombie helper processes
     pkill -9 -f "chromium.*type=utility" 2>/dev/null || true
     pkill -9 -f "chromium.*type=gpu-process" 2>/dev/null || true
 
-    # 2. Freshly recreate temporary profile directory to eliminate GCM Store / UKM LevelDB locks
+    # 2. Clean singleton locks, GPU cache and crash locks from profile
+    rm -rf "$USER_PROFILE_DIR/Singleton"* 2>/dev/null || true
+    rm -rf "$USER_PROFILE_DIR/Default/GPUCache"* 2>/dev/null || true
+    find "$USER_PROFILE_DIR" -name "*LOCK*" -o -name "*.lock" -o -name "*journal*" -delete 2>/dev/null || true
     rm -rf /tmp/printbooth-kiosk-profile 2>/dev/null || true
-    mkdir -p /tmp/printbooth-kiosk-profile 2>/dev/null || true
-    chmod 700 /tmp/printbooth-kiosk-profile 2>/dev/null || true
 
-    # 3. Remove process Singleton lock files in user config
+    # 3. Remove process Singleton lock files in default user config
     rm -rf ~/.config/chromium/Singleton* 2>/dev/null || true
     rm -rf ~/.config/chromium-browser/Singleton* 2>/dev/null || true
-
-    # 4. Wipe stale disk cache & SQLite/LevelDB locks
-    rm -rf ~/.cache/chromium 2>/dev/null || true
-    rm -rf ~/.cache/chromium-browser 2>/dev/null || true
-    rm -rf ~/.config/chromium/Default/Cache 2>/dev/null || true
-    rm -rf ~/.config/chromium-browser/Default/Cache 2>/dev/null || true
-    rm -rf ~/.config/chromium/Default/GPUCache 2>/dev/null || true
-    rm -rf ~/.config/chromium-browser/Default/GPUCache 2>/dev/null || true
-    rm -rf ~/.config/chromium/Default/ukm_database* 2>/dev/null || true
-    rm -rf ~/.config/chromium-browser/Default/ukm_database* 2>/dev/null || true
-    rm -rf ~/.config/chromium/Default/"GCM Store"* 2>/dev/null || true
-    rm -rf ~/.config/chromium-browser/Default/"GCM Store"* 2>/dev/null || true
-    find ~/.config/chromium ~/.config/chromium-browser -name "*LOCK*" -o -name "*.lock" -o -name "*journal*" -delete 2>/dev/null || true
+    find ~/.config/chromium ~/.config/chromium-browser -name "*LOCK*" -o -name "*.lock" -delete 2>/dev/null || true
 
     # Strip crash flag from Preferences so the "Restore pages" bubble never appears
-    for pref in ~/.config/chromium/Default/Preferences ~/.config/chromium-browser/Default/Preferences; do
+    for pref in "$USER_PROFILE_DIR/Default/Preferences" ~/.config/chromium/Default/Preferences ~/.config/chromium-browser/Default/Preferences; do
         if [ -f "$pref" ]; then
             python3 -c "
-import json, sys
+import json
 try:
-    p = '$pref'
-    with open(p, 'r') as f: data = json.load(f)
+    with open('$pref', 'r') as f: data = json.load(f)
     if 'profile' in data:
         data['profile']['exit_type'] = 'Normal'
         data['profile']['exited_cleanly'] = True
-    with open(p, 'w') as f: json.dump(data, f)
+    with open('$pref', 'w') as f: json.dump(data, f)
 except Exception: pass
 " 2>/dev/null || true
         fi
@@ -251,52 +245,54 @@ CRASH_COUNT=0
 while [ "$EXIT_REQUESTED" -eq 0 ]; do
     clean_chromium_crash_state
 
-    echo "[Start Kiosk] Spawning Hardware-Accelerated Kiosk Display (Instance #$((CRASH_COUNT + 1)))..."
-    "$CHROMIUM_CMD" \
-        --kiosk \
-        --noerrdialogs \
-        --disable-infobars \
-        --user-data-dir=/tmp/printbooth-kiosk-profile \
-        --disk-cache-size=1 \
-        --media-cache-size=1 \
-        --password-store=basic \
-        --use-mock-keychain \
-        --disable-features=SegmentationPlatform,ProcessPerSiteUpToLimit,LockProfileCookieDatabase,OptimizationHints,MediaRouter,Translate,DialMediaRouteProvider,GCM,PushMessaging,Ukm \
-        --disable-background-networking \
-        --disable-gcm \
-        --disable-sync \
-        --disable-metrics \
-        --disable-metrics-repo \
-        --disable-metrics-reporting \
-        --disable-gpu-shader-disk-cache \
-        --no-first-run \
-        --no-default-browser-check \
-        --disable-notifications \
-        --disable-component-update \
-        --disable-breakpad \
-        --disable-hang-monitor \
-        --check-for-update-interval=31536000 \
-        --disable-pinch \
-        --disable-translate \
-        --overscroll-history-navigation=0 \
-        --disable-session-crashed-bubble \
-        --incognito \
-        --enable-gpu-rasterization \
-        --enable-oop-rasterization \
-        --ignore-gpu-blocklist \
-        --enable-zero-copy \
-        --disable-smooth-scrolling \
-        --canvas-msaa-sample-count=0 \
-        --disable-background-timer-throttling \
-        --disable-renderer-backgrounding \
-        --disable-backgrounding-occluded-windows \
-        --autoplay-policy=no-user-gesture-required \
-        --enable-offline-auto-reload \
-        --enable-offline-auto-reload-visible-only \
-        --hide-scrollbars \
-        --num-raster-threads=2 \
-        --log-level=3 \
-        "$DISPLAY_URL"
+    # Common rock-solid flags for Raspberry Pi kiosk appliance
+    COMMON_FLAGS=(
+        --kiosk
+        --noerrdialogs
+        --disable-infobars
+        --user-data-dir="$USER_PROFILE_DIR"
+        --password-store=basic
+        --use-mock-keychain
+        --no-first-run
+        --no-default-browser-check
+        --disable-session-crashed-bubble
+        --disable-crash-reporter
+        --no-crash-upload
+        --disable-breakpad
+        --disable-hang-monitor
+        --disable-notifications
+        --disable-component-update
+        --disable-translate
+        --disable-pinch
+        --overscroll-history-navigation=0
+        --disable-background-networking
+        --disable-sync
+        --disable-metrics
+        --disable-metrics-repo
+        --disable-metrics-reporting
+        --disable-background-timer-throttling
+        --disable-renderer-backgrounding
+        --disable-backgrounding-occluded-windows
+        --autoplay-policy=no-user-gesture-required
+        --enable-offline-auto-reload
+        --enable-offline-auto-reload-visible-only
+        --hide-scrollbars
+        --log-level=3
+        --disable-features=SegmentationPlatform,ProcessPerSiteUpToLimit,LockProfileCookieDatabase,OptimizationHints,MediaRouter,Translate,DialMediaRouteProvider,GCM,PushMessaging,Ukm
+    )
+
+    if [ "$CRASH_COUNT" -eq 0 ]; then
+        echo "[Start Kiosk] Spawning Kiosk Display with hardware acceleration (Instance #1)..."
+        "$CHROMIUM_CMD" "${COMMON_FLAGS[@]}" \
+            --enable-gpu-rasterization \
+            "$DISPLAY_URL"
+    else
+        echo "[Start Kiosk] 🛡️ Fallback: Spawning Ultra-Stable Software Rasterizer Display (Instance #$((CRASH_COUNT + 1)))..."
+        "$CHROMIUM_CMD" "${COMMON_FLAGS[@]}" \
+            --disable-gpu \
+            --disable-software-rasterizer=false \
+            "$DISPLAY_URL"
+    fi
     
     EXIT_CODE=$?
     echo "[Start Kiosk] Chromium exited with status $EXIT_CODE"

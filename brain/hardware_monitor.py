@@ -370,13 +370,15 @@ class HardwareMonitor:
             default_p = printers_info.get("default")
             active = next((p for p in printers if p.get("is_default") or p.get("name") == default_p), printers[0])
             active_printer_name = active.get("name", "CUPS Printer")
-            is_online = active.get("is_online", True)
-            printer_status = "READY" if is_online else "OFFLINE"
+            is_online = bool(active.get("is_online", False))
+            printer_status = active.get("state", "READY" if is_online else "OFFLINE")
 
-        # Physical USB Override: If lsusb confirms Brother USB hardware is connected, mark online & ready
-        if is_usb_connected:
-            is_online = True
-            printer_status = "READY"
+        # If USB hardware is physically disconnected, printer is definitely offline
+        if not is_usb_connected:
+            is_online = False
+            printer_status = "OFFLINE"
+        else:
+            # USB is physically connected: adopt discovered hardware name if needed
             if not printers or active_printer_name in ("None", "CUPS Printer"):
                 active_printer_name = usb_info.get("printerFound") or "Brother DCP-T420W"
 

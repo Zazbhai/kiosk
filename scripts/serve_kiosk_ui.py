@@ -83,7 +83,7 @@ def get_local_printer_status():
             status = {"success": True, "isOnline": False, "printerStatus": "OFFLINE", "activePrinter": "None"}
 
     if status is None:
-        status = {"success": True, "isOnline": True, "printerStatus": "READY", "activePrinter": "Simulated"}
+        status = {"success": True, "isOnline": False, "printerStatus": "OFFLINE", "activePrinter": "None"}
 
     _status_cache = status
     _status_cache_time = now

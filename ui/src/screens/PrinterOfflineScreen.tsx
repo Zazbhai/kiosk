@@ -1,53 +1,27 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PrinterErrorOverlay from '../components/PrinterErrorOverlay'
+import { usePrinterStatus } from '../hooks/usePrinterStatus'
 
 export default function PrinterOfflineScreen() {
   const navigate = useNavigate()
+  const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+  const kioskId =
+    searchParams.get('kioskId') ||
+    searchParams.get('id') ||
+    localStorage.getItem('pb_kiosk_id') ||
+    (window as any).__PRINTBOOTH_KIOSK_ID__ ||
+    import.meta.env.VITE_KIOSK_ID ||
+    'PB-001'
 
-  // Polling to see if printer & network recover, then navigate to home
+  const { isOffline, reason, detail } = usePrinterStatus(kioskId)
+
+  // Polling to see if printer & network recover, then smoothly navigate back to kiosk home
   useEffect(() => {
-    const checkStatus = async () => {
-      // If network is completely offline, wait for network event
-      if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        return
-      }
-
-      try {
-        const kioskId = localStorage.getItem('pb_kiosk_id') || 'PB-001'
-        const apiUrl = (localStorage.getItem('pb_api_url') || '').replace(/\/api$/, '')
-
-        // 1. Try local printer status
-        const localRes = await fetch('/api/printer/status', { signal: AbortSignal.timeout(3000) }).catch(() => null)
-        if (localRes && localRes.ok) {
-          const localData = await localRes.json()
-          if (localData.isOnline) {
-            navigate('/', { replace: true })
-            return
-          }
-        }
-
-        // 2. Try backend kiosk status
-        const netRes = await fetch(`${apiUrl}/api/kiosks/${kioskId}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)
-        if (netRes && netRes.ok) {
-          const netData = await netRes.json()
-          const k = netData.data || netData
-          const pStatus = String(k.printerStatus || '').toUpperCase()
-          if (k.status === 'ONLINE' && (pStatus === 'READY' || pStatus === 'IDLE')) {
-            navigate('/', { replace: true })
-            return
-          }
-        }
-      } catch {}
+    if (!isOffline && (typeof navigator === 'undefined' || navigator.onLine)) {
+      navigate('/', { replace: true })
     }
-
-    const interval = setInterval(checkStatus, 3500)
-    window.addEventListener('online', checkStatus)
-    return () => {
-      clearInterval(interval)
-      window.removeEventListener('online', checkStatus)
-    }
-  }, [navigate])
+  }, [isOffline, navigate])
 
   return (
     <div className="kiosk-screen" style={{ background: '#06110D' }}>
@@ -55,8 +29,9 @@ export default function PrinterOfflineScreen() {
       <PrinterErrorOverlay
         isOpen={true}
         title="PRINTER OFFLINE"
-        reason="Station is offline or network connection interrupted."
-        detail="PrintBooth is reconnecting and will resume automatically once connection is restored."
+        reason={reason || 'Station is offline or network connection interrupted.'}
+        detail={detail || 'PrintBooth is reconnecting and will resume automatically once connection is restored.'}
+        kioskId={kioskId}
       />
     </div>
   )

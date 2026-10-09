@@ -545,10 +545,10 @@ class CupsController:
                 {
                     "name": "Brother DCP-T420W Printer",
                     "info": "Brother DCP-T420W (Raspberry Pi USB)",
-                    "state": "IDLE",
+                    "state": "OFFLINE",
                     "is_default": True,
-                    "is_online": True,
-                    "is_usb": True,
+                    "is_online": False,
+                    "is_usb": False,
                     "connection_type": "USB",
                     "is_virtual": False,
                 }

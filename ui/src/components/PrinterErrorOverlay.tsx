@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'motion/react'
 import './PrinterErrorOverlay.css'
@@ -18,13 +18,28 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
   title,
   onDismiss,
 }) => {
-  // Technician bypass (5 taps anywhere or URL ?bypass=1) so kiosk UI can be tested without printer hardware
+  // Technician bypass: only active if explicit URL ?bypass=1 is provided
   const [isBypassed, setIsBypassed] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.removeItem('pb_bypass_offline')
+      } catch {}
+    }
     const urlParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
-    return urlParams.get('bypass') === '1' || sessionStorage.getItem('pb_bypass_offline') === '1'
+    return urlParams.get('bypass') === '1'
   })
   const tapCountRef = useRef(0)
   const lastTapRef = useRef(0)
+
+  // Whenever offline status activates, guarantee overlay is displayed
+  useEffect(() => {
+    if (isOpen) {
+      const urlParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+      if (urlParams.get('bypass') !== '1') {
+        setIsBypassed(false)
+      }
+    }
+  }, [isOpen])
 
   const handleScreenTap = () => {
     const now = Date.now()
@@ -38,7 +53,6 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
     if (tapCountRef.current >= 4) {
       tapCountRef.current = 0
       setIsBypassed(true)
-      sessionStorage.setItem('pb_bypass_offline', '1')
       if (onDismiss) onDismiss()
     }
   }

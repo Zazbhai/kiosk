@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
 import { QrCode, Printer } from '@phosphor-icons/react'
 import ParticleBackground from '../components/ParticleBackground'
+import { useKioskSiteUrl } from '../utils/siteConfig'
 import './PinReleaseScreen.css'
 
 // Isolated clock component: re-renders only itself every second without causing keypad re-renders
@@ -73,10 +74,9 @@ export default function PinReleaseScreen() {
     pageCount?: number
   } | null>(null)
 
-  // QR Modal toggle for direct walk-up mobile upload
+  // Dynamic Web Upload URL & QR Code (Auto-fetched from API, no kiosk .env required)
   const [showQrModal, setShowQrModal] = useState(false)
-  const webAppUrl = import.meta.env.VITE_CUSTOMER_WEB_URL || 'http://localhost:5200'
-  const kioskQrUrl = `${webAppUrl}/print?id=${encodeURIComponent(kioskId)}`
+  const { siteUrl, qrUrl: kioskQrUrl, setSiteUrl } = useKioskSiteUrl(apiUrl, kioskId)
 
   // Auto-fetch runtime config.json if served by Pi HTTP server
   useEffect(() => {
@@ -262,6 +262,16 @@ export default function PinReleaseScreen() {
         return
       }
 
+      // 2. SET SITE URL ON CTRL + U
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'u' || e.key === 'U')) {
+        e.preventDefault()
+        const customUrl = prompt('Enter customer upload site URL (e.g. https://your-site.com):', siteUrl)
+        if (customUrl && customUrl.trim()) {
+          setSiteUrl(customUrl.trim())
+        }
+        return
+      }
+
       if (busy || showDone) return
       const k = /^\d$/.test(e.key) ? e.key : e.key === 'Backspace' ? '⌫' : e.key === 'Escape' ? 'clear' : null
       if (!k) return
@@ -274,7 +284,7 @@ export default function PinReleaseScreen() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [busy, showDone, handlePress])
+  }, [busy, showDone, handlePress, siteUrl, setSiteUrl])
 
   return (
     <div className="kiosk-otp-root">
@@ -407,9 +417,49 @@ export default function PinReleaseScreen() {
             <h3 style={{ fontSize: '1.4rem', fontWeight: 800, margin: '0 0 6px', color: 'var(--tx)' }}>
               Scan with Phone Camera
             </h3>
-            <p style={{ fontSize: '0.95rem', color: 'var(--mu)', margin: '0 0 20px', lineHeight: 1.4 }}>
+            <p style={{ fontSize: '0.95rem', color: 'var(--mu)', margin: '0 0 14px', lineHeight: 1.4 }}>
               Upload your documents, choose print settings, and get your 4-digit pickup code right on your screen.
             </p>
+
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              background: '#f1f5f9',
+              padding: '6px 14px',
+              borderRadius: 12,
+              margin: '0 auto 16px',
+              maxWidth: '96%',
+              fontSize: '0.78rem',
+              color: 'var(--mu)',
+            }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                Upload URL: <strong style={{ color: 'var(--tx)' }}>{kioskQrUrl}</strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const val = prompt('Enter custom site URL for phone uploads (e.g. https://your-site.com):', siteUrl)
+                  if (val && val.trim()) {
+                    setSiteUrl(val.trim())
+                  }
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--red)',
+                  fontWeight: 700,
+                  fontSize: '0.78rem',
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  padding: 0,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Change
+              </button>
+            </div>
 
             <button
               type="button"
