@@ -37,11 +37,15 @@ sleep 0.5
 
 echo "[Start Kiosk] Initializing PrintBooth Autonomous Appliance..."
 
-# 0. Flush any stale/lingering print queue left from previous sessions
+# 0. Flush any stale/lingering print queue left from previous sessions & unpause queues
 if command -v cancel > /dev/null 2>&1; then
     echo "[Start Kiosk] Purging any stale CUPS hardware print queue on boot..."
     cancel -a -x 2>/dev/null || true
     cancel -a 2>/dev/null || true
+fi
+if command -v cupsenable > /dev/null 2>&1; then
+    cupsenable -a 2>/dev/null || true
+    cupsaccept -a 2>/dev/null || true
 fi
 
 # 1. Enforce Obsidian black background immediately (Zero desktop exposure)

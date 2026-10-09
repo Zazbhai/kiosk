@@ -378,7 +378,9 @@ class HardwareMonitor:
             is_online = False
             printer_status = "OFFLINE"
         else:
-            # USB is physically connected: adopt discovered hardware name if needed
+            # USB is physically connected: hardware is present and ready for jobs
+            is_online = True
+            printer_status = "READY"
             if not printers or active_printer_name in ("None", "CUPS Printer"):
                 active_printer_name = usb_info.get("printerFound") or "Brother DCP-T420W"
 

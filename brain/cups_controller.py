@@ -320,13 +320,17 @@ class CupsController:
                 subprocess.run(["sudo", "-n", "modprobe", "usblp"], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
                 actions.append("modprobe usblp")
 
-            # 2. Re-enable CUPS queue and accept incoming jobs
+            # 2. Re-enable ALL CUPS queues and accept incoming jobs
             # Using stdin=subprocess.DEVNULL and sudo -n completely prevents interactive password prompts
+            subprocess.run(["cupsenable", "-a"], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
+            subprocess.run(["cupsaccept", "-a"], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
             subprocess.run(["cupsenable", target], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
             subprocess.run(["cupsaccept", target], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
+            subprocess.run(["sudo", "-n", "cupsenable", "-a"], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
+            subprocess.run(["sudo", "-n", "cupsaccept", "-a"], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
             subprocess.run(["sudo", "-n", "cupsenable", target], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
             subprocess.run(["sudo", "-n", "cupsaccept", target], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
-            actions.append(f"unpaused {target}")
+            actions.append(f"unpaused {target} and all CUPS queues")
 
             # 3. Ensure error policy is retry-current-job (prevents CUPS from disabling queue on power restart)
             subprocess.run(
@@ -424,6 +428,8 @@ class CupsController:
                     usb_present = self._is_usb_printer_present() if is_usb else True
                     if is_usb and not usb_present and sys.platform != "win32":
                         is_online = False
+                    elif usb_present and sys.platform != "win32":
+                        is_online = True
 
                     printers.append({
                         "name": name,
@@ -438,33 +444,28 @@ class CupsController:
                         "is_virtual": False,
                     })
 
-                # If no online printers found on Linux, check physical USB and attempt recovery
-                if sys.platform != "win32" and (not printers or not any(p.get("is_online") for p in printers)):
-                    if self._is_usb_printer_present():
-                        target_name = default_p or (printers[0]["name"] if printers else "PrintBooth_Printer")
-                        self.auto_recover_printer(target_name)
-                        # Re-query
-                        try:
-                            raw_printers = self._conn.getPrinters()
-                            printers = []
-                            for name, d in raw_printers.items():
-                                sc = d.get("printer-state", 3)
-                                u = d.get("device-uri", "")
-                                iu = "usb:" in u.lower() or "lp0" in u.lower() or "direct" in u.lower()
-                                in_net = any(k in u.lower() for k in ["ipp:", "socket:", "http:", "lpd:", "wsd"])
-                                printers.append({
-                                    "name": name,
-                                    "info": d.get("printer-info", name),
-                                    "state": state_map.get(sc, "IDLE"),
-                                    "is_default": (name == default_p),
-                                    "is_online": sc in (3, 4),
-                                    "device_uri": u,
-                                    "is_usb": iu,
-                                    "connection_type": "USB" if iu else ("NETWORK" if in_net else "CUPS"),
-                                    "is_virtual": False,
-                                })
-                        except Exception:
-                            pass
+                # If physical USB printer is present, ensure at least one printer is marked online
+                if sys.platform != "win32" and self._is_usb_printer_present():
+                    if printers:
+                        for p in printers:
+                            if p.get("is_usb"):
+                                p["is_online"] = True
+                                p["state"] = "READY"
+                    else:
+                        usb_info = self.check_usb_printer()
+                        p_name = usb_info.get("printerFound") or "Brother_DCP_T420W"
+                        printers = [{
+                            "name": "Brother_DCP_T420W",
+                            "info": p_name,
+                            "state": "READY",
+                            "is_default": True,
+                            "is_online": True,
+                            "is_usb": True,
+                            "usb_connected": True,
+                            "connection_type": "USB",
+                            "is_virtual": False,
+                        }]
+                        default_p = "Brother_DCP_T420W"
 
                 return {"success": True, "printers": printers, "default": default_p}
             except Exception:
@@ -538,17 +539,19 @@ class CupsController:
             except Exception:
                 pass
 
-        # Offline fallback
+        # Offline fallback (checks if physical USB hardware is present)
+        usb_on = self._is_usb_printer_present() if sys.platform != "win32" else False
         return {
             "success": True,
             "printers": [
                 {
                     "name": "Brother DCP-T420W Printer",
                     "info": "Brother DCP-T420W (Raspberry Pi USB)",
-                    "state": "OFFLINE",
+                    "state": "READY" if usb_on else "OFFLINE",
                     "is_default": True,
-                    "is_online": False,
-                    "is_usb": False,
+                    "is_online": usb_on,
+                    "is_usb": True,
+                    "usb_connected": usb_on,
                     "connection_type": "USB",
                     "is_virtual": False,
                 }

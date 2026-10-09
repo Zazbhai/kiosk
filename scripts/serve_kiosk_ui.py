@@ -92,16 +92,32 @@ def get_local_printer_status():
     status = None
     if local_cups:
         try:
-            info = local_cups.get_printers()
-            printers = info.get("printers", [])
-            if printers:
-                active = next((p for p in printers if p.get("is_default")), printers[0])
+            # 1. Check physical USB connection via lsusb
+            usb_info = local_cups.check_usb_printer()
+            if usb_info.get("connected"):
+                p_name = usb_info.get("printerFound") or "Brother DCP-T420W"
+                # Unpause all CUPS queues immediately in background
+                if sys.platform != "win32":
+                    subprocess.run(["cupsenable", "-a"], capture_output=True, stdin=subprocess.DEVNULL, timeout=1)
+                    subprocess.run(["cupsaccept", "-a"], capture_output=True, stdin=subprocess.DEVNULL, timeout=1)
                 status = {
                     "success": True,
-                    "isOnline": bool(active.get("is_online", False)),
-                    "printerStatus": active.get("state", "OFFLINE"),
-                    "activePrinter": active.get("name", "Unknown"),
+                    "isOnline": True,
+                    "printerStatus": "READY",
+                    "activePrinter": p_name,
                 }
+            else:
+                info = local_cups.get_printers()
+                printers = info.get("printers", [])
+                if printers:
+                    active = next((p for p in printers if p.get("is_default")), printers[0])
+                    is_on = bool(active.get("is_online", False))
+                    status = {
+                        "success": True,
+                        "isOnline": is_on,
+                        "printerStatus": active.get("state", "READY" if is_on else "OFFLINE"),
+                        "activePrinter": active.get("name", "Unknown"),
+                    }
         except Exception:
             pass
 
