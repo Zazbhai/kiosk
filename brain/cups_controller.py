@@ -1346,6 +1346,8 @@ class CupsController:
             if isinstance(page_colours, str):
                 try:
                     parsed_page_colours = json.loads(page_colours)
+                    if isinstance(parsed_page_colours, str):
+                        parsed_page_colours = json.loads(parsed_page_colours)
                 except Exception:
                     parsed_page_colours = {}
             elif isinstance(page_colours, dict):
@@ -1355,10 +1357,19 @@ class CupsController:
         for k, v in parsed_page_colours.items():
             try:
                 p_num = int(k)
-                v_norm = str(v).upper().replace("&", "").strip()
+                if isinstance(v, dict):
+                    v_str = str(v.get("mode") or v.get("colour") or v.get("color") or "")
+                elif isinstance(v, bool):
+                    v_str = "COLOUR" if v else "BW"
+                else:
+                    v_str = str(v)
+                v_norm = v_str.upper().replace("&", "").strip()
                 col_map[p_num] = "COLOUR" if v_norm in ("COLOUR", "COLOR") else "BW"
             except (ValueError, TypeError):
                 continue
+
+        if col_map:
+            print(f"[CUPS] 🎨 Parsed per-page colour overrides: {col_map}")
 
         # 1. Normalize document: Convert Office (.pptx, .docx, .xlsx, etc.) & images to standard PDF
         has_page_colours = bool(col_map)

@@ -251,6 +251,8 @@ class KioskBrainDaemon:
         scaling = str(order.get("scaling") or settings.get("scaling") or "FIT").strip()
         orientation = str(order.get("orientation") or settings.get("orientation") or "AUTO").upper().strip()
         pages_per_sheet = int(order.get("pagesPerSheet") or settings.get("pagesPerSheet") or 1)
+        page_colours = order.get("pageColours") or settings.get("pageColours")
+        page_copies = order.get("pageCopies") or settings.get("pageCopies")
 
         download_url = f"{self.api_url}/print/download/{order_id}?kioskId={urllib.parse.quote(self.kiosk_id)}"
         if self.kiosk_secret:
@@ -286,7 +288,8 @@ class KioskBrainDaemon:
                 print(f"[Kiosk Brain] 📥 Downloading document from {download_url}...")
                 dl_req = urllib.request.Request(download_url, headers=self._get_auth_headers())
                 with urllib.request.urlopen(dl_req, timeout=25) as resp, open(local_target, "wb") as f:
-                    f.write(resp.read())
+                    resp_data = resp.read()
+                    f.write(resp_data)
                 print(f"[Kiosk Brain] ✓ Downloaded {file_name} ({local_target.stat().st_size} bytes)")
             except Exception as e:
                 print(f"[Kiosk Brain] [ERROR] Download failed: {e}")
@@ -301,6 +304,8 @@ class KioskBrainDaemon:
         print(f"  • Scaling    : {scaling}")
         print(f"  • Orientation: {orientation}")
         print(f"  • N-Up       : {pages_per_sheet}")
+        if page_colours:
+            print(f"  • Per-page Colours: {page_colours}")
 
         result = self.cups.print_file(
             file_path=str(local_target),
@@ -314,6 +319,8 @@ class KioskBrainDaemon:
             printer_name=self.printer_name,
             job_title=f"Order {order_id} - {file_name}",
             orientation=orientation,
+            page_colours=page_colours,
+            page_copies=page_copies,
         )
 
         if result.get("success"):

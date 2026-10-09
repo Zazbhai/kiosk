@@ -547,19 +547,20 @@ class KioskWsClient:
         if not order_id:
             return
 
-        file_name = payload.get("fileName") or "document.pdf"
-        copies = max(1, int(payload.get("copies") or 1))
-        raw_col = str(payload.get("colourMode") or payload.get("colour") or "BW").upper().replace("&", "")
+        settings = payload.get("printSettings") or {}
+        file_name = payload.get("fileName") or settings.get("fileName") or "document.pdf"
+        copies = max(1, int(payload.get("copies") or settings.get("copies") or 1))
+        raw_col = str(payload.get("colourMode") or payload.get("colour") or settings.get("colourMode") or settings.get("colour") or "BW").upper().replace("&", "")
         colour_mode = "COLOUR" if raw_col in ("COLOUR", "COLOR") else "BW"
-        duplex = str(payload.get("duplex") or "SINGLE").upper()
-        paper_size = str(payload.get("paperSize") or "A4").upper()
-        page_range = str(payload.get("pageRange") or payload.get("pages") or "ALL").strip()
-        scaling = str(payload.get("scaling") or "FIT").strip()
-        orientation = str(payload.get("orientation") or "AUTO").upper().strip()
-        pages_per_sheet = int(payload.get("pagesPerSheet") or 1)
+        duplex = str(payload.get("duplex") or settings.get("duplex") or "SINGLE").upper()
+        paper_size = str(payload.get("paperSize") or settings.get("paperSize") or "A4").upper()
+        page_range = str(payload.get("pageRange") or payload.get("pages") or settings.get("pageRange") or settings.get("pages") or "ALL").strip()
+        scaling = str(payload.get("scaling") or settings.get("scaling") or "FIT").strip()
+        orientation = str(payload.get("orientation") or settings.get("orientation") or "AUTO").upper().strip()
+        pages_per_sheet = int(payload.get("pagesPerSheet") or settings.get("pagesPerSheet") or 1)
 
-        page_colours = payload.get("pageColours")
-        page_copies = payload.get("pageCopies")
+        page_colours = payload.get("pageColours") or settings.get("pageColours")
+        page_copies = payload.get("pageCopies") or settings.get("pageCopies")
 
         order_number = payload.get("orderNumber")
         release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")

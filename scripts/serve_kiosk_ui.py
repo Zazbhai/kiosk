@@ -104,16 +104,19 @@ def print_staged_order_in_background(order: dict):
         pin = str(order.get("releasePin") or order.get("otp") or order.get("pickupCode") or "")
         aliases = [a for a in [order_number, pin] if a and a != order_id]
 
-        file_name = str(order.get("fileName") or "document.pdf")
-        copies = max(1, int(order.get("copies") or 1))
-        raw_c = str(order.get("colourMode") or order.get("colour") or "BW").upper().replace("&", "")
+        settings = order.get("printSettings") or {}
+        file_name = str(order.get("fileName") or settings.get("fileName") or "document.pdf")
+        copies = max(1, int(order.get("copies") or settings.get("copies") or 1))
+        raw_c = str(order.get("colourMode") or order.get("colour") or settings.get("colourMode") or settings.get("colour") or "BW").upper().replace("&", "")
         colour_mode = "COLOUR" if raw_c in ("COLOR", "COLOUR") else "BW"
-        duplex = str(order.get("duplex") or "SINGLE").upper()
-        paper_size = str(order.get("paperSize") or "A4").upper()
-        page_range = str(order.get("pageRange") or order.get("pages") or "ALL").strip()
-        scaling = str(order.get("scaling") or "FIT").strip()
-        orientation = str(order.get("orientation") or "AUTO").upper().strip()
-        pages_per_sheet = int(order.get("pagesPerSheet") or 1)
+        duplex = str(order.get("duplex") or settings.get("duplex") or "SINGLE").upper()
+        paper_size = str(order.get("paperSize") or settings.get("paperSize") or "A4").upper()
+        page_range = str(order.get("pageRange") or order.get("pages") or settings.get("pageRange") or settings.get("pages") or "ALL").strip()
+        scaling = str(order.get("scaling") or settings.get("scaling") or "FIT").strip()
+        orientation = str(order.get("orientation") or settings.get("orientation") or "AUTO").upper().strip()
+        pages_per_sheet = int(order.get("pagesPerSheet") or settings.get("pagesPerSheet") or 1)
+        page_colours = order.get("pageColours") or settings.get("pageColours")
+        page_copies = order.get("pageCopies") or settings.get("pageCopies")
 
         # Locate pre-fetched document file on disk
         local_target = TEMP_JOBS_DIR / f"{order_id}_{file_name}"
@@ -143,6 +146,8 @@ def print_staged_order_in_background(order: dict):
         if local_target.exists() and local_cups:
             print(f"\n[Kiosk Server] 🖨 DISPATCHING PHYSICAL HARDWARE PRINT FOR ORDER {order_id} ({file_name})...")
             print(f"  Settings: {copies} copies | {colour_mode} | {duplex} | {paper_size} | Pages: {page_range}")
+            if page_colours:
+                print(f"  Per-page colours: {page_colours}")
             res = local_cups.print_file(
                 file_path=str(local_target),
                 copies=copies,
@@ -155,6 +160,8 @@ def print_staged_order_in_background(order: dict):
                 printer_name=PRINTER_NAME,
                 job_title=f"Order {order_id} - {file_name}",
                 orientation=orientation,
+                page_colours=page_colours,
+                page_copies=page_copies,
             )
             print(f"[Kiosk Server] CUPS print spool result: {res}")
             if mark_order_processed:
