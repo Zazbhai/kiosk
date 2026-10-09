@@ -14,6 +14,24 @@ KIOSK_ROOT="$(dirname "$SCRIPT_DIR")"
 BRAIN_DIR="$KIOSK_ROOT/brain"
 UI_DIR="$KIOSK_ROOT/ui"
 
+# Ensure X11 display environment is bound (essential when running over SSH)
+export DISPLAY="${DISPLAY:-:0}"
+if [ -z "$XAUTHORITY" ]; then
+    for auth in "$HOME/.Xauthority" "/home/kiosk/.Xauthority" "/home/pi/.Xauthority" "/tmp/.Xauthority"; do
+        if [ -f "$auth" ]; then
+            export XAUTHORITY="$auth"
+            break
+        fi
+    done
+fi
+
+# Terminate any existing/zombie Chromium and UI server instances to release display & locks
+echo "[Start Kiosk] Terminating any stale Chromium instances..."
+pkill -9 -f "chromium" 2>/dev/null || true
+pkill -9 -f "chromium-browser" 2>/dev/null || true
+pkill -f "serve_kiosk_ui.py" 2>/dev/null || true
+sleep 0.5
+
 echo "[Start Kiosk] Initializing PrintBooth Autonomous Appliance..."
 
 # 0. Flush any stale/lingering print queue left from previous sessions
@@ -135,12 +153,21 @@ clean_chromium_crash_state() {
     # Remove process Singleton lock files
     rm -rf ~/.config/chromium/Singleton* 2>/dev/null || true
     rm -rf ~/.config/chromium-browser/Singleton* 2>/dev/null || true
+    rm -rf /tmp/printbooth-kiosk-profile/Singleton* 2>/dev/null || true
 
-    # Wipe stale disk cache so UI updates are always loaded freshly on restart
+    # Wipe stale disk cache & SQLite locks so UKM database lock errors never occur
     rm -rf ~/.cache/chromium 2>/dev/null || true
     rm -rf ~/.cache/chromium-browser 2>/dev/null || true
     rm -rf ~/.config/chromium/Default/Cache 2>/dev/null || true
     rm -rf ~/.config/chromium-browser/Default/Cache 2>/dev/null || true
+    rm -rf ~/.config/chromium/Default/GPUCache 2>/dev/null || true
+    rm -rf ~/.config/chromium-browser/Default/GPUCache 2>/dev/null || true
+    rm -rf ~/.config/chromium/Default/ukm_database* 2>/dev/null || true
+    rm -rf ~/.config/chromium-browser/Default/ukm_database* 2>/dev/null || true
+    rm -rf /tmp/printbooth-kiosk-profile/Default/Cache 2>/dev/null || true
+    rm -rf /tmp/printbooth-kiosk-profile/Default/GPUCache 2>/dev/null || true
+    rm -rf /tmp/printbooth-kiosk-profile/Default/ukm_database* 2>/dev/null || true
+    find ~/.config/chromium ~/.config/chromium-browser /tmp/printbooth-kiosk-profile -name "*.lock" -delete 2>/dev/null || true
 
     # Strip crash flag from Preferences so the "Restore pages" bubble never appears
     for pref in ~/.config/chromium/Default/Preferences ~/.config/chromium-browser/Default/Preferences; do
@@ -203,11 +230,12 @@ while [ "$EXIT_REQUESTED" -eq 0 ]; do
         --kiosk \
         --noerrdialogs \
         --disable-infobars \
+        --user-data-dir=/tmp/printbooth-kiosk-profile \
         --disk-cache-size=1 \
         --media-cache-size=1 \
         --password-store=basic \
         --use-mock-keychain \
-        --disable-features=LockProfileCookieDatabase \
+        --disable-features=SegmentationPlatform,ProcessPerSiteUpToLimit,LockProfileCookieDatabase \
         --no-first-run \
         --no-default-browser-check \
         --disable-notifications \
