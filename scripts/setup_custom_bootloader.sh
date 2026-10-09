@@ -54,6 +54,12 @@ fi
 # ------------------------------------------------------------------------------
 echo -e "\n[STEP 2/7] Configuring Raspberry Pi 4 / CM4 Firmware (config.txt)..."
 
+# Ensure boot partition is mounted read-write (fixes Debian 12 / OverlayFS read-only errors)
+echo "  Ensuring /boot and /boot/firmware partitions are mounted read-write..."
+sudo mount -o remount,rw / 2>/dev/null || true
+sudo mount -o remount,rw /boot/firmware 2>/dev/null || true
+sudo mount -o remount,rw /boot 2>/dev/null || true
+
 CONFIG_FILE=""
 if [ -f "/boot/firmware/config.txt" ]; then
     CONFIG_FILE="/boot/firmware/config.txt"     # Debian 12 Bookworm (Default)
@@ -66,19 +72,36 @@ if [ -n "$CONFIG_FILE" ]; then
     
     # Backup original config if not yet backed up
     if [ ! -f "${CONFIG_FILE}.printbooth_backup" ]; then
-        sudo cp "$CONFIG_FILE" "${CONFIG_FILE}.printbooth_backup"
+        sudo cp "$CONFIG_FILE" "${CONFIG_FILE}.printbooth_backup" 2>/dev/null || true
         echo "  ✓ Backed up original config to ${CONFIG_FILE}.printbooth_backup"
     fi
 
-    # Helper function to append or replace key=value in config.txt
+    # Helper function to append or replace key=value in config.txt using safe /tmp staging
     set_config_param() {
         local param="$1"
         local value="$2"
-        if grep -q "^[#]*\s*${param}=" "$CONFIG_FILE"; then
-            sudo sed -i "s|^[#]*\s*${param}=.*|${param}=${value}|" "$CONFIG_FILE"
-        else
-            echo "${param}=${value}" | sudo tee -a "$CONFIG_FILE" > /dev/null
-        fi
+        sudo mount -o remount,rw /boot/firmware 2>/dev/null || true
+        sudo mount -o remount,rw /boot 2>/dev/null || true
+
+        python3 -c "
+import sys, re
+path = '$CONFIG_FILE'
+param = '$param'
+val = '$value'
+try:
+    with open(path, 'r') as f:
+        content = f.read()
+    pattern = r'^[#]*\s*' + re.escape(param) + r'=.*'
+    if re.search(pattern, content, re.MULTILINE):
+        new_content = re.sub(pattern, f'{param}={val}', content, flags=re.MULTILINE)
+    else:
+        new_content = content.rstrip() + f'\n{param}={val}\n'
+    with open('/tmp/config_tmp.txt', 'w') as f:
+        f.write(new_content)
+    sys.exit(0)
+except Exception:
+    sys.exit(1)
+" && sudo cp /tmp/config_tmp.txt "$CONFIG_FILE" && rm -f /tmp/config_tmp.txt
     }
 
     # 1. Disable the 4-color rainbow boot square
@@ -177,6 +200,8 @@ if [ -n "$CMDLINE_FILE" ]; then
         fi
     done
 
+    sudo mount -o remount,rw /boot/firmware 2>/dev/null || true
+    sudo mount -o remount,rw /boot 2>/dev/null || true
     echo -n "$NEW_CMDLINE" | tr -s ' ' | sudo tee "$CMDLINE_FILE" > /dev/null
     echo "" | sudo tee -a "$CMDLINE_FILE" > /dev/null
     echo "  ✓ Kernel cmdline updated with silent fast-boot parameters"
