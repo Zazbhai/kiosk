@@ -26,11 +26,48 @@ SERVE_DIR = sys.argv[2] if len(sys.argv) > 2 else "."
 def terminate_kiosk():
     print("\n[Kiosk Server] 🛑 Exit signal received! Terminating Chromium Kiosk...")
     try:
+        Path("/tmp/printbooth_exit_requested").touch()
+    except Exception:
+        pass
+    try:
         subprocess.run(["pkill", "-f", "chromium"], check=False)
         subprocess.run(["pkill", "-f", "chromium-browser"], check=False)
     except Exception:
         pass
     os._exit(0)
+
+def launch_wifi_changer():
+    print("\n[Kiosk Server] 📶 Wi-Fi changer triggered! Launching terminal utility on DISPLAY...")
+    try:
+        Path("/tmp/printbooth_kiosk_paused").touch()
+    except Exception:
+        pass
+
+    script_dir = Path(__file__).resolve().parent
+    candidates = [
+        script_dir / "launch_wifi_terminal.sh",
+        Path("/usr/local/bin/printbooth-wifi"),
+        Path.home() / "printer_automation" / "kiosk" / "scripts" / "launch_wifi_terminal.sh",
+        Path.home() / "kiosk" / "scripts" / "launch_wifi_terminal.sh",
+        Path("/home/kiosk/printer_automation/kiosk/scripts/launch_wifi_terminal.sh"),
+        Path("/home/kiosk/kiosk/scripts/launch_wifi_terminal.sh"),
+        Path("/home/pi/printer_automation/kiosk/scripts/launch_wifi_terminal.sh"),
+    ]
+    launcher = None
+    for c in candidates:
+        if c.is_file():
+            launcher = str(c)
+            break
+
+    if not launcher:
+        launcher = str(script_dir / "launch_wifi_terminal.sh")
+
+    env = os.environ.copy()
+    env["DISPLAY"] = env.get("DISPLAY", ":0")
+    try:
+        subprocess.Popen(["bash", launcher], env=env)
+    except Exception as e:
+        print(f"[Kiosk Server] Error spawning wifi launcher: {e}")
 
 # Try loading CUPS controller for local zero-latency hardware status
 try:
@@ -101,6 +138,16 @@ class KioskHTTPHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_GET(self):
+        if self.path == "/api/wifi":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(b'{"status":"launching_wifi"}\n')
+            import threading
+            threading.Timer(0.1, launch_wifi_changer).start()
+            return
+
         if self.path == "/api/exit":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")

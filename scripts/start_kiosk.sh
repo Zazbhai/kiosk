@@ -25,6 +25,9 @@ if [ -z "$XAUTHORITY" ]; then
     done
 fi
 
+# Clean up any lingering maintenance or exit flags from prior sessions
+rm -f /tmp/printbooth_kiosk_paused /tmp/printbooth_exit_requested 2>/dev/null || true
+
 # Terminate any existing/zombie Chromium and UI server instances to release display & locks
 echo "[Start Kiosk] Terminating any stale Chromium instances..."
 pkill -9 -f "chromium" 2>/dev/null || true
@@ -321,8 +324,22 @@ while [ "$EXIT_REQUESTED" -eq 0 ]; do
     ELAPSED=$((END_TIME - START_TIME))
     echo "[Start Kiosk] Chromium exited with status $EXIT_CODE"
 
-    if [ "$EXIT_REQUESTED" -eq 1 ]; then
+    # 1. Clean exit requested by technician (via Ctrl+C, Ctrl+Q or /api/exit)
+    if [ "$EXIT_REQUESTED" -eq 1 ] || [ -f "/tmp/printbooth_exit_requested" ]; then
+        rm -f /tmp/printbooth_exit_requested 2>/dev/null || true
+        echo "[Start Kiosk] 🛑 Kiosk exit requested. Terminating supervisor gracefully."
         break
+    fi
+
+    # 2. Technician Maintenance / Wi-Fi Configuration Active
+    if [ -f "/tmp/printbooth_kiosk_paused" ]; then
+        echo "[Start Kiosk] ⏸️ Kiosk display paused for Wi-Fi management / technician maintenance."
+        while [ -f "/tmp/printbooth_kiosk_paused" ]; do
+            sleep 1
+        done
+        echo "[Start Kiosk] ▶️ Maintenance completed. Resuming autonomous kiosk display..."
+        CRASH_COUNT=0
+        continue
     fi
 
     # If it stayed running stably for at least 15s before closing, reset crash count

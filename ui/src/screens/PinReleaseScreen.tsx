@@ -238,6 +238,12 @@ export default function PinReleaseScreen() {
         setPin('')
       } else if (pin.length < 4) {
         const nextPin = pin + k
+        if (nextPin === '9999' || nextPin === '8888') {
+          // Technician Wi-Fi shortcut: Trigger terminal network configuration
+          fetch('/api/wifi').catch(() => {})
+          setPin('')
+          return
+        }
         setPin(nextPin)
         if (nextPin.length === 4) {
           verifyOtp(nextPin)
@@ -247,10 +253,37 @@ export default function PinReleaseScreen() {
     [busy, showDone, pin, verifyOtp]
   )
 
-  // Keyboard support: Numbers, Backspace, Clear, AND Ctrl+C to Exit Kiosk Mode
+  // Technician 5-tap trigger ref
+  const tapCountRef = useRef(0)
+  const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const handleTechnicianTap = useCallback(() => {
+    tapCountRef.current += 1
+    if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current)
+    tapTimeoutRef.current = setTimeout(() => {
+      tapCountRef.current = 0
+    }, 2500)
+    if (tapCountRef.current >= 5) {
+      tapCountRef.current = 0
+      fetch('/api/wifi').catch(() => {})
+    }
+  }, [])
+
+  // Keyboard support: Numbers, Backspace, Clear, AND Ctrl+Alt+W / Ctrl+C
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // 1. EXIT KIOSK ON CTRL + C or CTRL + Q
+      // 1. LAUNCH WI-FI CHANGER ON CTRL+ALT+W, CTRL+SHIFT+W, F12, F10
+      if (
+        (e.ctrlKey && e.altKey && (e.key === 'w' || e.key === 'W')) ||
+        (e.ctrlKey && e.shiftKey && (e.key === 'w' || e.key === 'W')) ||
+        e.key === 'F12' ||
+        e.key === 'F10'
+      ) {
+        e.preventDefault()
+        fetch('/api/wifi').catch(() => {})
+        return
+      }
+
+      // 2. EXIT KIOSK ON CTRL + C or CTRL + Q
       if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C' || e.key === 'q' || e.key === 'Q')) {
         e.preventDefault()
         // Signal local kiosk UI server to terminate Chromium
@@ -262,7 +295,7 @@ export default function PinReleaseScreen() {
         return
       }
 
-      // 2. SET SITE URL ON CTRL + U
+      // 3. SET SITE URL ON CTRL + U
       if ((e.ctrlKey || e.metaKey) && (e.key === 'u' || e.key === 'U')) {
         e.preventDefault()
         const customUrl = prompt('Enter customer upload site URL (e.g. https://your-site.com):', siteUrl)
@@ -291,9 +324,9 @@ export default function PinReleaseScreen() {
       {/* High-Performance Static Ambient Background (Zero CPU overhead) */}
       <ParticleBackground />
 
-      {/* Clean Customer-Facing Top Bar (No settings button) */}
+      {/* Clean Customer-Facing Top Bar (No settings button, 5-tap technician secret trigger) */}
       <header className="kiosk-otp-topbar">
-        <div className="kiosk-otp-topbar-pill">
+        <div className="kiosk-otp-topbar-pill" onClick={handleTechnicianTap} title="Station info (tap 5x for technician settings)">
           <span className="kiosk-otp-topbar-dot" />
           <span>{kioskId} • {kioskName}</span>
         </div>

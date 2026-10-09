@@ -41,6 +41,9 @@ show_banner
 # ── 1. Stop Kiosk Mode ────────────────────────────────────────────────────────
 echo -e "${YELLOW}[1/4] Pausing Kiosk Display & Supervisor...${NC}"
 
+# Mark pause flag so start_kiosk.sh sleeps in background
+touch /tmp/printbooth_kiosk_paused 2>/dev/null || true
+
 WAS_SERVICE_ACTIVE=0
 if systemctl is-active --quiet printbooth-display.service 2>/dev/null; then
     WAS_SERVICE_ACTIVE=1
@@ -48,13 +51,10 @@ if systemctl is-active --quiet printbooth-display.service 2>/dev/null; then
     systemctl stop printbooth-display.service 2>/dev/null || true
 fi
 
-# Terminate running Chromium processes and supervisor loop
-pkill -f "start_kiosk.sh" 2>/dev/null || true
+# Terminate running Chromium processes to release X11 screen
 pkill -f "chromium" 2>/dev/null || true
 pkill -f "chromium-browser" 2>/dev/null || true
 pkill -f "unclutter" 2>/dev/null || true
-pkill -f "ws_kiosk_client.py" 2>/dev/null || true
-pkill -f "daemon.py" 2>/dev/null || true
 
 # Restore mouse cursor on X display if available
 if [ -n "$DISPLAY" ]; then
@@ -216,6 +216,8 @@ while true; do
             ;;
         7)
             echo -e "\n${YELLOW}Kiosk mode remains stopped.${NC}"
+            rm -f /tmp/printbooth_kiosk_paused 2>/dev/null || true
+            pkill -f "start_kiosk.sh" 2>/dev/null || true
             echo -e "To return to kiosk mode later, run:"
             if [ "$WAS_SERVICE_ACTIVE" -eq 1 ]; then
                 echo -e "  ${GREEN}sudo systemctl start printbooth-display.service${NC}"
@@ -235,10 +237,15 @@ echo -e "${GREEN}═════════════════════
 echo -e "${BOLD}${GREEN}  Resuming PrintBooth Kiosk Display...${NC}"
 echo -e "${GREEN}══════════════════════════════════════════════════════════════${NC}"
 
+# Remove pause lock so waiting start_kiosk.sh immediately awakens
+rm -f /tmp/printbooth_kiosk_paused 2>/dev/null || true
+
 if [ "$WAS_SERVICE_ACTIVE" -eq 1 ]; then
     echo "Starting printbooth-display.service..."
     systemctl start printbooth-display.service
     echo -e "${GREEN}✓ Kiosk service restarted successfully!${NC}"
+elif pgrep -f "start_kiosk.sh" >/dev/null; then
+    echo -e "${GREEN}✓ Existing kiosk supervisor detected. Resuming display...${NC}"
 else
     ACTUAL_USER="${SUDO_USER:-$USER}"
     echo "Spawning kiosk display as user '$ACTUAL_USER'..."

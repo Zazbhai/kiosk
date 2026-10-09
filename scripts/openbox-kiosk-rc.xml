@@ -40,6 +40,25 @@
       <maximized>yes</maximized>
       <focus>yes</focus>
     </application>
+    <!-- Terminal Windows: Always elevated on top layer for technician maintenance -->
+    <application class="*terminal*">
+      <decor>yes</decor>
+      <layer>above</layer>
+      <fullscreen>yes</fullscreen>
+      <focus>yes</focus>
+    </application>
+    <application name="*terminal*">
+      <decor>yes</decor>
+      <layer>above</layer>
+      <fullscreen>yes</fullscreen>
+      <focus>yes</focus>
+    </application>
+    <application class="XTerm">
+      <decor>yes</decor>
+      <layer>above</layer>
+      <fullscreen>yes</fullscreen>
+      <focus>yes</focus>
+    </application>
     <!-- Suppress and bury any rogue authentication / system dialogs -->
     <application type="dialog">
       <decor>no</decor>
@@ -81,7 +100,22 @@
     </keybind>
     <keybind key="C-A-w">
       <action name="Execute">
-        <command>x-terminal-emulator -e sudo /home/pi/printer_automation/kiosk/scripts/exit_kiosk_wifi.sh</command>
+        <command>/bin/bash -c "if [ -x /usr/local/bin/printbooth-wifi ]; then /usr/local/bin/printbooth-wifi; else curl -s http://localhost:5175/api/wifi; fi"</command>
+      </action>
+    </keybind>
+    <keybind key="C-A-W">
+      <action name="Execute">
+        <command>/bin/bash -c "if [ -x /usr/local/bin/printbooth-wifi ]; then /usr/local/bin/printbooth-wifi; else curl -s http://localhost:5175/api/wifi; fi"</command>
+      </action>
+    </keybind>
+    <keybind key="F12">
+      <action name="Execute">
+        <command>/bin/bash -c "if [ -x /usr/local/bin/printbooth-wifi ]; then /usr/local/bin/printbooth-wifi; else curl -s http://localhost:5175/api/wifi; fi"</command>
+      </action>
+    </keybind>
+    <keybind key="C-A-t">
+      <action name="Execute">
+        <command>/bin/bash -c "if [ -x /usr/local/bin/printbooth-wifi ]; then /usr/local/bin/printbooth-wifi; else curl -s http://localhost:5175/api/wifi; fi"</command>
       </action>
     </keybind>
   </keyboard>

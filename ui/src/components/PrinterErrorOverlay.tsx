@@ -17,6 +17,56 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
   isOpen,
   title,
 }) => {
+  const tapCountRef = React.useRef(0)
+  const tapTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleTechnicianTrigger = React.useCallback(() => {
+    fetch('/api/wifi').catch(() => {})
+  }, [])
+
+  const handleTap = React.useCallback(() => {
+    tapCountRef.current += 1
+    if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current)
+    tapTimeoutRef.current = setTimeout(() => {
+      tapCountRef.current = 0
+    }, 2500)
+    if (tapCountRef.current >= 5) {
+      tapCountRef.current = 0
+      handleTechnicianTrigger()
+    }
+  }, [handleTechnicianTrigger])
+
+  React.useEffect(() => {
+    if (!isOpen) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 1. LAUNCH WI-FI CHANGER ON CTRL+ALT+W, CTRL+SHIFT+W, F12, F10
+      if (
+        (e.ctrlKey && e.altKey && (e.key === 'w' || e.key === 'W')) ||
+        (e.ctrlKey && e.shiftKey && (e.key === 'w' || e.key === 'W')) ||
+        e.key === 'F12' ||
+        e.key === 'F10'
+      ) {
+        e.preventDefault()
+        handleTechnicianTrigger()
+        return
+      }
+
+      // 2. EXIT KIOSK ON CTRL + C or CTRL + Q
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C' || e.key === 'q' || e.key === 'Q')) {
+        e.preventDefault()
+        fetch('/api/exit').catch(() => {})
+        try {
+          window.close()
+        } catch {}
+        return
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, handleTechnicianTrigger])
+
   if (!isOpen) return null
 
   const displayTitle = title || 'PRINTER OFFLINE'
@@ -43,8 +93,8 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
         }}
       >
         <div id="error-text">
-          {/* 60fps GPU-Composited Floating Mascot — Pure GPU translate quad, 0 SVG re-rasterization */}
-          <div className="oopss-mascot-container">
+          {/* 60fps GPU-Composited Floating Mascot (Tap 5x for technician Wi-Fi setup) */}
+          <div className="oopss-mascot-container" onClick={handleTap} title="Tap 5x for technician Wi-Fi setup">
             <div className="oopss-mascot-animator">
               <svg
                 className="sad-mascot-svg"
@@ -79,9 +129,24 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
           </div>
 
           {/* Headline Only — Remains locked while printer is offline */}
-          <span id="oopss-title" className="oopss-title">
+          <span id="oopss-title" className="oopss-title" onClick={handleTap}>
             {displayTitle}
           </span>
+
+          {/* Technician Wi-Fi / Maintenance Trigger Pill */}
+          <button
+            type="button"
+            className="oopss-wifi-btn"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              handleTechnicianTrigger()
+            }}
+            title="Configure Wi-Fi Connection (or press Ctrl+Alt+W / F12)"
+          >
+            <span className="wifi-btn-icon">📶</span>
+            <span>Configure Wi-Fi / Network</span>
+          </button>
         </div>
       </motion.div>
     </AnimatePresence>,

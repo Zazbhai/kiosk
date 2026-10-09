@@ -28,7 +28,20 @@ sudo apt-get install -y \
     x11-xserver-utils \
     unclutter \
     xdotool \
-    feh 2>/dev/null || true
+    feh \
+    lxterminal \
+    xterm 2>/dev/null || true
+
+# Register global printbooth-wifi technician command
+chmod +x "$SCRIPT_DIR/launch_wifi_terminal.sh" "$SCRIPT_DIR/exit_kiosk_wifi.sh"
+sudo ln -sf "$SCRIPT_DIR/launch_wifi_terminal.sh" /usr/local/bin/printbooth-wifi
+sudo chmod +x /usr/local/bin/printbooth-wifi
+
+# Configure passwordless sudo for Wi-Fi management
+sudo tee /etc/sudoers.d/020-printbooth-wifi > /dev/null << EOF
+ALL ALL=(ALL) NOPASSWD: /usr/local/bin/printbooth-wifi, $SCRIPT_DIR/exit_kiosk_wifi.sh, $SCRIPT_DIR/launch_wifi_terminal.sh, /usr/bin/nmtui, /usr/bin/nmcli, /usr/bin/raspi-config
+EOF
+sudo chmod 0440 /etc/sudoers.d/020-printbooth-wifi 2>/dev/null || true
 
 # 2. Deploy Openbox locked-down kiosk configuration
 echo "\n[2/5] Configuring locked-down Openbox profile (No menus, no borders)..."
