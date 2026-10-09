@@ -144,24 +144,46 @@ export default function PinReleaseScreen() {
       setMsg({ text: 'Verifying code with station spooler…', isErr: false })
 
       try {
-        const cleanApi = apiUrl.replace(/\/api$/, '')
-        let res = await fetch(`${cleanApi}/api/kiosks/${kioskId}/verify-pin`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pin: codeToVerify, kioskId }),
-        })
-        let data = await res.json()
-
-        if (!data.success && !data.valid) {
-          const res2 = await fetch(`${cleanApi}/api/print/verify-pin`, {
+        // 1. ALWAYS query the local Kiosk server on the Pi first (0ms latency, works completely offline!)
+        let data: any = null
+        try {
+          const localRes = await fetch('/api/verify-pin', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ kioskId, pin: codeToVerify }),
+            body: JSON.stringify({ pin: codeToVerify, kioskId }),
           })
-          data = await res2.json()
+          if (localRes.ok) {
+            data = await localRes.json()
+          }
+        } catch (localErr) {
+          console.log('[Kiosk UI] Local /api/verify-pin notice:', localErr)
         }
 
-        if (data.success || data.valid) {
+        // 2. If not matched locally, fallback to central API
+        if (!data || (!data.success && !data.valid)) {
+          const cleanApi = apiUrl.replace(/\/api$/, '')
+          let res = await fetch(`${cleanApi}/api/kiosks/${kioskId}/verify-pin`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin: codeToVerify, kioskId }),
+          }).catch(() => null)
+          if (res && res.ok) {
+            data = await res.json().catch(() => null)
+          }
+
+          if (!data || (!data.success && !data.valid)) {
+            const res2 = await fetch(`${cleanApi}/api/print/verify-pin`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ kioskId, pin: codeToVerify }),
+            }).catch(() => null)
+            if (res2 && res2.ok) {
+              data = await res2.json().catch(() => null)
+            }
+          }
+        }
+
+        if (data && (data.success || data.valid)) {
           // Permanently record in local used PIN list
           try {
             const updated = [...localUsed, codeToVerify].slice(-200)

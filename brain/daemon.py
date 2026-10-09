@@ -50,6 +50,7 @@ from order_tracker import (
     mark_order_processed,
     is_order_processed,
     purge_temp_job_files,
+    save_staged_order,
 )
 
 
@@ -251,12 +252,15 @@ class KioskBrainDaemon:
         orientation = str(order.get("orientation") or settings.get("orientation") or "AUTO").upper().strip()
         pages_per_sheet = int(order.get("pagesPerSheet") or settings.get("pagesPerSheet") or 1)
 
-        download_url = f"{self.api_url}/print/download/{order_id}"
+        download_url = f"{self.api_url}/print/download/{order_id}?kioskId={urllib.parse.quote(self.kiosk_id)}"
+        if self.kiosk_secret:
+            download_url += f"&secret={urllib.parse.quote(self.kiosk_secret)}"
         local_target = TEMP_JOBS_DIR / f"{order_id}_{file_name}"
 
         # If user has NOT entered their corresponding PIN on the touchscreen yet:
-        # Wait until order_status is VERIFIED! DO NOT auto-print.
+        # Save order & PIN locally and pre-fetch document for instant local verification!
         if order_status != "VERIFIED":
+            save_staged_order(order)
             if not local_target.exists():
                 print(f"[Kiosk Brain] 📥 Staged Order {order_id} (Awaiting customer to enter PIN {release_pin} on kiosk)")
                 try:

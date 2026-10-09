@@ -175,3 +175,92 @@ def purge_temp_job_files():
             logger.info(f"Purged {purged_count} orphaned temporary print files from disk.")
     except Exception as e:
         logger.warning(f"Error purging temp jobs: {e}")
+
+
+STAGED_ORDERS_FILE = DATA_DIR / "staged_orders.json"
+
+def save_staged_order(order: Dict[str, Any]):
+    """
+    Saves a print job with its 4-digit release PIN locally on the Pi.
+    Enables 100% local PIN verification with zero latency and offline support.
+    """
+    if not order:
+        return
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    pin = str(order.get("releasePin") or order.get("otp") or order.get("pickupCode") or "").strip()
+    order_id = str(order.get("orderId") or order.get("orderNumber") or "").strip()
+    if not pin and not order_id:
+        return
+
+    try:
+        with open(LOCK_FILE, "a+", encoding="utf-8") as lf:
+            _acquire_lock(lf)
+            try:
+                staged: Dict[str, Any] = {}
+                if STAGED_ORDERS_FILE.exists():
+                    try:
+                        staged = json.loads(STAGED_ORDERS_FILE.read_text(encoding="utf-8"))
+                        if not isinstance(staged, dict):
+                            staged = {}
+                    except Exception:
+                        staged = {}
+
+                # Index order by PIN, orderId, and orderNumber
+                if pin:
+                    staged[pin] = order
+                if order_id:
+                    staged[order_id] = order
+                order_num = str(order.get("orderNumber") or "").strip()
+                if order_num:
+                    staged[order_num] = order
+
+                STAGED_ORDERS_FILE.write_text(json.dumps(staged, indent=2), encoding="utf-8")
+                print(f"[Order Tracker] 💾 Staged order locally: Order {order_id} | PIN {pin}")
+            finally:
+                _release_lock(lf)
+    except Exception as e:
+        logger.warning(f"Error saving staged order: {e}")
+
+
+def get_staged_order_by_pin(pin: str) -> Optional[Dict[str, Any]]:
+    """Retrieves a staged order using the 4-digit release PIN from local Pi disk."""
+    clean_pin = str(pin).strip()
+    if not clean_pin or not STAGED_ORDERS_FILE.exists():
+        return None
+
+    try:
+        with open(LOCK_FILE, "a+", encoding="utf-8") as lf:
+            _acquire_lock(lf)
+            try:
+                staged = json.loads(STAGED_ORDERS_FILE.read_text(encoding="utf-8"))
+                if not isinstance(staged, dict):
+                    return None
+                return staged.get(clean_pin)
+            finally:
+                _release_lock(lf)
+    except Exception as e:
+        logger.warning(f"Error reading staged order: {e}")
+        return None
+
+
+def remove_staged_order(pin: str, order_id: Optional[str] = None):
+    """Removes a staged order from local disk once verified and printed."""
+    if not STAGED_ORDERS_FILE.exists():
+        return
+
+    try:
+        with open(LOCK_FILE, "a+", encoding="utf-8") as lf:
+            _acquire_lock(lf)
+            try:
+                staged = json.loads(STAGED_ORDERS_FILE.read_text(encoding="utf-8"))
+                if not isinstance(staged, dict):
+                    return
+                keys_to_del = [k for k, v in staged.items() if k == pin or (order_id and (k == order_id or (isinstance(v, dict) and v.get("orderId") == order_id)))]
+                for k in keys_to_del:
+                    staged.pop(k, None)
+                STAGED_ORDERS_FILE.write_text(json.dumps(staged, indent=2), encoding="utf-8")
+            finally:
+                _release_lock(lf)
+    except Exception as e:
+        logger.warning(f"Error removing staged order: {e}")
+

@@ -31,6 +31,7 @@ from order_tracker import (
     mark_order_processed,
     is_order_processed,
     purge_temp_job_files,
+    save_staged_order,
 )
 
 
@@ -347,6 +348,9 @@ class KioskWsClient:
                         self.staged_jobs[order_number] = payload
                     if release_pin:
                         self.staged_jobs[release_pin] = payload
+
+                    # Persist locally so serve_kiosk_ui.py can verify PIN 100% locally
+                    save_staged_order(payload)
 
                     # Prefetch document in background so printing is instant upon PIN entry
                     asyncio.create_task(self._prefetch_document(order_id, payload))
