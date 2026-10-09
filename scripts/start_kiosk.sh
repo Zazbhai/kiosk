@@ -179,9 +179,16 @@ clean_chromium_crash_state() {
     pkill -9 -f "chromium.*type=utility" 2>/dev/null || true
     pkill -9 -f "chromium.*type=gpu-process" 2>/dev/null || true
 
-    # 2. Clean singleton locks, GPU cache and crash locks from profile
+    # 2. If crashing repeatedly, completely wipe profile to clear corrupt databases/locks
+    if [ "$CRASH_COUNT" -gt 0 ]; then
+        rm -rf "$USER_PROFILE_DIR" 2>/dev/null || true
+        mkdir -p "$USER_PROFILE_DIR" 2>/dev/null || true
+    fi
+
+    # 3. Clean singleton locks, GPU cache and crash locks from profile
     rm -rf "$USER_PROFILE_DIR/Singleton"* 2>/dev/null || true
     rm -rf "$USER_PROFILE_DIR/Default/GPUCache"* 2>/dev/null || true
+    rm -rf "$USER_PROFILE_DIR/Default/GCM Store"* 2>/dev/null || true
     find "$USER_PROFILE_DIR" -name "*LOCK*" -o -name "*.lock" -o -name "*journal*" -delete 2>/dev/null || true
     rm -rf /tmp/printbooth-kiosk-profile 2>/dev/null || true
 
@@ -257,6 +264,7 @@ while [ "$EXIT_REQUESTED" -eq 0 ]; do
         --no-default-browser-check
         --disable-session-crashed-bubble
         --disable-crash-reporter
+        --disable-crashpad
         --no-crash-upload
         --disable-breakpad
         --disable-hang-monitor
@@ -268,8 +276,8 @@ while [ "$EXIT_REQUESTED" -eq 0 ]; do
         --disable-background-networking
         --disable-sync
         --disable-metrics
-        --disable-metrics-repo
         --disable-metrics-reporting
+        --disable-dev-shm-usage
         --disable-background-timer-throttling
         --disable-renderer-backgrounding
         --disable-backgrounding-occluded-windows
@@ -278,30 +286,52 @@ while [ "$EXIT_REQUESTED" -eq 0 ]; do
         --enable-offline-auto-reload-visible-only
         --hide-scrollbars
         --log-level=3
-        --disable-features=SegmentationPlatform,ProcessPerSiteUpToLimit,LockProfileCookieDatabase,OptimizationHints,MediaRouter,Translate,DialMediaRouteProvider,GCM,PushMessaging,Ukm
+        --disable-features=Translate,OptimizationHints,MediaRouter,DialMediaRouteProvider
     )
+
+    # If running as root or under systemd service without normal user session
+    if [ "$(id -u)" -eq 0 ]; then
+        COMMON_FLAGS+=(--no-sandbox --test-type)
+    fi
+
+    START_TIME=$(date +%s)
 
     if [ "$CRASH_COUNT" -eq 0 ]; then
         echo "[Start Kiosk] Spawning Kiosk Display with hardware acceleration (Instance #1)..."
         "$CHROMIUM_CMD" "${COMMON_FLAGS[@]}" \
             --enable-gpu-rasterization \
             "$DISPLAY_URL"
-    else
-        echo "[Start Kiosk] 🛡️ Fallback: Spawning Ultra-Stable Software Rasterizer Display (Instance #$((CRASH_COUNT + 1)))..."
+    elif [ "$CRASH_COUNT" -eq 1 ]; then
+        echo "[Start Kiosk] 🛡️ Fallback: Spawning Safe Software Compositor Display (Instance #2)..."
         "$CHROMIUM_CMD" "${COMMON_FLAGS[@]}" \
             --disable-gpu \
-            --disable-software-rasterizer=false \
+            --disable-gpu-compositing \
+            "$DISPLAY_URL"
+    else
+        echo "[Start Kiosk] 🛡️ Fallback: Spawning Bulletproof Kiosk Mode (Instance #$((CRASH_COUNT + 1)))..."
+        "$CHROMIUM_CMD" "${COMMON_FLAGS[@]}" \
+            --no-sandbox \
+            --disable-gpu \
+            --disable-gpu-compositing \
             "$DISPLAY_URL"
     fi
     
     EXIT_CODE=$?
+    END_TIME=$(date +%s)
+    ELAPSED=$((END_TIME - START_TIME))
     echo "[Start Kiosk] Chromium exited with status $EXIT_CODE"
 
     if [ "$EXIT_REQUESTED" -eq 1 ]; then
         break
     fi
 
-    CRASH_COUNT=$((CRASH_COUNT + 1))
+    # If it stayed running stably for at least 15s before closing, reset crash count
+    if [ "$ELAPSED" -ge 15 ]; then
+        CRASH_COUNT=0
+    else
+        CRASH_COUNT=$((CRASH_COUNT + 1))
+    fi
+
     echo "[Start Kiosk] ⚠️ Kiosk window closed unexpectedly. Relaunching in 1s (crash protection active)..."
     
     # Keep screen solid obsidian during quick reload
