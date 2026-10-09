@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # PrintBooth Custom Bootloader & Silent Fast-Boot Appliance Setup
-# Light & Laser Red Matrix Opening Edition (NO LOGOS)
+# Extraordinary Cyber Matrix Quantum Edition (Obsidian & Laser Red)
 # Targeted for Raspberry Pi 4 Model B & Compute Module 4 (CM4)
 # ==============================================================================
 # 1. Hardware Firmware: Disables 4-color rainbow splash, sets zero boot delay,
 #    enables initial CPU turbo and BCM2835 hardware watchdog in config.txt.
 # 2. Kernel Handover: Silences kernel dmesg, redirects console to tty3,
 #    hides Raspberry Pi fruit logos, hides terminal cursor in cmdline.txt.
-# 3. Plymouth Graphical Bootloader: Installs Light & Laser Red Matrix opening
-#    bootloader with streaming digital code rain, monospace terminal telemetry,
-#    ZERO LOGO, and compiles into initramfs.
+# 3. Plymouth Graphical Bootloader: Installs Extraordinary Cyber Matrix bootloader
+#    with dual counter-rotating reticle dials, pulsing laser core aperture,
+#    holographic laser scanline beam, 14 cascading code rain columns,
+#    traveling spark particle, and real-time 7-stage hardware telemetry.
 # 4. Anti-Popup & Polkit Lockdown: Completely suppresses "Authentication Required"
 #    modals, GNOME keyring dialogs, and colord/network policy prompts.
 # ==============================================================================
@@ -24,8 +25,8 @@ if [ "$1" = "--test" ] || [ "$1" = "-t" ]; then
 fi
 
 echo "════════════════════════════════════════════════════════"
-echo "  PrintBooth Custom Bootloader: Matrix Edition (No Logo)"
-echo "  Theme: High-Tech Light Porcelain & Laser Red Matrix   "
+echo "  PrintBooth Custom Bootloader: Cyber Matrix Edition    "
+echo "  Theme: Capitalio Obsidian & Radiant Laser Red Matrix  "
 echo "  Target Architecture: Raspberry Pi 4 / CM4             "
 echo "════════════════════════════════════════════════════════"
 
@@ -51,7 +52,7 @@ fi
 
 # Function to deploy the Plymouth Matrix theme files
 deploy_plymouth_theme() {
-    echo "  Deploying Plymouth Matrix theme..."
+    echo "  Deploying Extraordinary Cyber Matrix Plymouth theme..."
     if ! command -v plymouth > /dev/null 2>&1 || ! command -v plymouth-set-default-theme > /dev/null 2>&1; then
         sudo apt-get update -y
         sudo apt-get install -y plymouth plymouth-themes pix-plym-splash 2>/dev/null || true
@@ -60,29 +61,38 @@ deploy_plymouth_theme() {
     PLYMOUTH_THEME_DIR="/usr/share/plymouth/themes/printbooth"
     sudo mkdir -p "$PLYMOUTH_THEME_DIR"
 
-    # Copy generated Light & Red Matrix assets
+    # Copy generated Cyber Matrix assets
     if [ -f "$ASSETS_DIR/plymouth_bg.png" ]; then
         sudo cp "$ASSETS_DIR/plymouth_bg.png" "$PLYMOUTH_THEME_DIR/plymouth_bg.png"
         sudo cp "$ASSETS_DIR/plymouth_bg.png" "$PLYMOUTH_THEME_DIR/background.png"
     fi
 
-    for idx in 1 2 3 4; do
+    # Reticle dials
+    for f in reticle_outer.png reticle_mid.png reticle_core.png laser_scanline.png; do
+        if [ -f "$ASSETS_DIR/$f" ]; then
+            sudo cp "$ASSETS_DIR/$f" "$PLYMOUTH_THEME_DIR/$f"
+        fi
+    done
+
+    # Matrix streams (1 through 6)
+    for idx in 1 2 3 4 5 6; do
         if [ -f "$ASSETS_DIR/matrix_stream_${idx}.png" ]; then
             sudo cp "$ASSETS_DIR/matrix_stream_${idx}.png" "$PLYMOUTH_THEME_DIR/matrix_stream_${idx}.png"
         fi
     done
 
-    if [ -f "$ASSETS_DIR/progress_track.png" ]; then
-        sudo cp "$ASSETS_DIR/progress_track.png" "$PLYMOUTH_THEME_DIR/progress_track.png"
-        sudo cp "$ASSETS_DIR/progress_bar.png" "$PLYMOUTH_THEME_DIR/progress_bar.png"
-        sudo cp "$ASSETS_DIR/progress_glow.png" "$PLYMOUTH_THEME_DIR/progress_glow.png" 2>/dev/null || true
-    fi
+    # Progress bar and spark flare
+    for f in progress_track.png progress_bar.png progress_spark.png progress_glow.png; do
+        if [ -f "$ASSETS_DIR/$f" ]; then
+            sudo cp "$ASSETS_DIR/$f" "$PLYMOUTH_THEME_DIR/$f"
+        fi
+    done
 
     # Write Plymouth Theme Descriptor
     cat << 'EOF' | sudo tee "$PLYMOUTH_THEME_DIR/printbooth.plymouth" > /dev/null
 [Plymouth Theme]
-Name=PrintBooth Matrix Appliance
-Description=High-Tech Light Porcelain & Laser Red Matrix Digital Rain Bootloader (No Logo)
+Name=PrintBooth Cyber Matrix Appliance
+Description=Extraordinary Cyber Matrix Quantum Bootloader (Dual Reticles, Holographic Scanline, Cascading Code)
 ModuleName=script
 
 [script]
@@ -93,17 +103,17 @@ EOF
     # Write Animated Matrix Opening Plymouth Script
     cat << 'EOF' | sudo tee "$PLYMOUTH_THEME_DIR/printbooth.script" > /dev/null
 # ==============================================================================
-# PrintBooth Custom Plymouth Matrix Digital Rain Script (Light & Laser Red)
+# PrintBooth Extraordinary Plymouth Cyber Matrix Script (Obsidian & Laser Red)
 # ==============================================================================
 
-# Background Palette: Crisp Light Porcelain (#f8fafc)
-Window.SetBackgroundTopColor(0.973, 0.980, 0.988);
-Window.SetBackgroundBottomColor(0.973, 0.980, 0.988);
+# Background Palette: Deep Capitalio Obsidian (#06110D)
+Window.SetBackgroundTopColor(0.024, 0.067, 0.051);
+Window.SetBackgroundBottomColor(0.024, 0.067, 0.051);
 
 screen_width = Window.GetWidth();
 screen_height = Window.GetHeight();
 
-# 1. Main Background Canvas (Grid & Corner Brackets, ZERO LOGO)
+# 1. Main Background Canvas (Subtle Isometric Grid & Tactical HUD Brackets)
 bg_image = Image("plymouth_bg.png");
 if (!bg_image) {
     bg_image = Image("background.png");
@@ -115,58 +125,112 @@ if (bg_image) {
     bg_sprite.SetPosition(0, 0, 0);
 }
 
-# 2. Dynamic Cascading Matrix Rain Columns (Laser Red Streams)
+# 2. Concentric Cybernetic Quantum Reticle (Positioned in Upper Core)
+reticle_cx = screen_width / 2;
+reticle_cy = (screen_height / 2) - 100;
+
+reticle_outer_img = Image("reticle_outer.png");
+if (reticle_outer_img) {
+    reticle_outer_sprite = Sprite();
+    reticle_outer_sprite.SetPosition(reticle_cx - reticle_outer_img.GetWidth() / 2, reticle_cy - reticle_outer_img.GetHeight() / 2, 4);
+}
+
+reticle_mid_img = Image("reticle_mid.png");
+if (reticle_mid_img) {
+    reticle_mid_sprite = Sprite();
+    reticle_mid_sprite.SetPosition(reticle_cx - reticle_mid_img.GetWidth() / 2, reticle_cy - reticle_mid_img.GetHeight() / 2, 5);
+}
+
+reticle_core_img = Image("reticle_core.png");
+if (reticle_core_img) {
+    reticle_core_sprite = Sprite(reticle_core_img);
+    reticle_core_sprite.SetPosition(reticle_cx - reticle_core_img.GetWidth() / 2, reticle_cy - reticle_core_img.GetHeight() / 2, 6);
+}
+
+# 3. Horizontal Holographic Laser Scanline Beam
+scanline_img = Image("laser_scanline.png");
+if (scanline_img) {
+    scanline_sprite = Sprite(scanline_img.Scale(screen_width, 8));
+    scanline_y = -30;
+    scanline_sprite.SetPosition(0, scanline_y, 7);
+    scanline_sprite.SetOpacity(0.85);
+}
+
+# 4. Cascading Matrix Rain Columns (6 Streams across 14 Columns)
 stream_images[0] = Image("matrix_stream_1.png");
 stream_images[1] = Image("matrix_stream_2.png");
 stream_images[2] = Image("matrix_stream_3.png");
 stream_images[3] = Image("matrix_stream_4.png");
+stream_images[4] = Image("matrix_stream_5.png");
+stream_images[5] = Image("matrix_stream_6.png");
 
-num_cols = 10;
+num_cols = 14;
 col_spacing = screen_width / (num_cols + 1);
 
 for (i = 0; i < num_cols; i++) {
-    img_idx = i % 4;
-    if (stream_images[img_idx]) {
-        stream_sprites[i] = Sprite(stream_images[img_idx]);
+    idx = i % 6;
+    if (stream_images[idx]) {
+        stream_sprites[i] = Sprite(stream_images[idx]);
         stream_x[i] = Math.Int((i + 1) * col_spacing - 21);
-        stream_speed[i] = 160 + (i * 45) % 200;
-        stream_sprites[i].SetPosition(stream_x[i], -750, 1);
-        stream_sprites[i].SetOpacity(0.55);
+        stream_speed[i] = 170 + (i * 39) % 230;
+        init_y = -750 - (i * 85) % 500;
+        stream_sprites[i].SetPosition(stream_x[i], init_y, 2);
+        if (i == 6 || i == 7) {
+            stream_sprites[i].SetOpacity(0.25);
+        } else {
+            stream_sprites[i].SetOpacity(0.55);
+        }
     }
 }
 
-# 3. Monospace Status Terminal Telemetry
-status_text = "INITIALIZING PRINTBOOTH MATRIX BUS...";
-status_image = Image.Text(status_text, 0.86, 0.15, 0.15, 1.0, "Monospace 11");
-if (status_image) {
-    status_sprite = Sprite(status_image);
-    status_x = (screen_width - status_image.GetWidth()) / 2;
-    status_y = (screen_height / 2) + 140;
-    status_sprite.SetPosition(status_x, status_y, 10);
-}
+# 5. Dynamic 7-Stage Hardware Telemetry Monospace Readout
+stages[0] = "// [STAGE 01/07] BCM2711 SILICON & KERNEL BUS BINDING -> OK";
+stages[1] = "// [STAGE 02/07] CALIBRATING TOUCH DIGITIZER & I/O PORTS -> OK";
+stages[2] = "// [STAGE 03/07] ALLOCATING MEMORY SPOOL PIPE [0x7FF0..0x8000] -> OK";
+stages[3] = "// [STAGE 04/07] PROBING THERMAL CUPS PRINTER SUBSYSTEM -> READY";
+stages[4] = "// [STAGE 05/07] ESTABLISHING LOW-LATENCY AUTONOMOUS WSS LINK -> 100%";
+stages[5] = "// [STAGE 06/07] HARDWARE INTEGRITY VERIFIED // PB-001 SECURE -> OK";
+stages[6] = "// [STAGE 07/07] ENCRYPTED PRINT PIPELINE SYNCHRONIZED — READY";
 
-# 4. Laser Red Digital Progress Bar
+status_sprite = Sprite();
+status_y = (screen_height / 2) + 154;
+
+pct_sprite = Sprite();
+pct_y = (screen_height / 2) + 96;
+
+fun update_status(text) {
+    img = Image.Text(text, 0.97, 0.45, 0.45, 1.0, "Monospace Bold 11");
+    if (img) {
+        status_sprite.SetImage(img);
+        status_sprite.SetPosition((screen_width - img.GetWidth()) / 2, status_y, 12);
+    }
+}
+update_status(stages[0]);
+
+# 6. High-Precision Laser Progress Bar & Traveling Spark
 track_img = Image("progress_track.png");
 bar_img = Image("progress_bar.png");
-glow_img = Image("progress_glow.png");
+spark_img = Image("progress_spark.png");
+if (!spark_img) {
+    spark_img = Image("progress_glow.png");
+}
 
-track_width = 380;
-track_height = 8;
-track_x = (screen_width - track_width) / 2;
-track_y = (screen_height / 2) + 110;
+track_w = 480;
+track_h = 10;
+track_x = (screen_width - track_w) / 2;
+track_y = (screen_height / 2) + 122;
 
 if (track_img) {
-    track_sprite = Sprite(track_img.Scale(track_width, track_height));
-    track_sprite.SetPosition(track_x, track_y, 8);
+    track_sprite = Sprite(track_img.Scale(track_w, track_h));
+    track_sprite.SetPosition(track_x, track_y, 9);
 }
 
 bar_sprite = Sprite();
-bar_sprite.SetPosition(track_x, track_y, 9);
+bar_sprite.SetPosition(track_x, track_y, 10);
 
-if (glow_img) {
-    glow_sprite = Sprite(glow_img);
-    glow_sprite.SetPosition(track_x - 12, track_y - 8, 10);
-    glow_sprite.SetOpacity(0.85);
+if (spark_img) {
+    spark_sprite = Sprite(spark_img);
+    spark_sprite.SetPosition(track_x - 16, track_y - 11, 11);
 }
 
 progress_val = 0.05;
@@ -176,41 +240,97 @@ fun refresh_progress(val) {
     if (val < 0.0) val = 0.0;
     progress_val = val;
 
-    current_w = Math.Int(track_width * progress_val);
+    current_w = Math.Int(track_w * progress_val);
     if (current_w < 1) current_w = 1;
 
     if (bar_img) {
-        scaled_bar = bar_img.Scale(current_w, track_height);
+        scaled_bar = bar_img.Scale(current_w, track_h);
         bar_sprite.SetImage(scaled_bar);
     }
 
-    if (glow_img) {
-        glow_sprite.SetPosition(track_x + current_w - 12, track_y - 8, 10);
+    if (spark_img && spark_sprite) {
+        spark_sprite.SetPosition(track_x + current_w - 16, track_y - 11, 11);
+    }
+
+    # Update telemetry message according to progress
+    stage_idx = Math.Int(progress_val * 6.99);
+    if (stage_idx > 6) stage_idx = 6;
+    if (stage_idx < 0) stage_idx = 0;
+    update_status(stages[stage_idx]);
+
+    # Live percentage text readout
+    pct_num = Math.Int(progress_val * 100);
+    pct_txt = "SYSTEM CALIBRATION: " + pct_num + "%";
+    pct_img = Image.Text(pct_txt, 0.90, 0.30, 0.30, 1.0, "Monospace Bold 10");
+    if (pct_img) {
+        pct_sprite.SetImage(pct_img);
+        pct_sprite.SetPosition((screen_width - pct_img.GetWidth()) / 2, pct_y, 12);
     }
 }
 
 refresh_progress(0.08);
 
-# Continuous Matrix Rain Animation Loop
-time_counter = 0;
-fun refresh_callback() {
-    time_counter++;
+# Continuous High-Speed 60fps Animation Loop
+time_tick = 0;
+outer_angle = 0.0;
+mid_angle = 0.0;
+pulse_phase = 0.0;
 
-    # Cascading Matrix streams
+fun refresh_callback() {
+    time_tick++;
+
+    # 1. Dual counter-rotating cybernetic reticle
+    outer_angle = outer_angle + 0.018;
+    if (reticle_outer_img && reticle_outer_sprite) {
+        rot_out = reticle_outer_img.Rotate(outer_angle);
+        reticle_outer_sprite.SetImage(rot_out);
+        reticle_outer_sprite.SetPosition(reticle_cx - rot_out.GetWidth() / 2, reticle_cy - rot_out.GetHeight() / 2, 4);
+    }
+
+    mid_angle = mid_angle - 0.026;
+    if (reticle_mid_img && reticle_mid_sprite) {
+        rot_mid = reticle_mid_img.Rotate(mid_angle);
+        reticle_mid_sprite.SetImage(rot_mid);
+        reticle_mid_sprite.SetPosition(reticle_cx - rot_mid.GetWidth() / 2, reticle_cy - rot_mid.GetHeight() / 2, 5);
+    }
+
+    # 2. Pulsing laser core aperture
+    pulse_phase = pulse_phase + 0.08;
+    if (reticle_core_sprite) {
+        core_alpha = 0.70 + 0.30 * Math.Sin(pulse_phase);
+        reticle_core_sprite.SetOpacity(core_alpha);
+    }
+
+    # 3. Horizontal laser scanline sweep
+    if (scanline_sprite) {
+        scanline_y = scanline_y + 5.2;
+        if (scanline_y > screen_height + 40) {
+            scanline_y = -40;
+        }
+        scanline_sprite.SetPosition(0, scanline_y, 7);
+    }
+
+    # 4. Cascading matrix streams
     for (i = 0; i < num_cols; i++) {
         if (stream_sprites[i]) {
             cy = stream_sprites[i].GetY();
             ny = cy + (stream_speed[i] / 50.0);
             if (ny > screen_height) {
-                ny = -750 - (Math.Int(time_counter * 13) % 200);
+                ny = -750 - (Math.Int(time_tick * 17 + i * 31) % 250);
             }
-            stream_sprites[i].SetPosition(stream_x[i], ny, 1);
+            stream_sprites[i].SetPosition(stream_x[i], ny, 2);
         }
     }
 
-    # Steady progress advancement
-    if (progress_val < 0.92) {
-        refresh_progress(progress_val + 0.002);
+    # 5. Pulsing Spark at head of progress
+    if (spark_sprite) {
+        spark_alpha = 0.75 + 0.25 * Math.Sin(time_tick * 0.15);
+        spark_sprite.SetOpacity(spark_alpha);
+    }
+
+    # 6. Smooth progressive advancement
+    if (progress_val < 0.94) {
+        refresh_progress(progress_val + 0.0018);
     }
 }
 
@@ -222,18 +342,12 @@ fun boot_progress_callback(duration, progress) {
 Plymouth.SetBootProgressFunction(boot_progress_callback);
 
 fun message_callback(text) {
-    status_text = text;
-    new_img = Image.Text(status_text, 0.86, 0.15, 0.15, 1.0, "Monospace 11");
-    if (new_img) {
-        status_sprite.SetImage(new_img);
-        status_x = (screen_width - new_img.GetWidth()) / 2;
-        status_sprite.SetPosition(status_x, status_y, 10);
-    }
+    update_status(text);
 }
 Plymouth.SetMessageFunction(message_callback);
 
 fun quit_callback() {
-    # Fade out smoothly
+    # Fade out smoothly into kiosk
     if (bg_sprite) bg_sprite.SetOpacity(0);
 }
 Plymouth.SetQuitFunction(quit_callback);
@@ -247,7 +361,7 @@ EOF
 if [ "$TEST_MODE" = true ]; then
     echo -e "\n--------------------------------------------------------"
     echo "  Live Plymouth Splash Preview Mode Active              "
-    echo "  Rendering Light & Laser Red Matrix Splash on-screen..."
+    echo "  Rendering Extraordinary Cyber Matrix Splash on-screen..."
     echo "--------------------------------------------------------"
     deploy_plymouth_theme
 
@@ -255,11 +369,11 @@ if [ "$TEST_MODE" = true ]; then
         sudo plymouthd --mode=boot --attach-to-session 2>/dev/null || true
         sudo plymouth --show-splash 2>/dev/null || true
         for p in 15 35 55 75 90 100; do
-            sudo plymouth --message="MATRIX DECRYPTING HARDWARE BUS... ($p%)" 2>/dev/null || true
+            sudo plymouth --message="CYBER BUS CALIBRATING... ($p%)" 2>/dev/null || true
             sleep 0.8
         done
         sudo plymouth quit 2>/dev/null || true
-        echo "  ✓ Matrix preview completed."
+        echo "  ✓ Cyber Matrix preview completed."
     else
         echo "  ⚠️ plymouthd not available to preview live."
     fi

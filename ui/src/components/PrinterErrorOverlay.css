@@ -1,6 +1,7 @@
 /* ==========================================================================
    PrintBooth Kiosk — Printer Offline & Hardware Unavailable Overlay
    Full-Page Immersive Crimson Red Takeover with Centered Animation
+   Optimized for Raspberry Pi: Zero Gaussian blur recalculations, 60fps GPU layers
    ========================================================================== */
 
 #oopss {
@@ -28,31 +29,40 @@
   font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
   user-select: none;
   -webkit-user-select: none;
+
+  /* GPU layer isolation — Prevents full-page repaints and Skia cache thrashing on Pi */
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  contain: layout style paint;
 }
 
-/* Atmospheric ambient radial backlights */
+/* Atmospheric ambient radial backlights — ONLY animate opacity, NO scale changes to avoid re-rasterization */
 #oopss::before {
   content: '';
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translate3d(-50%, -50%, 0);
+  -webkit-transform: translate3d(-50%, -50%, 0);
   width: min(800px, 90vw);
   height: min(800px, 90vw);
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 68%);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.08) 0%, transparent 68%);
   pointer-events: none;
+  will-change: opacity;
   animation: oopssPulse 4s ease-in-out infinite alternate;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 @keyframes oopssPulse {
-  0% { transform: translate(-50%, -50%) scale(0.95); opacity: 0.6; }
-  100% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+  0% { opacity: 0.45; }
+  100% { opacity: 0.85; }
 }
 
-
-
-/* Top-left station info badge */
+/* Top-left station info badge — High-contrast dark glass without CPU-heavy backdrop-filter blur */
 .oopss-station-badge {
   position: fixed;
   top: clamp(16px, 3vh, 28px);
@@ -60,9 +70,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgba(0, 0, 0, 0.65);
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: #ffffff;
   padding: 8px 16px;
@@ -78,7 +86,7 @@
   height: 8px;
   border-radius: 50%;
   background: #facc15;
-  box-shadow: 0 0 8px #facc15;
+  box-shadow: 0 0 6px #facc15;
 }
 
 /* Core centered content */
@@ -99,53 +107,87 @@
   z-index: 2;
 }
 
-/* Full-Page Sad Face Animation container */
-.oopss-img-wrap {
+/* Mascot container */
+.oopss-mascot-container {
   position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   margin-bottom: clamp(20px, 4vh, 36px);
 }
 
-.sad-mascot-svg {
-  width: clamp(180px, 32vh, 290px);
-  height: clamp(180px, 32vh, 290px);
-  display: block;
-  overflow: visible;
-  filter: drop-shadow(0 20px 40px rgba(0, 0, 0, 0.45));
-  user-select: none;
-  pointer-events: none;
-}
-
-.sad-mascot-group {
-  transform-origin: 50px 50px;
+/* 60FPS GPU Animator — Animates the HTML div container instead of internal SVG <g> */
+.oopss-mascot-animator {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   will-change: transform;
   transform: translate3d(0, 0, 0);
-  animation: ld-swim-px 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  -webkit-transform: translate3d(0, 0, 0);
+  animation: mascotHover 3.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
-@keyframes ld-swim-px {
+@keyframes mascotHover {
   0%, 100% {
     transform: translate3d(0, 0, 0) rotate(0deg);
   }
-  12.5%, 37.5% {
-    transform: translate3d(1px, -3px, 0) rotate(3deg);
-  }
   25% {
-    transform: translate3d(0, -6px, 0) rotate(6deg);
+    transform: translate3d(0, -9px, 0) rotate(2deg);
   }
-  62.5%, 87.5% {
-    transform: translate3d(1px, 3px, 0) rotate(-3deg);
+  50% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
   }
   75% {
-    transform: translate3d(0, 6px, 0) rotate(-6deg);
+    transform: translate3d(0, 7px, 0) rotate(-2deg);
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .sad-mascot-group {
-    animation: none !important;
+/* Static clean SVG mascot vector — ZERO drop-shadow filter on the vector itself */
+.sad-mascot-svg {
+  width: clamp(180px, 32vh, 280px);
+  height: clamp(180px, 32vh, 280px);
+  display: block;
+  overflow: visible;
+  user-select: none;
+  pointer-events: none;
+  shape-rendering: geometricPrecision;
+}
+
+/* Hardware-accelerated ground shadow beneath floating mascot */
+.mascot-ground-shadow {
+  width: clamp(110px, 18vw, 170px);
+  height: 12px;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.42) 0%, rgba(0, 0, 0, 0) 70%);
+  border-radius: 50%;
+  margin-top: 10px;
+  will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  animation: shadowHover 3.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+@keyframes shadowHover {
+  0%, 100% {
+    transform: scale3d(1, 1, 1);
+    opacity: 0.7;
+  }
+  25% {
+    transform: scale3d(0.85, 0.85, 1);
+    opacity: 0.38;
+  }
+  50% {
+    transform: scale3d(1, 1, 1);
+    opacity: 0.7;
+  }
+  75% {
+    transform: scale3d(1.12, 1.12, 1);
+    opacity: 0.9;
   }
 }
 
@@ -159,7 +201,7 @@
   margin-bottom: 0;
   color: #ffffff;
   line-height: 1.1;
-  text-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  text-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 
 /* Primary error explanation */
@@ -187,28 +229,43 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  background: rgba(0, 0, 0, 0.28);
+  background: rgba(0, 0, 0, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.18);
   padding: 10px 22px;
   border-radius: 9999px;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
 .oopss-live-dot {
+  position: relative;
   width: 10px;
   height: 10px;
   border-radius: 50%;
   background: #facc15;
-  box-shadow: 0 0 10px #facc15;
-  animation: liveDotPulse 1.4s ease-in-out infinite;
+}
+
+.oopss-live-dot::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  background: #facc15;
+  opacity: 0.6;
+  animation: liveDotPulse 1.6s ease-in-out infinite;
+  will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
 }
 
 @keyframes liveDotPulse {
-  0% { transform: scale(0.9); opacity: 0.6; }
-  50% { transform: scale(1.3); opacity: 1; box-shadow: 0 0 14px #facc15; }
-  100% { transform: scale(0.9); opacity: 0.6; }
+  0%, 100% {
+    transform: scale3d(1, 1, 1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: scale3d(1.5, 1.5, 1);
+    opacity: 0.85;
+  }
 }
 
 .oopss-live-text {
@@ -218,13 +275,25 @@
   color: rgba(255, 255, 255, 0.9);
 }
 
+/* Accessibility: Respect prefers-reduced-motion unconditionally */
+@media (prefers-reduced-motion: reduce) {
+  .oopss-mascot-animator,
+  .mascot-ground-shadow,
+  #oopss::before,
+  .oopss-live-dot::after {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+
 /* Kiosk resolution adjustments */
 @media (max-height: 600px) {
   #oopss {
     padding: 16px 20px;
   }
-  #oopss #error-text img {
-    height: clamp(140px, 28vh, 190px);
+  .sad-mascot-svg {
+    height: clamp(130px, 26vh, 180px);
+    width: clamp(130px, 26vh, 180px);
   }
   #oopss #error-text span.oopss-title {
     font-size: 2.2rem;
@@ -242,4 +311,3 @@
     padding: 6px 16px;
   }
 }
-

@@ -4,14 +4,21 @@ PrintBooth Kiosk UI Server & Lifecycle Manager
 ===============================================
 Serves the prebuilt Touchscreen UI on port 5175 with zero latency.
 Supports /api/exit endpoint to immediately terminate Chromium kiosk mode upon Ctrl+C.
+Provides cached hardware status with thread pooling for high-performance Raspberry Pi runtime.
 """
 
 import sys
 import os
+import time
 import signal
 import subprocess
-from http.server import SimpleHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from http.server import SimpleHTTPRequestHandler
+
+try:
+    from http.server import ThreadingHTTPServer as ServerClass
+except ImportError:
+    from http.server import HTTPServer as ServerClass
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 5175
 SERVE_DIR = sys.argv[2] if len(sys.argv) > 2 else "."
@@ -35,14 +42,24 @@ try:
 except Exception:
     local_cups = None
 
+_status_cache = None
+_status_cache_time = 0.0
+
 def get_local_printer_status():
+    global _status_cache, _status_cache_time
+    now = time.time()
+    # Cache status for 2.0s to avoid excessive CUPS / lpstat subprocess thrashing on Pi
+    if _status_cache is not None and (now - _status_cache_time) < 2.0:
+        return _status_cache
+
+    status = None
     if local_cups:
         try:
             info = local_cups.get_printers()
             printers = info.get("printers", [])
             if printers:
                 active = next((p for p in printers if p.get("is_default")), printers[0])
-                return {
+                status = {
                     "success": True,
                     "isOnline": bool(active.get("is_online", False)),
                     "printerStatus": active.get("state", "OFFLINE"),
@@ -50,20 +67,27 @@ def get_local_printer_status():
                 }
         except Exception:
             pass
+
     # Linux CLI fallback
-    if sys.platform != "win32":
+    if status is None and sys.platform != "win32":
         try:
             out = subprocess.check_output(["lpstat", "-p"], text=True, stderr=subprocess.DEVNULL)
             is_disabled = "disabled" in out.lower()
-            return {
+            status = {
                 "success": True,
                 "isOnline": not is_disabled and len(out.strip()) > 0,
                 "printerStatus": "OFFLINE" if is_disabled else "READY",
                 "activePrinter": "PrintBooth_Printer",
             }
         except Exception:
-            return {"success": True, "isOnline": False, "printerStatus": "OFFLINE", "activePrinter": "None"}
-    return {"success": True, "isOnline": True, "printerStatus": "READY", "activePrinter": "Simulated"}
+            status = {"success": True, "isOnline": False, "printerStatus": "OFFLINE", "activePrinter": "None"}
+
+    if status is None:
+        status = {"success": True, "isOnline": True, "printerStatus": "READY", "activePrinter": "Simulated"}
+
+    _status_cache = status
+    _status_cache_time = now
+    return status
 
 class KioskHTTPHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -113,8 +137,8 @@ def main():
     signal.signal(signal.SIGINT, lambda s, f: terminate_kiosk())
     signal.signal(signal.SIGTERM, lambda s, f: terminate_kiosk())
 
-    server = HTTPServer(("0.0.0.0", PORT), KioskHTTPHandler)
-    print(f"[Kiosk Server] Serving UI from {SERVE_DIR} on port {PORT}...")
+    server = ServerClass(("0.0.0.0", PORT), KioskHTTPHandler)
+    print(f"[Kiosk Server] Serving UI from {SERVE_DIR} on port {PORT} with Threading...")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
