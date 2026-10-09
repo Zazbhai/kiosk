@@ -49,6 +49,223 @@ if [ -f "$ASSETS_DIR/boot_splash_1080p.png" ]; then
     echo "  ✓ System fallback boot splash registered at /etc/printbooth/boot_splash.png"
 fi
 
+# Function to deploy the Plymouth Matrix theme files
+deploy_plymouth_theme() {
+    echo "  Deploying Plymouth Matrix theme..."
+    if ! command -v plymouth > /dev/null 2>&1 || ! command -v plymouth-set-default-theme > /dev/null 2>&1; then
+        sudo apt-get update -y
+        sudo apt-get install -y plymouth plymouth-themes pix-plym-splash 2>/dev/null || true
+    fi
+
+    PLYMOUTH_THEME_DIR="/usr/share/plymouth/themes/printbooth"
+    sudo mkdir -p "$PLYMOUTH_THEME_DIR"
+
+    # Copy generated Light & Red Matrix assets
+    if [ -f "$ASSETS_DIR/plymouth_bg.png" ]; then
+        sudo cp "$ASSETS_DIR/plymouth_bg.png" "$PLYMOUTH_THEME_DIR/plymouth_bg.png"
+        sudo cp "$ASSETS_DIR/plymouth_bg.png" "$PLYMOUTH_THEME_DIR/background.png"
+    fi
+
+    for idx in 1 2 3 4; do
+        if [ -f "$ASSETS_DIR/matrix_stream_${idx}.png" ]; then
+            sudo cp "$ASSETS_DIR/matrix_stream_${idx}.png" "$PLYMOUTH_THEME_DIR/matrix_stream_${idx}.png"
+        fi
+    done
+
+    if [ -f "$ASSETS_DIR/progress_track.png" ]; then
+        sudo cp "$ASSETS_DIR/progress_track.png" "$PLYMOUTH_THEME_DIR/progress_track.png"
+        sudo cp "$ASSETS_DIR/progress_bar.png" "$PLYMOUTH_THEME_DIR/progress_bar.png"
+        sudo cp "$ASSETS_DIR/progress_glow.png" "$PLYMOUTH_THEME_DIR/progress_glow.png" 2>/dev/null || true
+    fi
+
+    # Write Plymouth Theme Descriptor
+    cat << 'EOF' | sudo tee "$PLYMOUTH_THEME_DIR/printbooth.plymouth" > /dev/null
+[Plymouth Theme]
+Name=PrintBooth Matrix Appliance
+Description=High-Tech Light Porcelain & Laser Red Matrix Digital Rain Bootloader (No Logo)
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/printbooth
+ScriptFile=/usr/share/plymouth/themes/printbooth/printbooth.script
+EOF
+
+    # Write Animated Matrix Opening Plymouth Script
+    cat << 'EOF' | sudo tee "$PLYMOUTH_THEME_DIR/printbooth.script" > /dev/null
+# ==============================================================================
+# PrintBooth Custom Plymouth Matrix Digital Rain Script (Light & Laser Red)
+# ==============================================================================
+
+# Background Palette: Crisp Light Porcelain (#f8fafc)
+Window.SetBackgroundTopColor(0.973, 0.980, 0.988);
+Window.SetBackgroundBottomColor(0.973, 0.980, 0.988);
+
+screen_width = Window.GetWidth();
+screen_height = Window.GetHeight();
+
+# 1. Main Background Canvas (Grid & Corner Brackets, ZERO LOGO)
+bg_image = Image("plymouth_bg.png");
+if (!bg_image) {
+    bg_image = Image("background.png");
+}
+
+if (bg_image) {
+    resized_bg = bg_image.Scale(screen_width, screen_height);
+    bg_sprite = Sprite(resized_bg);
+    bg_sprite.SetPosition(0, 0, 0);
+}
+
+# 2. Dynamic Cascading Matrix Rain Columns (Laser Red Streams)
+stream_images[0] = Image("matrix_stream_1.png");
+stream_images[1] = Image("matrix_stream_2.png");
+stream_images[2] = Image("matrix_stream_3.png");
+stream_images[3] = Image("matrix_stream_4.png");
+
+num_cols = 10;
+col_spacing = screen_width / (num_cols + 1);
+
+for (i = 0; i < num_cols; i++) {
+    img_idx = i % 4;
+    if (stream_images[img_idx]) {
+        stream_sprites[i] = Sprite(stream_images[img_idx]);
+        stream_x[i] = Math.Int((i + 1) * col_spacing - 21);
+        stream_speed[i] = 160 + (i * 45) % 200;
+        stream_sprites[i].SetPosition(stream_x[i], -750, 1);
+        stream_sprites[i].SetOpacity(0.55);
+    }
+}
+
+# 3. Monospace Status Terminal Telemetry
+status_text = "INITIALIZING PRINTBOOTH MATRIX BUS...";
+status_image = Image.Text(status_text, 0.86, 0.15, 0.15, 1.0, "Monospace 11");
+if (status_image) {
+    status_sprite = Sprite(status_image);
+    status_x = (screen_width - status_image.GetWidth()) / 2;
+    status_y = (screen_height / 2) + 140;
+    status_sprite.SetPosition(status_x, status_y, 10);
+}
+
+# 4. Laser Red Digital Progress Bar
+track_img = Image("progress_track.png");
+bar_img = Image("progress_bar.png");
+glow_img = Image("progress_glow.png");
+
+track_width = 380;
+track_height = 8;
+track_x = (screen_width - track_width) / 2;
+track_y = (screen_height / 2) + 110;
+
+if (track_img) {
+    track_sprite = Sprite(track_img.Scale(track_width, track_height));
+    track_sprite.SetPosition(track_x, track_y, 8);
+}
+
+bar_sprite = Sprite();
+bar_sprite.SetPosition(track_x, track_y, 9);
+
+if (glow_img) {
+    glow_sprite = Sprite(glow_img);
+    glow_sprite.SetPosition(track_x - 12, track_y - 8, 10);
+    glow_sprite.SetOpacity(0.85);
+}
+
+progress_val = 0.05;
+
+fun refresh_progress(val) {
+    if (val > 1.0) val = 1.0;
+    if (val < 0.0) val = 0.0;
+    progress_val = val;
+
+    current_w = Math.Int(track_width * progress_val);
+    if (current_w < 1) current_w = 1;
+
+    if (bar_img) {
+        scaled_bar = bar_img.Scale(current_w, track_height);
+        bar_sprite.SetImage(scaled_bar);
+    }
+
+    if (glow_img) {
+        glow_sprite.SetPosition(track_x + current_w - 12, track_y - 8, 10);
+    }
+}
+
+refresh_progress(0.08);
+
+# Continuous Matrix Rain Animation Loop
+time_counter = 0;
+fun refresh_callback() {
+    time_counter++;
+
+    # Cascading Matrix streams
+    for (i = 0; i < num_cols; i++) {
+        if (stream_sprites[i]) {
+            cy = stream_sprites[i].GetY();
+            ny = cy + (stream_speed[i] / 50.0);
+            if (ny > screen_height) {
+                ny = -750 - (Math.Int(time_counter * 13) % 200);
+            }
+            stream_sprites[i].SetPosition(stream_x[i], ny, 1);
+        }
+    }
+
+    # Steady progress advancement
+    if (progress_val < 0.92) {
+        refresh_progress(progress_val + 0.002);
+    }
+}
+
+Plymouth.SetRefreshFunction(refresh_callback);
+
+fun boot_progress_callback(duration, progress) {
+    refresh_progress(progress);
+}
+Plymouth.SetBootProgressFunction(boot_progress_callback);
+
+fun message_callback(text) {
+    status_text = text;
+    new_img = Image.Text(status_text, 0.86, 0.15, 0.15, 1.0, "Monospace 11");
+    if (new_img) {
+        status_sprite.SetImage(new_img);
+        status_x = (screen_width - new_img.GetWidth()) / 2;
+        status_sprite.SetPosition(status_x, status_y, 10);
+    }
+}
+Plymouth.SetMessageFunction(message_callback);
+
+fun quit_callback() {
+    # Fade out smoothly
+    if (bg_sprite) bg_sprite.SetOpacity(0);
+}
+Plymouth.SetQuitFunction(quit_callback);
+EOF
+
+    sudo plymouth-set-default-theme printbooth 2>/dev/null || true
+    echo "  ✓ Default Plymouth theme set to: printbooth"
+}
+
+# FAST PREVIEW: If running with --test, skip disk firmware changes and run preview directly
+if [ "$TEST_MODE" = true ]; then
+    echo -e "\n--------------------------------------------------------"
+    echo "  Live Plymouth Splash Preview Mode Active              "
+    echo "  Rendering Light & Laser Red Matrix Splash on-screen..."
+    echo "--------------------------------------------------------"
+    deploy_plymouth_theme
+
+    if command -v plymouthd > /dev/null 2>&1; then
+        sudo plymouthd --mode=boot --attach-to-session 2>/dev/null || true
+        sudo plymouth --show-splash 2>/dev/null || true
+        for p in 15 35 55 75 90 100; do
+            sudo plymouth --message="MATRIX DECRYPTING HARDWARE BUS... ($p%)" 2>/dev/null || true
+            sleep 0.8
+        done
+        sudo plymouth quit 2>/dev/null || true
+        echo "  ✓ Matrix preview completed."
+    else
+        echo "  ⚠️ plymouthd not available to preview live."
+    fi
+    exit 0
+fi
+
 # ------------------------------------------------------------------------------
 # STEP 1: Configure Raspberry Pi 4 / CM4 Firmware (config.txt)
 # ------------------------------------------------------------------------------
@@ -214,177 +431,7 @@ fi
 # ------------------------------------------------------------------------------
 echo -e "\n[STEP 5/7] Provisioning Light & Laser Red Matrix Plymouth Theme..."
 
-if ! command -v plymouth > /dev/null 2>&1 || ! command -v plymouth-set-default-theme > /dev/null 2>&1; then
-    echo "  Installing Plymouth splash framework via apt..."
-    sudo apt-get update -y
-    sudo apt-get install -y plymouth plymouth-themes pix-plym-splash 2>/dev/null || true
-fi
-
-PLYMOUTH_THEME_DIR="/usr/share/plymouth/themes/printbooth"
-sudo mkdir -p "$PLYMOUTH_THEME_DIR"
-
-# Copy generated Light & Red Matrix assets
-if [ -f "$ASSETS_DIR/plymouth_bg.png" ]; then
-    sudo cp "$ASSETS_DIR/plymouth_bg.png" "$PLYMOUTH_THEME_DIR/plymouth_bg.png"
-    sudo cp "$ASSETS_DIR/plymouth_bg.png" "$PLYMOUTH_THEME_DIR/background.png"
-fi
-
-for idx in 1 2 3 4; do
-    if [ -f "$ASSETS_DIR/matrix_stream_${idx}.png" ]; then
-        sudo cp "$ASSETS_DIR/matrix_stream_${idx}.png" "$PLYMOUTH_THEME_DIR/matrix_stream_${idx}.png"
-    fi
-done
-
-if [ -f "$ASSETS_DIR/progress_track.png" ]; then
-    sudo cp "$ASSETS_DIR/progress_track.png" "$PLYMOUTH_THEME_DIR/progress_track.png"
-    sudo cp "$ASSETS_DIR/progress_bar.png" "$PLYMOUTH_THEME_DIR/progress_bar.png"
-    sudo cp "$ASSETS_DIR/progress_glow.png" "$PLYMOUTH_THEME_DIR/progress_glow.png" 2>/dev/null || true
-fi
-
-# Write Plymouth Theme Descriptor
-cat << 'EOF' | sudo tee "$PLYMOUTH_THEME_DIR/printbooth.plymouth" > /dev/null
-[Plymouth Theme]
-Name=PrintBooth Matrix Appliance
-Description=High-Tech Light Porcelain & Laser Red Matrix Digital Rain Bootloader (No Logo)
-ModuleName=script
-
-[script]
-ImageDir=/usr/share/plymouth/themes/printbooth
-ScriptFile=/usr/share/plymouth/themes/printbooth/printbooth.script
-EOF
-
-# Write Animated Matrix Opening Plymouth Script
-cat << 'EOF' | sudo tee "$PLYMOUTH_THEME_DIR/printbooth.script" > /dev/null
-# ==============================================================================
-# PrintBooth Custom Plymouth Matrix Digital Rain Script (Light & Laser Red)
-# ==============================================================================
-
-# Background Palette: Crisp Light Porcelain (#f8fafc)
-Window.SetBackgroundTopColor(0.973, 0.980, 0.988);
-Window.SetBackgroundBottomColor(0.973, 0.980, 0.988);
-
-screen_width = Window.GetWidth();
-screen_height = Window.GetHeight();
-
-# 1. Main Background Canvas (Grid & Corner Brackets, ZERO LOGO)
-bg_image = Image("plymouth_bg.png");
-if (!bg_image) {
-    bg_image = Image("background.png");
-}
-
-if (bg_image) {
-    resized_bg = bg_image.Scale(screen_width, screen_height);
-    bg_sprite = Sprite(resized_bg);
-    bg_sprite.SetPosition(0, 0, 0);
-}
-
-# 2. Dynamic Cascading Matrix Rain Columns (Laser Red Streams)
-stream_images[0] = Image("matrix_stream_1.png");
-stream_images[1] = Image("matrix_stream_2.png");
-stream_images[2] = Image("matrix_stream_3.png");
-stream_images[3] = Image("matrix_stream_4.png");
-
-num_cols = 10;
-col_spacing = screen_width / (num_cols + 1);
-
-for (i = 0; i < num_cols; i++) {
-    img_idx = i % 4;
-    if (stream_images[img_idx]) {
-        stream_sprites[i] = Sprite(stream_images[img_idx]);
-        stream_x[i] = Math.Int((i + 1) * col_spacing - 21);
-        stream_speed[i] = 160 + (i * 45) % 200;
-        stream_sprites[i].SetPosition(stream_x[i], -750, 1);
-        stream_sprites[i].SetOpacity(0.55);
-    }
-}
-
-# 3. Hardware Progress Bar Components (Laser Red on Light Track)
-track_image = Image("progress_track.png");
-bar_image = Image("progress_bar.png");
-glow_image = Image("progress_glow.png");
-
-track_width = 460;
-track_height = 8;
-bar_x = Math.Int(screen_width / 2 - track_width / 2);
-bar_y = Math.Int(screen_height / 2 + 45);
-
-if (track_image) {
-    track_sprite = Sprite(track_image);
-    track_sprite.SetPosition(bar_x, bar_y, 4);
-}
-
-if (bar_image) {
-    bar_sprite = Sprite();
-    bar_sprite.SetPosition(bar_x, bar_y, 5);
-}
-
-if (glow_image) {
-    glow_sprite = Sprite(glow_image);
-    glow_sprite.SetPosition(bar_x - 12, bar_y - 8, 6);
-    glow_sprite.SetOpacity(0.0);
-}
-
-# 4. Laser Red Monospace Terminal Status Indicator
-message_sprite = Sprite();
-message_sprite.SetPosition(Math.Int(screen_width / 2 - 230), Math.Int(screen_height / 2 + 72), 7);
-
-# 5. Boot Progress & Matrix Rain Streaming Callback Hook
-fun progress_callback (duration, progress) {
-    # Stream Matrix code rain columns down the display with infinite wrapping
-    for (i = 0; i < num_cols; i++) {
-        if (stream_sprites[i]) {
-            curr_y = Math.Int((duration * stream_speed[i]) % (screen_height + 850) - 750);
-            stream_sprites[i].SetPosition(stream_x[i], curr_y, 1);
-        }
-    }
-
-    if (bar_image) {
-        cur_progress = progress;
-        if (cur_progress < 0.05) cur_progress = 0.05;
-        if (cur_progress > 1.0) cur_progress = 1.0;
-
-        current_width = Math.Int(track_width * cur_progress);
-        if (current_width > 0) {
-            scaled_bar = bar_image.Scale(current_width, track_height);
-            bar_sprite.SetImage(scaled_bar);
-        }
-
-        if (glow_image) {
-            glow_x = Math.Int(bar_x + current_width - 12);
-            glow_sprite.SetPosition(glow_x, bar_y - 8, 6);
-            pulse = (Math.Sin(duration * 5.0) + 1.0) / 2.0;
-            glow_sprite.SetOpacity(0.5 + 0.5 * pulse);
-        }
-    }
-}
-
-Plymouth.SetBootProgressFunction(progress_callback);
-
-# 6. Laser Red Terminal Message Hook
-fun message_callback (text) {
-    if (text) {
-        msg_image = Image.Text(text, 0.86, 0.15, 0.15); # Laser Red #dc2626
-        message_sprite.SetImage(msg_image);
-    }
-}
-
-Plymouth.SetMessageFunction(message_callback);
-
-# 7. Clean Handoff to Fullscreen Chromium Kiosk
-fun quit_callback () {
-    if (bg_sprite) {
-        bg_sprite.SetOpacity(1.0);
-    }
-}
-
-Plymouth.SetQuitFunction(quit_callback);
-EOF
-
-# Activate the Theme in Plymouth
-if command -v plymouth-set-default-theme > /dev/null 2>&1; then
-    sudo plymouth-set-default-theme printbooth 2>/dev/null || true
-    echo "  ✓ Default Plymouth theme set to: printbooth"
-fi
+deploy_plymouth_theme
 
 echo "  Rebuilding initramfs with PrintBooth Matrix bootloader theme..."
 if command -v update-initramfs > /dev/null 2>&1; then
