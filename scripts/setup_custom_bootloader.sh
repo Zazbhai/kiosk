@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # PrintBooth Custom Bootloader & Silent Fast-Boot Appliance Setup
-# Extraordinary Cyber Matrix Quantum Edition (Obsidian & Laser Red)
+# Minimalist Digital Glitch Edition (Obsidian & Laser Red)
 # Targeted for Raspberry Pi 4 Model B & Compute Module 4 (CM4)
 # ==============================================================================
 # 1. Hardware Firmware: Disables 4-color rainbow splash, sets zero boot delay,
 #    enables initial CPU turbo and BCM2835 hardware watchdog in config.txt.
 # 2. Kernel Handover: Silences kernel dmesg, redirects console to tty3,
 #    hides Raspberry Pi fruit logos, hides terminal cursor in cmdline.txt.
-# 3. Plymouth Graphical Bootloader: Installs Extraordinary Cyber Matrix bootloader
-#    with dual counter-rotating reticle dials, pulsing laser core aperture,
-#    holographic laser scanline beam, 14 cascading code rain columns,
-#    traveling spark particle, and real-time 7-stage hardware telemetry.
+# 3. Plymouth Graphical Bootloader: Installs Minimalist Digital Glitch bootloader
+#    with pure obsidian background, chromatic aberration text glitching,
+#    sleek hairline progress indicator, and hardware telemetry.
 # 4. Anti-Popup & Polkit Lockdown: Completely suppresses "Authentication Required"
 #    modals, GNOME keyring dialogs, and colord/network policy prompts.
 # ==============================================================================
@@ -25,8 +24,8 @@ if [ "$1" = "--test" ] || [ "$1" = "-t" ]; then
 fi
 
 echo "════════════════════════════════════════════════════════"
-echo "  PrintBooth Custom Bootloader: Cyber Matrix Edition    "
-echo "  Theme: Capitalio Obsidian & Radiant Laser Red Matrix  "
+echo "  PrintBooth Custom Bootloader: Minimal Glitch Edition  "
+echo "  Theme: Capitalio Obsidian & Digital Glitch Red        "
 echo "  Target Architecture: Raspberry Pi 4 / CM4             "
 echo "════════════════════════════════════════════════════════"
 
@@ -61,28 +60,21 @@ deploy_plymouth_theme() {
     PLYMOUTH_THEME_DIR="/usr/share/plymouth/themes/printbooth"
     sudo mkdir -p "$PLYMOUTH_THEME_DIR"
 
-    # Copy generated Cyber Matrix assets
+    # Copy generated Minimal Glitch assets
     if [ -f "$ASSETS_DIR/plymouth_bg.png" ]; then
         sudo cp "$ASSETS_DIR/plymouth_bg.png" "$PLYMOUTH_THEME_DIR/plymouth_bg.png"
         sudo cp "$ASSETS_DIR/plymouth_bg.png" "$PLYMOUTH_THEME_DIR/background.png"
     fi
 
-    # Reticle dials
-    for f in reticle_outer.png reticle_mid.png reticle_core.png laser_scanline.png; do
+    # Glitch text frames (pristine + chromatic aberration slices)
+    for f in glitch_text_normal.png glitch_text_1.png glitch_text_2.png glitch_text_3.png glitch_text_4.png; do
         if [ -f "$ASSETS_DIR/$f" ]; then
             sudo cp "$ASSETS_DIR/$f" "$PLYMOUTH_THEME_DIR/$f"
         fi
     done
 
-    # Matrix streams (1 through 6)
-    for idx in 1 2 3 4 5 6; do
-        if [ -f "$ASSETS_DIR/matrix_stream_${idx}.png" ]; then
-            sudo cp "$ASSETS_DIR/matrix_stream_${idx}.png" "$PLYMOUTH_THEME_DIR/matrix_stream_${idx}.png"
-        fi
-    done
-
-    # Progress bar and spark flare
-    for f in progress_track.png progress_bar.png progress_spark.png progress_glow.png; do
+    # Minimal hairline progress bar
+    for f in progress_track.png progress_bar.png; do
         if [ -f "$ASSETS_DIR/$f" ]; then
             sudo cp "$ASSETS_DIR/$f" "$PLYMOUTH_THEME_DIR/$f"
         fi
@@ -91,8 +83,8 @@ deploy_plymouth_theme() {
     # Write Plymouth Theme Descriptor
     cat << 'EOF' | sudo tee "$PLYMOUTH_THEME_DIR/printbooth.plymouth" > /dev/null
 [Plymouth Theme]
-Name=PrintBooth Cyber Matrix Appliance
-Description=Extraordinary Cyber Matrix Quantum Bootloader (Dual Reticles, Holographic Scanline, Cascading Code)
+Name=PrintBooth Minimalist Glitch Appliance
+Description=Minimalist Obsidian Bootloader with Digital Glitch Typography
 ModuleName=script
 
 [script]
@@ -100,20 +92,20 @@ ImageDir=/usr/share/plymouth/themes/printbooth
 ScriptFile=/usr/share/plymouth/themes/printbooth/printbooth.script
 EOF
 
-    # Write Animated Matrix Opening Plymouth Script
+    # Write Minimalist Glitch Plymouth Script
     cat << 'EOF' | sudo tee "$PLYMOUTH_THEME_DIR/printbooth.script" > /dev/null
 # ==============================================================================
-# PrintBooth Extraordinary Plymouth Cyber Matrix Script (Obsidian & Laser Red)
+# PrintBooth Minimalist Digital Glitch Bootloader (Obsidian & Laser Red)
 # ==============================================================================
 
-# Background Palette: Deep Capitalio Obsidian (#06110D)
+# Background Palette: Deep Velvet Obsidian (#06110D)
 Window.SetBackgroundTopColor(0.024, 0.067, 0.051);
 Window.SetBackgroundBottomColor(0.024, 0.067, 0.051);
 
 screen_width = Window.GetWidth();
 screen_height = Window.GetHeight();
 
-# 1. Main Background Canvas (Subtle Isometric Grid & Tactical HUD Brackets)
+# 1. Main Pure Obsidian Background Canvas (Zero grids, zero scanline noise)
 bg_image = Image("plymouth_bg.png");
 if (!bg_image) {
     bg_image = Image("background.png");
@@ -125,113 +117,53 @@ if (bg_image) {
     bg_sprite.SetPosition(0, 0, 0);
 }
 
-# 2. Concentric Cybernetic Quantum Reticle (Positioned in Upper Core)
-reticle_cx = screen_width / 2;
-reticle_cy = (screen_height / 2) - 100;
+# 2. Glitch Text Frames (Pristine Normal + Chromatic Aberration Keyframes)
+text_normal = Image("glitch_text_normal.png");
+text_glitch[0] = Image("glitch_text_1.png");
+text_glitch[1] = Image("glitch_text_2.png");
+text_glitch[2] = Image("glitch_text_3.png");
+text_glitch[3] = Image("glitch_text_4.png");
 
-reticle_outer_img = Image("reticle_outer.png");
-if (reticle_outer_img) {
-    reticle_outer_sprite = Sprite();
-    reticle_outer_sprite.SetPosition(reticle_cx - reticle_outer_img.GetWidth() / 2, reticle_cy - reticle_outer_img.GetHeight() / 2, 4);
+text_sprite = Sprite(text_normal);
+text_w = 900;
+text_h = 220;
+if (text_normal) {
+    text_w = text_normal.GetWidth();
+    text_h = text_normal.GetHeight();
 }
+text_base_x = (screen_width - text_w) / 2;
+text_base_y = (screen_height / 2) - 80;
+text_sprite.SetPosition(text_base_x, text_base_y, 5);
 
-reticle_mid_img = Image("reticle_mid.png");
-if (reticle_mid_img) {
-    reticle_mid_sprite = Sprite();
-    reticle_mid_sprite.SetPosition(reticle_cx - reticle_mid_img.GetWidth() / 2, reticle_cy - reticle_mid_img.GetHeight() / 2, 5);
-}
-
-reticle_core_img = Image("reticle_core.png");
-if (reticle_core_img) {
-    reticle_core_sprite = Sprite(reticle_core_img);
-    reticle_core_sprite.SetPosition(reticle_cx - reticle_core_img.GetWidth() / 2, reticle_cy - reticle_core_img.GetHeight() / 2, 6);
-}
-
-# 3. Horizontal Holographic Laser Scanline Beam
-scanline_img = Image("laser_scanline.png");
-if (scanline_img) {
-    scanline_sprite = Sprite(scanline_img.Scale(screen_width, 8));
-    scanline_y = -30;
-    scanline_sprite.SetPosition(0, scanline_y, 7);
-    scanline_sprite.SetOpacity(0.85);
-}
-
-# 4. Cascading Matrix Rain Columns (6 Streams across 14 Columns)
-stream_images[0] = Image("matrix_stream_1.png");
-stream_images[1] = Image("matrix_stream_2.png");
-stream_images[2] = Image("matrix_stream_3.png");
-stream_images[3] = Image("matrix_stream_4.png");
-stream_images[4] = Image("matrix_stream_5.png");
-stream_images[5] = Image("matrix_stream_6.png");
-
-num_cols = 14;
-col_spacing = screen_width / (num_cols + 1);
-
-for (i = 0; i < num_cols; i++) {
-    idx = i % 6;
-    if (stream_images[idx]) {
-        stream_sprites[i] = Sprite(stream_images[idx]);
-        stream_x[i] = Math.Int((i + 1) * col_spacing - 21);
-        stream_speed[i] = 170 + (i * 39) % 230;
-        init_y = -750 - (i * 85) % 500;
-        stream_sprites[i].SetPosition(stream_x[i], init_y, 2);
-        if (i == 6 || i == 7) {
-            stream_sprites[i].SetOpacity(0.25);
-        } else {
-            stream_sprites[i].SetOpacity(0.55);
-        }
-    }
-}
-
-# 5. Dynamic 7-Stage Hardware Telemetry Monospace Readout
-stages[0] = "// [STAGE 01/07] BCM2711 SILICON & KERNEL BUS BINDING -> OK";
-stages[1] = "// [STAGE 02/07] CALIBRATING TOUCH DIGITIZER & I/O PORTS -> OK";
-stages[2] = "// [STAGE 03/07] ALLOCATING MEMORY SPOOL PIPE [0x7FF0..0x8000] -> OK";
-stages[3] = "// [STAGE 04/07] PROBING THERMAL CUPS PRINTER SUBSYSTEM -> READY";
-stages[4] = "// [STAGE 05/07] ESTABLISHING LOW-LATENCY AUTONOMOUS WSS LINK -> 100%";
-stages[5] = "// [STAGE 06/07] HARDWARE INTEGRITY VERIFIED // PB-001 SECURE -> OK";
-stages[6] = "// [STAGE 07/07] ENCRYPTED PRINT PIPELINE SYNCHRONIZED — READY";
-
-status_sprite = Sprite();
-status_y = (screen_height / 2) + 154;
-
-pct_sprite = Sprite();
-pct_y = (screen_height / 2) + 96;
-
-fun update_status(text) {
-    img = Image.Text(text, 0.97, 0.45, 0.45, 1.0, "Monospace Bold 11");
-    if (img) {
-        status_sprite.SetImage(img);
-        status_sprite.SetPosition((screen_width - img.GetWidth()) / 2, status_y, 12);
-    }
-}
-update_status(stages[0]);
-
-# 6. High-Precision Laser Progress Bar & Traveling Spark
+# 3. Minimal Hairline Laser Progress Bar (3px)
 track_img = Image("progress_track.png");
 bar_img = Image("progress_bar.png");
-spark_img = Image("progress_spark.png");
-if (!spark_img) {
-    spark_img = Image("progress_glow.png");
-}
 
-track_w = 480;
-track_h = 10;
+track_w = 420;
+track_h = 3;
 track_x = (screen_width - track_w) / 2;
-track_y = (screen_height / 2) + 122;
+track_y = (screen_height / 2) + 55;
 
 if (track_img) {
     track_sprite = Sprite(track_img.Scale(track_w, track_h));
-    track_sprite.SetPosition(track_x, track_y, 9);
+    track_sprite.SetPosition(track_x, track_y, 6);
 }
 
 bar_sprite = Sprite();
-bar_sprite.SetPosition(track_x, track_y, 10);
+bar_sprite.SetPosition(track_x, track_y, 7);
 
-if (spark_img) {
-    spark_sprite = Sprite(spark_img);
-    spark_sprite.SetPosition(track_x - 16, track_y - 11, 11);
+# 4. Minimal Monospace Telemetry Readout
+status_sprite = Sprite();
+status_y = track_y + 18;
+
+fun update_status(text) {
+    img = Image.Text(text, 0.58, 0.64, 0.72, 0.85, "Monospace 10");
+    if (img) {
+        status_sprite.SetImage(img);
+        status_sprite.SetPosition((screen_width - img.GetWidth()) / 2, status_y, 8);
+    }
 }
+update_status("PB-001 // INITIALIZING HARDWARE");
 
 progress_val = 0.05;
 
@@ -248,89 +180,52 @@ fun refresh_progress(val) {
         bar_sprite.SetImage(scaled_bar);
     }
 
-    if (spark_img && spark_sprite) {
-        spark_sprite.SetPosition(track_x + current_w - 16, track_y - 11, 11);
-    }
-
-    # Update telemetry message according to progress
-    stage_idx = Math.Int(progress_val * 6.99);
-    if (stage_idx > 6) stage_idx = 6;
-    if (stage_idx < 0) stage_idx = 0;
-    update_status(stages[stage_idx]);
-
-    # Live percentage text readout
-    pct_num = Math.Int(progress_val * 100);
-    pct_txt = "SYSTEM CALIBRATION: " + pct_num + "%";
-    pct_img = Image.Text(pct_txt, 0.90, 0.30, 0.30, 1.0, "Monospace Bold 10");
-    if (pct_img) {
-        pct_sprite.SetImage(pct_img);
-        pct_sprite.SetPosition((screen_width - pct_img.GetWidth()) / 2, pct_y, 12);
+    if (progress_val < 0.35) {
+        update_status("PB-001 // CALIBRATING SYSTEM BUS");
+    } else if (progress_val < 0.75) {
+        update_status("PB-001 // SYNCHRONIZING HARDWARE PORTS");
+    } else {
+        update_status("PB-001 // SECURE PRINT ENCLAVE READY");
     }
 }
 
 refresh_progress(0.08);
 
-# Continuous High-Speed 60fps Animation Loop
+# 5. Glitch Timing Controller
+# Keeps text steady 85% of time, bursts micro glitch shifts every 40-60 ticks
 time_tick = 0;
-outer_angle = 0.0;
-mid_angle = 0.0;
-pulse_phase = 0.0;
+glitch_active = 0;
 
 fun refresh_callback() {
     time_tick++;
 
-    # 1. Dual counter-rotating cybernetic reticle
-    outer_angle = outer_angle + 0.018;
-    if (reticle_outer_img && reticle_outer_sprite) {
-        rot_out = reticle_outer_img.Rotate(outer_angle);
-        reticle_outer_sprite.SetImage(rot_out);
-        reticle_outer_sprite.SetPosition(reticle_cx - rot_out.GetWidth() / 2, reticle_cy - rot_out.GetHeight() / 2, 4);
-    }
-
-    mid_angle = mid_angle - 0.026;
-    if (reticle_mid_img && reticle_mid_sprite) {
-        rot_mid = reticle_mid_img.Rotate(mid_angle);
-        reticle_mid_sprite.SetImage(rot_mid);
-        reticle_mid_sprite.SetPosition(reticle_cx - rot_mid.GetWidth() / 2, reticle_cy - rot_mid.GetHeight() / 2, 5);
-    }
-
-    # 2. Pulsing laser core aperture
-    pulse_phase = pulse_phase + 0.08;
-    if (reticle_core_sprite) {
-        core_alpha = 0.70 + 0.30 * Math.Sin(pulse_phase);
-        reticle_core_sprite.SetOpacity(core_alpha);
-    }
-
-    # 3. Horizontal laser scanline sweep
-    if (scanline_sprite) {
-        scanline_y = scanline_y + 5.2;
-        if (scanline_y > screen_height + 40) {
-            scanline_y = -40;
+    if (glitch_active > 0) {
+        glitch_active--;
+        # Pick random glitch frame
+        g_idx = Math.Int(Math.Random() * 3.99);
+        if (text_glitch[g_idx]) {
+            text_sprite.SetImage(text_glitch[g_idx]);
         }
-        scanline_sprite.SetPosition(0, scanline_y, 7);
-    }
+        # Micro horizontal jitter (-4 to +4 pixels)
+        jitter_x = Math.Int((Math.Random() * 8) - 4);
+        jitter_y = Math.Int((Math.Random() * 4) - 2);
+        text_sprite.SetPosition(text_base_x + jitter_x, text_base_y + jitter_y, 5);
 
-    # 4. Cascading matrix streams
-    for (i = 0; i < num_cols; i++) {
-        if (stream_sprites[i]) {
-            cy = stream_sprites[i].GetY();
-            ny = cy + (stream_speed[i] / 50.0);
-            if (ny > screen_height) {
-                ny = -750 - (Math.Int(time_tick * 17 + i * 31) % 250);
-            }
-            stream_sprites[i].SetPosition(stream_x[i], ny, 2);
+        if (glitch_active == 0) {
+            # Reset back to pristine normal frame
+            text_sprite.SetImage(text_normal);
+            text_sprite.SetPosition(text_base_x, text_base_y, 5);
+        }
+    } else {
+        # Trigger brief 2-3 frame glitch burst every ~48 frames
+        if ((time_tick % 48) == 0) {
+            glitch_active = 3;
         }
     }
 
-    # 5. Pulsing Spark at head of progress
-    if (spark_sprite) {
-        spark_alpha = 0.75 + 0.25 * Math.Sin(time_tick * 0.15);
-        spark_sprite.SetOpacity(spark_alpha);
-    }
-
-    # 6. Smooth progressive advancement
+    # Smooth progress increment
     if (progress_val < 0.94) {
-        refresh_progress(progress_val + 0.0018);
+        refresh_progress(progress_val + 0.0022);
     }
 }
 
@@ -347,8 +242,6 @@ fun message_callback(text) {
 Plymouth.SetMessageFunction(message_callback);
 
 fun quit_callback() {
-    # Fade out smoothly into kiosk
-    if (bg_sprite) bg_sprite.SetOpacity(0);
 }
 Plymouth.SetQuitFunction(quit_callback);
 EOF

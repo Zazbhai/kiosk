@@ -189,6 +189,8 @@ clean_chromium_crash_state() {
     rm -rf "$USER_PROFILE_DIR/Singleton"* 2>/dev/null || true
     rm -rf "$USER_PROFILE_DIR/Default/GPUCache"* 2>/dev/null || true
     rm -rf "$USER_PROFILE_DIR/Default/GCM Store"* 2>/dev/null || true
+    rm -rf ~/.cache/chromium 2>/dev/null || true
+    rm -rf ~/.cache/chromium-browser 2>/dev/null || true
     find "$USER_PROFILE_DIR" -name "*LOCK*" -o -name "*.lock" -o -name "*journal*" -delete 2>/dev/null || true
     rm -rf /tmp/printbooth-kiosk-profile 2>/dev/null || true
 
@@ -262,6 +264,11 @@ while [ "$EXIT_REQUESTED" -eq 0 ]; do
         --use-mock-keychain
         --no-first-run
         --no-default-browser-check
+        --no-sandbox
+        --test-type
+        --in-process-gpu
+        --disable-gpu-sandbox
+        --disable-dev-shm-usage
         --disable-session-crashed-bubble
         --disable-crash-reporter
         --disable-crashpad
@@ -277,7 +284,6 @@ while [ "$EXIT_REQUESTED" -eq 0 ]; do
         --disable-sync
         --disable-metrics
         --disable-metrics-reporting
-        --disable-dev-shm-usage
         --disable-background-timer-throttling
         --disable-renderer-backgrounding
         --disable-backgrounding-occluded-windows
@@ -289,28 +295,20 @@ while [ "$EXIT_REQUESTED" -eq 0 ]; do
         --disable-features=Translate,OptimizationHints,MediaRouter,DialMediaRouteProvider
     )
 
-    # If running as root or under systemd service without normal user session
-    if [ "$(id -u)" -eq 0 ]; then
-        COMMON_FLAGS+=(--no-sandbox --test-type)
-    fi
-
     START_TIME=$(date +%s)
 
     if [ "$CRASH_COUNT" -eq 0 ]; then
-        echo "[Start Kiosk] Spawning Kiosk Display with hardware acceleration (Instance #1)..."
+        echo "[Start Kiosk] Spawning Kiosk Display with in-process GPU (Instance #1)..."
         "$CHROMIUM_CMD" "${COMMON_FLAGS[@]}" \
-            --enable-gpu-rasterization \
             "$DISPLAY_URL"
     elif [ "$CRASH_COUNT" -eq 1 ]; then
-        echo "[Start Kiosk] 🛡️ Fallback: Spawning Safe Software Compositor Display (Instance #2)..."
+        echo "[Start Kiosk] 🛡️ Fallback: Spawning Safe Software Rendering (Instance #2)..."
         "$CHROMIUM_CMD" "${COMMON_FLAGS[@]}" \
             --disable-gpu \
-            --disable-gpu-compositing \
             "$DISPLAY_URL"
     else
-        echo "[Start Kiosk] 🛡️ Fallback: Spawning Bulletproof Kiosk Mode (Instance #$((CRASH_COUNT + 1)))..."
+        echo "[Start Kiosk] 🛡️ Fallback: Spawning Bulletproof Software Compositor (Instance #$((CRASH_COUNT + 1)))..."
         "$CHROMIUM_CMD" "${COMMON_FLAGS[@]}" \
-            --no-sandbox \
             --disable-gpu \
             --disable-gpu-compositing \
             "$DISPLAY_URL"
