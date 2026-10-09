@@ -85,9 +85,8 @@ set -e
 echo "Disabling OverlayFS to allow persistent system updates..."
 
 if command -v raspi-config > /dev/null 2>&1; then
-    # Disable overlayfs
-    sudo raspi-config nonint disable_overlayfs 0
-    sudo raspi-config nonint disable_bootro 0
+    # Disable overlayfs (must run disable_overlayfs without extra parameters to prevent fstab lock)
+    sudo raspi-config nonint disable_overlayfs 2>/dev/null || true
     echo "✓ Disabled OverlayFS"
     echo "✓ System will boot into Read-Write Maintenance mode on next reboot."
     echo ""
