@@ -53,6 +53,8 @@ pkill -f "start_kiosk.sh" 2>/dev/null || true
 pkill -f "chromium" 2>/dev/null || true
 pkill -f "chromium-browser" 2>/dev/null || true
 pkill -f "unclutter" 2>/dev/null || true
+pkill -f "ws_kiosk_client.py" 2>/dev/null || true
+pkill -f "daemon.py" 2>/dev/null || true
 
 # Restore mouse cursor on X display if available
 if [ -n "$DISPLAY" ]; then

@@ -228,6 +228,8 @@ cleanup_and_exit() {
     pkill -f "$CHROMIUM_CMD" 2>/dev/null || true
     pkill -f serve_kiosk_ui.py 2>/dev/null || true
     pkill -f unclutter 2>/dev/null || true
+    pkill -f ws_kiosk_client.py 2>/dev/null || true
+    pkill -f daemon.py 2>/dev/null || true
     exit 0
 }
 trap cleanup_and_exit SIGINT SIGTERM
