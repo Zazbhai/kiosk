@@ -463,6 +463,22 @@ class KioskWsClient:
                     f.write(resp.read())
             await loop.run_in_executor(None, _download_with_auth)
             print(f"[WSS Kiosk Client] ✓ Pre-fetched {file_name} ({local_target.stat().st_size} bytes)")
+
+            # Immediately pre-convert Office files & images in background thread so printing is instant upon PIN entry!
+            suffix = local_target.suffix.lower()
+            if suffix in (
+                ".pptx", ".ppt", ".docx", ".doc", ".xlsx", ".xls",
+                ".odt", ".odp", ".ods", ".rtf", ".txt",
+                ".png", ".jpg", ".jpeg", ".webp"
+            ):
+                print(f"[WSS Kiosk Client] ⚡ Pre-converting '{local_target.name}' to PDF in background...")
+                def _preconvert():
+                    try:
+                        self.cups.prepare_printable_file(local_target)
+                        print(f"[WSS Kiosk Client] ✓ Pre-conversion ready for '{local_target.name}'")
+                    except Exception as err:
+                        print(f"[WSS Kiosk Client] Pre-convert notice: {err}")
+                await loop.run_in_executor(None, _preconvert)
         except Exception as e:
             print(f"[WSS Kiosk Client] Pre-fetch notice: {e}")
 

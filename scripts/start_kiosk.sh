@@ -117,10 +117,29 @@ fi
 DISPLAY_URL="${KIOSK_DISPLAY_URL:-http://localhost:5175/?api=${TARGET_API}&kioskId=${STATION_ID}}"
 LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
 
-if [ -d "$UI_DIR/dist" ] && ! curl -s --connect-timeout 1 "$DISPLAY_URL" > /dev/null 2>&1; then
-    echo "[Start Kiosk] Serving pre-built Kiosk UI on port 5175 with instant exit listener..."
-    python3 "$SCRIPT_DIR/serve_kiosk_ui.py" 5175 "$UI_DIR/dist" >> /tmp/printbooth_ui.log 2>&1 &
-    sleep 1
+if [ -d "$UI_DIR/dist" ]; then
+    if ! curl -s --connect-timeout 1 "http://localhost:5175" > /dev/null 2>&1; then
+        echo "[Start Kiosk] Serving pre-built Kiosk UI on port 5175 with instant exit listener..."
+        python3 "$SCRIPT_DIR/serve_kiosk_ui.py" 5175 "$UI_DIR/dist" >> /tmp/printbooth_ui.log 2>&1 &
+    fi
+
+    # Robust server readiness poll (up to 10s) to prevent Chromium "This site can't be reached" / ERR_CONNECTION_REFUSED
+    echo "[Start Kiosk] Verifying UI server availability on port 5175..."
+    for _i in {1..20}; do
+        if curl -s --connect-timeout 1 "http://localhost:5175" > /dev/null 2>&1; then
+            echo "[Start Kiosk] Local UI server verified healthy ✓"
+            break
+        fi
+        sleep 0.5
+    done
+fi
+
+# If DISPLAY_URL is remote and unreachable due to network outage, fall back to local offline UI
+if [[ "$DISPLAY_URL" =~ ^https?:// ]] && [[ "$DISPLAY_URL" != *"localhost"* ]] && [[ "$DISPLAY_URL" != *"127.0.0.1"* ]]; then
+    if ! curl -s --connect-timeout 2 "$DISPLAY_URL" > /dev/null 2>&1; then
+        echo "[Start Kiosk] Remote site unreachable ($DISPLAY_URL). Falling back to local offline UI..."
+        DISPLAY_URL="http://localhost:5175/?api=${TARGET_API}&kioskId=${STATION_ID}&offline=1"
+    fi
 fi
 
 echo "════════════════════════════════════════════════════════"
@@ -150,12 +169,20 @@ fi
 
 # Function to clean Chromium crash locks & bubbles
 clean_chromium_crash_state() {
-    # Remove process Singleton lock files
+    # 1. Kill any zombie helper processes
+    pkill -9 -f "chromium.*type=utility" 2>/dev/null || true
+    pkill -9 -f "chromium.*type=gpu-process" 2>/dev/null || true
+
+    # 2. Freshly recreate temporary profile directory to eliminate GCM Store / UKM LevelDB locks
+    rm -rf /tmp/printbooth-kiosk-profile 2>/dev/null || true
+    mkdir -p /tmp/printbooth-kiosk-profile 2>/dev/null || true
+    chmod 700 /tmp/printbooth-kiosk-profile 2>/dev/null || true
+
+    # 3. Remove process Singleton lock files in user config
     rm -rf ~/.config/chromium/Singleton* 2>/dev/null || true
     rm -rf ~/.config/chromium-browser/Singleton* 2>/dev/null || true
-    rm -rf /tmp/printbooth-kiosk-profile/Singleton* 2>/dev/null || true
 
-    # Wipe stale disk cache & SQLite locks so UKM database lock errors never occur
+    # 4. Wipe stale disk cache & SQLite/LevelDB locks
     rm -rf ~/.cache/chromium 2>/dev/null || true
     rm -rf ~/.cache/chromium-browser 2>/dev/null || true
     rm -rf ~/.config/chromium/Default/Cache 2>/dev/null || true
@@ -164,10 +191,9 @@ clean_chromium_crash_state() {
     rm -rf ~/.config/chromium-browser/Default/GPUCache 2>/dev/null || true
     rm -rf ~/.config/chromium/Default/ukm_database* 2>/dev/null || true
     rm -rf ~/.config/chromium-browser/Default/ukm_database* 2>/dev/null || true
-    rm -rf /tmp/printbooth-kiosk-profile/Default/Cache 2>/dev/null || true
-    rm -rf /tmp/printbooth-kiosk-profile/Default/GPUCache 2>/dev/null || true
-    rm -rf /tmp/printbooth-kiosk-profile/Default/ukm_database* 2>/dev/null || true
-    find ~/.config/chromium ~/.config/chromium-browser /tmp/printbooth-kiosk-profile -name "*.lock" -delete 2>/dev/null || true
+    rm -rf ~/.config/chromium/Default/"GCM Store"* 2>/dev/null || true
+    rm -rf ~/.config/chromium-browser/Default/"GCM Store"* 2>/dev/null || true
+    find ~/.config/chromium ~/.config/chromium-browser -name "*LOCK*" -o -name "*.lock" -o -name "*journal*" -delete 2>/dev/null || true
 
     # Strip crash flag from Preferences so the "Restore pages" bubble never appears
     for pref in ~/.config/chromium/Default/Preferences ~/.config/chromium-browser/Default/Preferences; do
@@ -235,7 +261,14 @@ while [ "$EXIT_REQUESTED" -eq 0 ]; do
         --media-cache-size=1 \
         --password-store=basic \
         --use-mock-keychain \
-        --disable-features=SegmentationPlatform,ProcessPerSiteUpToLimit,LockProfileCookieDatabase \
+        --disable-features=SegmentationPlatform,ProcessPerSiteUpToLimit,LockProfileCookieDatabase,OptimizationHints,MediaRouter,Translate,DialMediaRouteProvider,GCM,PushMessaging,Ukm \
+        --disable-background-networking \
+        --disable-gcm \
+        --disable-sync \
+        --disable-metrics \
+        --disable-metrics-repo \
+        --disable-metrics-reporting \
+        --disable-gpu-shader-disk-cache \
         --no-first-run \
         --no-default-browser-check \
         --disable-notifications \
@@ -258,8 +291,11 @@ while [ "$EXIT_REQUESTED" -eq 0 ]; do
         --disable-renderer-backgrounding \
         --disable-backgrounding-occluded-windows \
         --autoplay-policy=no-user-gesture-required \
+        --enable-offline-auto-reload \
+        --enable-offline-auto-reload-visible-only \
         --hide-scrollbars \
         --num-raster-threads=2 \
+        --log-level=3 \
         "$DISPLAY_URL"
     
     EXIT_CODE=$?

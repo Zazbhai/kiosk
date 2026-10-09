@@ -40,6 +40,16 @@ export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: stri
       setIsOffline(true)
       return
     }
+
+    // 0. Immediate hardware / network check
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setIsOffline(true)
+      setPrinterStatus('OFFLINE')
+      setReason('Station is offline or network connection interrupted.')
+      setDetail('PrintBooth is waiting for network reconnection and will resume automatically once connected.')
+      return
+    }
+
     if (checkingRef.current) return
     checkingRef.current = true
 
@@ -149,12 +159,14 @@ export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: stri
         }
       } catch {}
 
-      // If all probes failed while previously online:
+      // If all probes failed while previously online (server unreachable or network down):
       // Debounce: only switch to offline after 2 consecutive probe failures to prevent transient network blips from flickering
       failureStreakRef.current += 1
-      if (failureStreakRef.current >= 2 && !isOfflineRef.current) {
+      if (failureStreakRef.current >= 2) {
         setIsOffline(true)
         setPrinterStatus('OFFLINE')
+        setReason('Station is offline or network connection interrupted.')
+        setDetail('PrintBooth is reconnecting and will resume automatically as soon as connection is restored.')
       }
     } finally {
       checkingRef.current = false
@@ -163,9 +175,27 @@ export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: stri
 
   useEffect(() => {
     checkStatus()
+
+    const handleOffline = () => {
+      setIsOffline(true)
+      setPrinterStatus('OFFLINE')
+      setReason('Station is offline or network connection interrupted.')
+      setDetail('PrintBooth is waiting for network reconnection and will resume automatically once connected.')
+    }
+    const handleOnline = () => {
+      checkStatus()
+    }
+
+    window.addEventListener('offline', handleOffline)
+    window.addEventListener('online', handleOnline)
+
     // Stable 4.5s polling loop — no tearing down and recreating timer on every state toggle
     const timer = setInterval(checkStatus, 4500)
-    return () => clearInterval(timer)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('offline', handleOffline)
+      window.removeEventListener('online', handleOnline)
+    }
   }, [checkStatus])
 
   return {

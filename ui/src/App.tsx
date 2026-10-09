@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import WelcomeScreen from './screens/WelcomeScreen'
 import UploadMethodScreen from './screens/UploadMethodScreen'
@@ -10,7 +11,6 @@ import PrintingScreen from './screens/PrintingScreen'
 import CollectionScreen from './screens/CollectionScreen'
 import PinReleaseScreen from './screens/PinReleaseScreen'
 import ErrorScreen from './screens/ErrorScreen'
-import NetworkOfflineScreen from './screens/NetworkOfflineScreen'
 import PrinterOfflineScreen from './screens/PrinterOfflineScreen'
 import PrinterErrorOverlay from './components/PrinterErrorOverlay'
 import { usePrinterStatus } from './hooks/usePrinterStatus'
@@ -31,7 +31,22 @@ export default function App() {
     import.meta.env.VITE_KIOSK_NAME ||
     'Station 1'
 
-  const { isOffline, reason, detail } = usePrinterStatus(kioskId)
+  const { isOffline, reason, detail, checkNow } = usePrinterStatus(kioskId)
+  const [isNetworkOffline, setIsNetworkOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine)
+
+  useEffect(() => {
+    const handleOffline = () => setIsNetworkOffline(true)
+    const handleOnline = () => {
+      setIsNetworkOffline(false)
+      checkNow()
+    }
+    window.addEventListener('offline', handleOffline)
+    window.addEventListener('online', handleOnline)
+    return () => {
+      window.removeEventListener('offline', handleOffline)
+      window.removeEventListener('online', handleOnline)
+    }
+  }, [checkNow])
 
   return (
     <>
@@ -49,14 +64,14 @@ export default function App() {
         <Route path="/printing" element={<PrintingScreen />} />
         <Route path="/collect" element={<CollectionScreen />} />
         <Route path="/error" element={<ErrorScreen />} />
-        <Route path="/offline" element={<NetworkOfflineScreen />} />
+        <Route path="/offline" element={<PrinterOfflineScreen />} />
         <Route path="/printer-offline" element={<PrinterOfflineScreen />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
 
-      {/* Global Printer Offline Overlay — Displays when printer is disconnected or cold-booting */}
+      {/* Global Printer Offline Overlay — Displays when printer is disconnected, network is down, or server unreachable */}
       <PrinterErrorOverlay
-        isOpen={isOffline}
+        isOpen={isOffline || isNetworkOffline}
         title="PRINTER OFFLINE"
         reason={reason}
         detail={detail}

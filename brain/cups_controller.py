@@ -16,6 +16,8 @@ import os
 import sys
 import shutil
 import time
+import re
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -597,12 +599,15 @@ class CupsController:
 
         return {"success": True, "activePrinter": clean_name, "actions": actions}
 
-    @staticmethod
-    def _convert_office_to_pdf(src_path: Path) -> Path:
+    _office_convert_lock = threading.Lock()
+
+    @classmethod
+    def _convert_office_to_pdf(cls, src_path: Path) -> Path:
         """
         Converts Microsoft Office (.pptx, .ppt, .docx, .doc, .xlsx, .xls) and
         OpenDocument (.odt, .odp, .ods, .rtf, .txt) files to high-fidelity PDF.
         Uses headless LibreOffice / soffice on Linux / Raspberry Pi, or COM on Windows.
+        Optimized with warm persistent cache, format-specific exporters, and fast-start flags.
         """
         src = Path(src_path)
         if not src.exists():
@@ -642,34 +647,87 @@ class CupsController:
                 break
 
         if office_bin:
-            try:
-                print(f"[CUPS Controller] [OFFICE-CONVERT] Converting '{src.name}' ({suffix}) -> PDF via {office_bin}...")
-                env_inst = f"-env:UserInstallation=file:///tmp/libo_printbooth_{os.getpid()}"
-                cmd = [
-                    office_bin,
-                    "--headless",
-                    "--convert-to", "pdf",
-                    "--outdir", str(out_dir),
-                    env_inst,
-                    str(src.resolve()),
-                ]
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            with cls._office_convert_lock:
+                # Re-verify cache inside lock in case another worker just finished converting
                 if pdf_path.exists() and pdf_path.stat().st_size > 0:
-                    print(f"[CUPS Controller] ✓ Converted '{src.name}' -> '{pdf_path.name}' ({pdf_path.stat().st_size} bytes)")
-                    return pdf_path
+                    if pdf_path.stat().st_mtime >= src.stat().st_mtime:
+                        print(f"[CUPS Controller] Using cached converted PDF: '{pdf_path.name}'")
+                        return pdf_path
 
-                # Also search out_dir for any fresh .pdf generated in the last 30s matching stem
-                now = time.time()
-                for cand in out_dir.glob("*.pdf"):
-                    if (now - cand.stat().st_mtime) <= 30 and (cand.stem.lower() in src.stem.lower() or src.stem.lower() in cand.stem.lower()):
-                        print(f"[CUPS Controller] ✓ Located converted PDF '{cand.name}'")
-                        return cand
+                try:
+                    print(f"[CUPS Controller] [OFFICE-CONVERT] Converting '{src.name}' ({suffix}) -> PDF via {office_bin}...")
+                    t0 = time.time()
 
-                print(f"[CUPS Controller] LibreOffice conversion warning: exit={res.returncode}, stderr={res.stderr.strip()}")
-            except subprocess.TimeoutExpired:
-                print(f"[CUPS Controller] LibreOffice conversion timed out after 60s for '{src.name}'")
-            except Exception as e:
-                print(f"[CUPS Controller] LibreOffice execution error: {e}")
+                    # Persistent user profile directory: avoids rebuilding registry caches on every run
+                    shared_profile = Path("/tmp/libo_printbooth_shared")
+                    shared_profile.mkdir(parents=True, exist_ok=True)
+                    env_inst = f"-env:UserInstallation=file://{shared_profile.resolve()}"
+
+                    # Explicit export filters bypass format guessing in LibreOffice
+                    filter_spec = "pdf"
+                    if suffix in (".pptx", ".ppt", ".odp"):
+                        filter_spec = "pdf:impress_pdf_Export"
+                    elif suffix in (".docx", ".doc", ".odt", ".rtf", ".txt"):
+                        filter_spec = "pdf:writer_pdf_Export"
+                    elif suffix in (".xlsx", ".xls", ".ods"):
+                        filter_spec = "pdf:calc_pdf_Export"
+
+                    cmd = [
+                        office_bin,
+                        "--headless",
+                        "--invisible",
+                        "--nodefault",
+                        "--nofirststartwizard",
+                        "--nolockcheck",
+                        "--nologo",
+                        "--norestore",
+                        env_inst,
+                        "--convert-to", filter_spec,
+                        "--outdir", str(out_dir),
+                        str(src.resolve()),
+                    ]
+                    res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                    elapsed = round(time.time() - t0, 2)
+
+                    if pdf_path.exists() and pdf_path.stat().st_size > 0:
+                        print(f"[CUPS Controller] ✓ Converted '{src.name}' -> '{pdf_path.name}' ({pdf_path.stat().st_size} bytes in {elapsed}s)")
+                        return pdf_path
+
+                    # If specific filter failed, attempt generic --convert-to pdf fallback
+                    if res.returncode != 0:
+                        print(f"[CUPS Controller] Retrying with generic pdf filter...")
+                        generic_cmd = [
+                            office_bin,
+                            "--headless",
+                            "--invisible",
+                            "--nodefault",
+                            "--nofirststartwizard",
+                            "--nolockcheck",
+                            "--nologo",
+                            "--norestore",
+                            env_inst,
+                            "--convert-to", "pdf",
+                            "--outdir", str(out_dir),
+                            str(src.resolve()),
+                        ]
+                        res = subprocess.run(generic_cmd, capture_output=True, text=True, timeout=60)
+
+                    if pdf_path.exists() and pdf_path.stat().st_size > 0:
+                        print(f"[CUPS Controller] ✓ Converted '{src.name}' -> '{pdf_path.name}' ({pdf_path.stat().st_size} bytes)")
+                        return pdf_path
+
+                    # Also search out_dir for any fresh .pdf generated in the last 45s matching stem
+                    now = time.time()
+                    for cand in out_dir.glob("*.pdf"):
+                        if (now - cand.stat().st_mtime) <= 45 and (cand.stem.lower() in src.stem.lower() or src.stem.lower() in cand.stem.lower()):
+                            print(f"[CUPS Controller] ✓ Located converted PDF '{cand.name}'")
+                            return cand
+
+                    print(f"[CUPS Controller] LibreOffice conversion warning: exit={res.returncode}, stderr={res.stderr.strip()}")
+                except subprocess.TimeoutExpired:
+                    print(f"[CUPS Controller] LibreOffice conversion timed out after 60s for '{src.name}'")
+                except Exception as e:
+                    print(f"[CUPS Controller] LibreOffice execution error: {e}")
 
         # 3. Fallback to unoconv if installed
         if shutil.which("unoconv"):
@@ -1036,8 +1094,53 @@ class CupsController:
         return 1
 
     @staticmethod
+    def _wait_for_job_spool(printer: str, job_id: Optional[str] = None, timeout: int = 40):
+        """
+        Waits for a CUPS print job to clear the active raster queue.
+        Essential for Brother DCP-T420W hardware register switching (brprintconf_dcpt420w)
+        between monochrome and full-color groups, preventing register overwrite races.
+        """
+        if sys.platform == "win32":
+            return
+
+        start_time = time.time()
+        # Give CUPS a brief instant to register the job in queue
+        time.sleep(0.5)
+
+        while time.time() - start_time < timeout:
+            try:
+                res = subprocess.run(["lpstat", "-o", printer], capture_output=True, text=True, timeout=5)
+                # If a specific job_id was provided, check if it's still in the active queue
+                if job_id:
+                    if job_id not in res.stdout:
+                        print(f"[CUPS] ✓ Job '{job_id}' cleared CUPS filter queue ({round(time.time() - start_time, 1)}s)")
+                        return
+                else:
+                    if not res.stdout.strip():
+                        print(f"[CUPS] ✓ Spool queue cleared ({round(time.time() - start_time, 1)}s)")
+                        return
+            except Exception as e:
+                print(f"[CUPS] Spool queue monitor notice: {e}")
+                break
+            time.sleep(0.8)
+
+        print(f"[CUPS] Spool queue wait finished after {round(time.time() - start_time, 1)}s")
+
+    @staticmethod
     def _extract_pdf_pages(src_path: Path, pages_1_indexed: List[int], dest_path: Path) -> bool:
-        """Extracts specific pages (1-indexed) from a PDF into dest_path."""
+        """
+        Extracts specific pages (1-indexed) from a PDF into dest_path.
+        Features 5-layer fault-tolerant fallback:
+          1. PyMuPDF (fitz)
+          2. pypdf (with auto-install fallback)
+          3. Ghostscript (-sPageList)
+          4. Poppler utils (pdfseparate / pdfunite)
+          5. pdftk
+        """
+        if not pages_1_indexed:
+            return False
+
+        # Method 1: PyMuPDF (fitz)
         try:
             import pymupdf  # type: ignore
             src = pymupdf.open(str(src_path))
@@ -1050,28 +1153,109 @@ class CupsController:
             src.close()
             if dest_path.exists() and dest_path.stat().st_size > 0:
                 return True
+        except ImportError:
+            pass
         except Exception as e:
             print(f"[CUPS] PyMuPDF page extract notice: {e}")
 
+        # Method 2: pypdf (with auto-pip-install)
+        pypdf_mod = None
         try:
-            import pypdf  # type: ignore
-            reader = pypdf.PdfReader(str(src_path))
-            writer = pypdf.PdfWriter()
-            for p in pages_1_indexed:
-                if 1 <= p <= len(reader.pages):
-                    writer.add_page(reader.pages[p - 1])
-            with open(dest_path, "wb") as f:
-                writer.write(f)
-            if dest_path.exists() and dest_path.stat().st_size > 0:
-                return True
-        except Exception as e:
-            print(f"[CUPS] pypdf page extract notice: {e}")
+            import pypdf as pypdf_mod  # type: ignore
+        except ImportError:
+            try:
+                print("[CUPS] pypdf missing; auto-installing via pip...")
+                subprocess.run([sys.executable, "-m", "pip", "install", "pypdf", "--quiet"], timeout=35, capture_output=True)
+                import pypdf as pypdf_mod  # type: ignore
+            except Exception as e:
+                print(f"[CUPS] pypdf pip auto-install notice: {e}")
+
+        if pypdf_mod is not None:
+            try:
+                reader = pypdf_mod.PdfReader(str(src_path))
+                writer = pypdf_mod.PdfWriter()
+                for p in pages_1_indexed:
+                    if 1 <= p <= len(reader.pages):
+                        writer.add_page(reader.pages[p - 1])
+                with open(dest_path, "wb") as f:
+                    writer.write(f)
+                if dest_path.exists() and dest_path.stat().st_size > 0:
+                    return True
+            except Exception as e:
+                print(f"[CUPS] pypdf page extract error: {e}")
+
+        # Method 3: Ghostscript with -sPageList
+        gs_bin = shutil.which("gs") or ("/usr/bin/gs" if os.path.exists("/usr/bin/gs") else None)
+        if gs_bin:
+            try:
+                pages_str = ",".join(str(p) for p in pages_1_indexed)
+                gs_cmd = [
+                    gs_bin,
+                    "-sDEVICE=pdfwrite",
+                    "-dNOPAUSE",
+                    "-dBATCH",
+                    "-dSAFER",
+                    f"-sPageList={pages_str}",
+                    f"-sOutputFile={dest_path}",
+                    str(src_path),
+                ]
+                res = subprocess.run(gs_cmd, capture_output=True, timeout=30)
+                if res.returncode == 0 and dest_path.exists() and dest_path.stat().st_size > 0:
+                    return True
+            except Exception as e:
+                print(f"[CUPS] Ghostscript page extract notice: {e}")
+
+        # Method 4: pdfseparate & pdfunite (poppler-utils)
+        pdfseparate_bin = shutil.which("pdfseparate") or ("/usr/bin/pdfseparate" if os.path.exists("/usr/bin/pdfseparate") else None)
+        if pdfseparate_bin:
+            try:
+                temp_parts = []
+                temp_dir = dest_path.parent
+                for p in pages_1_indexed:
+                    part_pattern = temp_dir / f"tmp_slice_{p}_%d.pdf"
+                    part_out = temp_dir / f"tmp_slice_{p}_{p}.pdf"
+                    res = subprocess.run([pdfseparate_bin, "-f", str(p), "-l", str(p), str(src_path), str(part_pattern)], capture_output=True, timeout=10)
+                    if part_out.exists() and part_out.stat().st_size > 0:
+                        temp_parts.append(part_out)
+
+                if temp_parts:
+                    if len(temp_parts) == 1:
+                        shutil.copy2(str(temp_parts[0]), str(dest_path))
+                        try: temp_parts[0].unlink()
+                        except Exception: pass
+                        if dest_path.exists() and dest_path.stat().st_size > 0:
+                            return True
+                    else:
+                        pdfunite_bin = shutil.which("pdfunite") or ("/usr/bin/pdfunite" if os.path.exists("/usr/bin/pdfunite") else None)
+                        if pdfunite_bin:
+                            unite_cmd = [pdfunite_bin] + [str(t) for t in temp_parts] + [str(dest_path)]
+                            subprocess.run(unite_cmd, capture_output=True, timeout=15)
+                            for t in temp_parts:
+                                try: t.unlink()
+                                except Exception: pass
+                            if dest_path.exists() and dest_path.stat().st_size > 0:
+                                return True
+            except Exception as e:
+                print(f"[CUPS] poppler page extract notice: {e}")
+
+        # Method 5: pdftk
+        pdftk_bin = shutil.which("pdftk") or ("/usr/bin/pdftk" if os.path.exists("/usr/bin/pdftk") else None)
+        if pdftk_bin:
+            try:
+                pages_strs = [str(p) for p in pages_1_indexed]
+                cmd = [pdftk_bin, str(src_path), "cat"] + pages_strs + ["output", str(dest_path)]
+                res = subprocess.run(cmd, capture_output=True, timeout=20)
+                if res.returncode == 0 and dest_path.exists() and dest_path.stat().st_size > 0:
+                    return True
+            except Exception as e:
+                print(f"[CUPS] pdftk page extract notice: {e}")
 
         return False
 
     @staticmethod
     def _convert_pdf_to_monochrome(src_path: Path, dest_path: Path) -> bool:
-        """Converts PDF pages into pure DeviceGray via Ghostscript."""
+        """Converts PDF pages into pure DeviceGray via Ghostscript or PyMuPDF rasterization."""
+        # Method 1: Ghostscript DeviceGray
         gs_bin = shutil.which("gs") or ("/usr/bin/gs" if os.path.exists("/usr/bin/gs") else None)
         if gs_bin:
             try:
@@ -1083,6 +1267,7 @@ class CupsController:
                     "-dCompatibilityLevel=1.4",
                     "-dNOPAUSE",
                     "-dBATCH",
+                    "-dSAFER",
                     f"-sOutputFile={dest_path}",
                     str(src_path),
                 ]
@@ -1091,6 +1276,28 @@ class CupsController:
                     return True
             except Exception as e:
                 print(f"[CUPS] Ghostscript mono conversion notice: {e}")
+
+        # Method 2: PyMuPDF raster fallback
+        try:
+            import pymupdf  # type: ignore
+            doc = pymupdf.open(str(src_path))
+            out_doc = pymupdf.open()
+            for page in doc:
+                pix = page.get_pixmap(colorspace=pymupdf.csGRAY, dpi=300)
+                img_data = pix.tobytes("png")
+                img_pdf = pymupdf.open("png", img_data)
+                rect = page.rect
+                new_page = out_doc.new_page(width=rect.width, height=rect.height)
+                new_page.show_pdf_page(rect, img_pdf, 0)
+                img_pdf.close()
+            out_doc.save(str(dest_path))
+            out_doc.close()
+            doc.close()
+            if dest_path.exists() and dest_path.stat().st_size > 0:
+                return True
+        except Exception as e:
+            print(f"[CUPS] PyMuPDF mono conversion notice: {e}")
+
         return False
 
     def print_file(
@@ -1226,6 +1433,11 @@ class CupsController:
                             print(f"[CUPS] Page extraction fallback: using target file with -P")
                             grp_sub_path = p_path
                             grp_range_arg = ",".join(str(x) for x in grp_pages)
+                            if not is_grp_color:
+                                mono_fallback = p_path.parent / f"mono_fallback_c{copy_idx}_g{grp_idx}_{p_path.name}"
+                                if self._convert_pdf_to_monochrome(p_path, mono_fallback):
+                                    temp_files_to_clean.append(mono_fallback)
+                                    grp_sub_path = mono_fallback
                         else:
                             grp_range_arg = None
                             if not is_grp_color:
@@ -1268,7 +1480,17 @@ class CupsController:
                         print(f"[CUPS CLI] Submitting Group {grp_idx}/{len(groups)} (Copy {copy_idx}/{clean_copies}): {' '.join(cmd)}")
                         out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
                         outputs.append(out.strip())
-                        time.sleep(0.5)
+
+                        # Parse submitted job ID: e.g. "request id is PrintBooth_Printer-72 (1 file(s))"
+                        job_match = re.search(r"request id is ([^\s]+)", out)
+                        submitted_job_id = job_match.group(1) if job_match else None
+
+                        # If there is another group or copy following this, wait for current job to clear
+                        # the CUPS raster filter queue so Brother hardware register (Mono vs FullColor)
+                        # does not get overwritten before the filter finishes processing!
+                        is_last = (grp_idx == len(groups) and copy_idx == clean_copies)
+                        if not is_last:
+                            self._wait_for_job_spool(printer, job_id=submitted_job_id, timeout=45)
 
                 return {"success": True, "output": "; ".join(outputs), "printer": printer}
             finally:

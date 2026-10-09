@@ -228,10 +228,10 @@ export default function PrintingScreen() {
       setLcdNumber(String(sheetsQueue.length).padStart(3, '0'))
       setIsCompleted(true)
 
-      // Auto-navigate to collection screen after seeing final printed sheets in the tray
+      // Auto-navigate to collection screen immediately after seeing final printed sheets in the tray
       setTimeout(() => {
         navigate('/collect')
-      }, 1800)
+      }, 400)
     }
 
     runQueue()

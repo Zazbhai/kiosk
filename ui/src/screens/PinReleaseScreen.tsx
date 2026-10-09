@@ -175,7 +175,7 @@ export default function PinReleaseScreen() {
           const ord = data.order || data.data || data
           const orderNum = ord?.orderNumber || ord?.orderId || 'PB-' + Math.floor(100000 + Math.random() * 900000)
           const fileNm = ord?.fileName || 'Document.pdf'
-          const pCount = Number(ord?.pageCount || 1)
+          const pCount = Math.max(1, Number(ord?.pageCount || ord?.totalPages || ord?.pages || ord?.totalSheets || 1))
           const cMode = ord?.colourMode || ord?.colour || 'BW'
 
           sessionStorage.setItem('pb_order_id', orderNum)
@@ -190,12 +190,11 @@ export default function PinReleaseScreen() {
             pageCount: pCount,
           })
 
+          // Snappy instant start: trigger leave animation and navigate to printer animation in 250ms
+          setShowDone(true)
           setTimeout(() => {
-            setShowDone(true)
-            setTimeout(() => {
-              navigate('/printing')
-            }, 1200)
-          }, 600)
+            navigate('/printing')
+          }, 250)
           return
         }
 

@@ -1,12 +1,18 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import PrinterErrorOverlay from '../components/PrinterErrorOverlay'
 
 export default function PrinterOfflineScreen() {
   const navigate = useNavigate()
 
-  // Polling to see if printer recovers, then navigate to home
+  // Polling to see if printer & network recover, then navigate to home
   useEffect(() => {
     const checkStatus = async () => {
+      // If network is completely offline, wait for network event
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        return
+      }
+
       try {
         const kioskId = localStorage.getItem('pb_kiosk_id') || 'PB-001'
         const apiUrl = (localStorage.getItem('pb_api_url') || '').replace(/\/api$/, '')
@@ -35,15 +41,23 @@ export default function PrinterOfflineScreen() {
       } catch {}
     }
 
-    const interval = setInterval(checkStatus, 4000)
-    return () => clearInterval(interval)
+    const interval = setInterval(checkStatus, 3500)
+    window.addEventListener('online', checkStatus)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('online', checkStatus)
+    }
   }, [navigate])
 
-  // The global PrinterErrorOverlay in App.tsx already provides the full-screen takeover.
-  // Rendering an empty kiosk background avoids portal duplication and z-fighting.
   return (
     <div className="kiosk-screen" style={{ background: '#06110D' }}>
       <div className="kiosk-bg-mesh" />
+      <PrinterErrorOverlay
+        isOpen={true}
+        title="PRINTER OFFLINE"
+        reason="Station is offline or network connection interrupted."
+        detail="PrintBooth is reconnecting and will resume automatically once connection is restored."
+      />
     </div>
   )
 }
