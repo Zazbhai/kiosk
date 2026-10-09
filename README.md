@@ -187,16 +187,29 @@ sudo bash scripts/setup_kiosk_appliance.sh
 ```
 
 This single command configures:
-1. **Silent Custom Bootloader & Splash (`setup_custom_bootloader.sh`)**:
+1. **Silent Custom Bootloader & Animated Plymouth Splash (`setup_custom_bootloader.sh`)**:
    - Disables the 4-color rainbow splash square (`disable_splash=1`).
-   - Silences all Linux kernel and dmesg scrolling text (`console=tty3 quiet loglevel=3 logo.nologo`).
-   - Suppresses blinking cursor (`vt.global_cursor_default=0`).
-   - Installs branded PrintBooth Obsidian (`#06110D`) Plymouth bootloader theme and early framebuffer splash.
+   - Removes artificial boot delay (`boot_delay=0`) and activates 30s CPU turbo (`arm_boost=1`, `initial_turbo=30`).
+   - Silences all Linux kernel and dmesg scrolling text (`console=tty3 quiet loglevel=1 logo.nologo`).
+   - Suppresses blinking cursor (`vt.global_cursor_default=0`) and disables verbose systemd banners.
+   - Installs branded PrintBooth Obsidian (`#06110D`) & Synthetic Lime (`#c8ff00`) Plymouth bootloader theme with dynamic progress bar animation.
+   - Updates initramfs so the custom theme boots at the earliest kernel stage.
+   - **Test Plymouth splash live on-screen without rebooting**:
+     ```bash
+     sudo bash scripts/setup_custom_bootloader.sh --test
+     ```
 2. **Zero-Desktop Dedicated Kiosk Session (`setup_zero_desktop.sh`)**:
    - Replaces the default desktop environment with a dedicated standalone Openbox session.
    - Completely removes taskbars (`lxpanel`, `wf-panel-pi`), desktop icons, wallpapers, and right-click menus.
    - Paints an instant obsidian black backdrop (`#06110D`) so the desktop is **never exposed** even for 1 frame.
-3. **Dynamic Self-Healing Kiosk Watchdog (`start_kiosk.sh`)**:
+3. **Read-Only Filesystem & OverlayFS Power-Cut Protection (`setup_readonly_fs.sh`)**:
+   - Redirects all runtime writes (browser cache, CUPS spool, logs) to a RAM-backed OverlayFS (`tmpfs`).
+   - Prevents SD card / eMMC corruption when merchants turn off power directly at the wall switch.
+   - Provides global appliance maintenance CLI commands:
+     - `kiosk-status` — Check whether storage is currently locked in Read-Only mode or in Maintenance mode.
+     - `kiosk-unlock` — Temporarily switch to Read-Write mode to install updates or edit `.env`.
+     - `kiosk-lock` — Re-lock system into Read-Only Appliance mode.
+4. **Dynamic Self-Healing Kiosk Watchdog (`start_kiosk.sh`)**:
    - Automatically cleans Chromium crash flags (`SingletonLock`, `--disable-session-crashed-bubble`).
    - Supervises Chromium in GPU-accelerated kiosk mode and restarts it in <1s if closed or interrupted.
    - Flushes CUPS hardware queues on startup (`cancel -a -x`) to ensure zero lingering print jobs.

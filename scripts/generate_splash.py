@@ -24,8 +24,8 @@ ASSETS_DIR = SCRIPT_DIR / "splash_assets"
 ASSETS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def create_splash_image(width=1920, height=1080, progress=0.7) -> Image.Image:
-    """Creates a high-definition 1920x1080 PrintBooth bootloader splash image."""
+def create_splash_image(width=1920, height=1080, progress=0.7, draw_progress=True) -> Image.Image:
+    """Creates a high-definition PrintBooth bootloader splash image."""
     img = Image.new("RGBA", (width, height), (6, 17, 13, 255))  # #06110D
     draw = ImageDraw.Draw(img)
 
@@ -78,7 +78,6 @@ def create_splash_image(width=1920, height=1080, progress=0.7) -> Image.Image:
     draw.ellipse([cx - 5, cy - 140 - 5, cx + 5, cy - 140 + 5], fill=(255, 255, 255, 240))
 
     # 5. Typographic Branding: PRINTBOOTH
-    # Fallback to default bitmap or system font if ttf unavailable
     font_main = None
     font_sub = None
     font_mono = None
@@ -114,31 +113,32 @@ def create_splash_image(width=1920, height=1080, progress=0.7) -> Image.Image:
     sw = s_bbox[2] - s_bbox[0]
     draw.text((cx - sw // 2, cy + 18), subtitle, fill=(160, 185, 170, 220), font=font_sub)
 
-    # 6. Sleek Hardware Progress Bar
-    bar_w = 420
-    bar_h = 6
-    bx1 = cx - bar_w // 2
-    by1 = cy + 70
-    bx2 = cx + bar_w // 2
-    by2 = by1 + bar_h
+    # 6. Optional Static Progress Bar (for framebuffer static splash)
+    if draw_progress:
+        bar_w = 420
+        bar_h = 6
+        bx1 = cx - bar_w // 2
+        by1 = cy + 70
+        bx2 = cx + bar_w // 2
+        by2 = by1 + bar_h
 
-    # Bar background track
-    draw.rounded_rectangle([bx1, by1, bx2, by2], radius=3, fill=(25, 45, 35, 255))
-    # Active filled segment (Synthetic Lime)
-    active_w = int(bar_w * max(0.05, min(1.0, progress)))
-    draw.rounded_rectangle([bx1, by1, bx1 + active_w, by2], radius=3, fill=(200, 255, 0, 255))
+        # Bar background track
+        draw.rounded_rectangle([bx1, by1, bx2, by2], radius=3, fill=(25, 45, 35, 255))
+        # Active filled segment (Synthetic Lime)
+        active_w = int(bar_w * max(0.05, min(1.0, progress)))
+        draw.rounded_rectangle([bx1, by1, bx1 + active_w, by2], radius=3, fill=(200, 255, 0, 255))
 
-    # Glow around progress head
-    draw.ellipse([bx1 + active_w - 6, by1 - 3, bx1 + active_w + 6, by2 + 3], fill=(200, 255, 0, 160))
+        # Glow around progress head
+        draw.ellipse([bx1 + active_w - 6, by1 - 3, bx1 + active_w + 6, by2 + 3], fill=(200, 255, 0, 160))
 
-    # 7. Status Text / Boot Diagnostic indicator
-    status_msg = "INITIALIZING SECURE HARDWARE SUBSYSTEMS..."
-    m_bbox = draw.textbbox((0, 0), status_msg, font=font_mono)
-    mw = m_bbox[2] - m_bbox[0]
-    draw.text((cx - mw // 2, cy + 96), status_msg, fill=(120, 150, 135, 200), font=font_mono)
+        # Status Text / Boot Diagnostic indicator
+        status_msg = "INITIALIZING SECURE HARDWARE SUBSYSTEMS..."
+        m_bbox = draw.textbbox((0, 0), status_msg, font=font_mono)
+        mw = m_bbox[2] - m_bbox[0]
+        draw.text((cx - mw // 2, cy + 96), status_msg, fill=(120, 150, 135, 200), font=font_mono)
 
-    # 8. Bottom Hardware Identifier
-    footer_text = "ZERO-QUEUE HARDWARE ENGINE · AUTOMATIC SPOOL PURGE ON REBOOT"
+    # 7. Bottom Hardware Identifier
+    footer_text = "ZERO-QUEUE HARDWARE ENGINE · SECURE APPLIANCE FIRMWARE"
     f_bbox = draw.textbbox((0, 0), footer_text, font=font_mono)
     fw = f_bbox[2] - f_bbox[0]
     draw.text((cx - fw // 2, height - pad - 18), footer_text, fill=(75, 105, 90, 180), font=font_mono)
@@ -149,33 +149,50 @@ def create_splash_image(width=1920, height=1080, progress=0.7) -> Image.Image:
 def generate_all_assets():
     print(f"[Splash Gen] Generating PrintBooth bootloader graphics into: {ASSETS_DIR}")
 
-    # 1. Main 1080p Boot Splash
-    splash_1080 = create_splash_image(1920, 1080, progress=0.85)
+    # 1. Main 1080p Static Boot Splash (for fbi early framebuffer)
+    splash_1080 = create_splash_image(1920, 1080, progress=0.85, draw_progress=True)
     splash_1080.convert("RGB").save(ASSETS_DIR / "boot_splash_1080p.png", quality=95)
     print(f"  [+] Created {ASSETS_DIR / 'boot_splash_1080p.png'}")
 
-    # 2. 720p Touchscreen Edition (for official 7-inch Raspberry Pi Display 800x480 / 1280x720)
-    splash_720 = create_splash_image(1280, 720, progress=0.85)
+    # 2. 720p Touchscreen Edition
+    splash_720 = create_splash_image(1280, 720, progress=0.85, draw_progress=True)
     splash_720.convert("RGB").save(ASSETS_DIR / "boot_splash_720p.png", quality=95)
     print(f"  [+] Created {ASSETS_DIR / 'boot_splash_720p.png'}")
 
-    # 3. Plymouth Centered Watermark & Box
+    # 3. Clean Background for Plymouth (Plymouth renders dynamic progress bar and status on top)
+    plym_bg = create_splash_image(1920, 1080, draw_progress=False)
+    plym_bg.convert("RGB").save(ASSETS_DIR / "plymouth_bg.png", quality=95)
+    print(f"  [+] Created {ASSETS_DIR / 'plymouth_bg.png'}")
+
+    # 4. Plymouth Centered Watermark & Emblem Box
     box_img = Image.new("RGBA", (500, 240), (0, 0, 0, 0))
     bdraw = ImageDraw.Draw(box_img)
-    # Emblem
     bdraw.rounded_rectangle([250 - 40, 20, 250 + 40, 100], radius=16, fill=(11, 26, 20, 255), outline=(200, 255, 0, 240), width=2)
     bdraw.ellipse([250 - 12, 60 - 12, 250 + 12, 60 + 12], fill=(220, 38, 38, 255))
     bdraw.ellipse([250 - 4, 60 - 4, 250 + 4, 60 + 4], fill=(255, 255, 255, 240))
     box_img.save(ASSETS_DIR / "plymouth_watermark.png")
     print(f"  [+] Created {ASSETS_DIR / 'plymouth_watermark.png'}")
 
-    # 4. Progress bar frame for Plymouth
-    p_track = Image.new("RGBA", (400, 8), (25, 45, 35, 255))
+    # 5. Progress bar track & filler for Plymouth
+    bar_width = 440
+    bar_height = 8
+    p_track = Image.new("RGBA", (bar_width, bar_height), (25, 45, 35, 255))
+    tdraw = ImageDraw.Draw(p_track)
+    tdraw.rounded_rectangle([0, 0, bar_width, bar_height], radius=4, fill=(22, 40, 32, 255), outline=(35, 65, 50, 255), width=1)
     p_track.save(ASSETS_DIR / "progress_track.png")
 
-    p_bar = Image.new("RGBA", (400, 8), (200, 255, 0, 255))
+    p_bar = Image.new("RGBA", (bar_width, bar_height), (0, 0, 0, 0))
+    bdraw = ImageDraw.Draw(p_bar)
+    bdraw.rounded_rectangle([0, 0, bar_width, bar_height], radius=4, fill=(200, 255, 0, 255))
     p_bar.save(ASSETS_DIR / "progress_bar.png")
-    print("  [+] Created Plymouth animation primitives")
+
+    # 6. Pulsing Glow Dot
+    glow_size = 24
+    p_glow = Image.new("RGBA", (glow_size, glow_size), (0, 0, 0, 0))
+    gdraw = ImageDraw.Draw(p_glow)
+    gdraw.ellipse([2, 2, glow_size - 2, glow_size - 2], fill=(200, 255, 0, 180))
+    p_glow.save(ASSETS_DIR / "progress_glow.png")
+    print("  [+] Created Plymouth dynamic animation primitives (track, bar, glow)")
 
     print("[Splash Gen] Complete! Assets ready for Plymouth and Framebuffer splash.")
 

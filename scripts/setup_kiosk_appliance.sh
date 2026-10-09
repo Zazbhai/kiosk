@@ -31,7 +31,7 @@ echo -e "\n[STEP 2/3] Configuring Zero-Desktop Kiosk Environment..."
 bash "$SCRIPT_DIR/setup_zero_desktop.sh"
 
 # 3. Step 3: Register Systemd Services & Ensure CUPS Zero-Queue Permissions
-echo -e "\n[STEP 3/3] Finalizing Systemd Services & Zero-Leftover Policies..."
+echo -e "\n[STEP 3/4] Finalizing Systemd Services & Zero-Leftover Policies..."
 ACTUAL_USER="${SUDO_USER:-$USER}"
 
 if [ -f "$SCRIPT_DIR/printbooth-display.service" ]; then
@@ -50,17 +50,26 @@ if command -v cupsctl > /dev/null 2>&1; then
     echo "  ✓ Configured CUPS zero-queue retention policy"
 fi
 
+# 4. Step 4: Configure Read-Only Filesystem & OverlayFS Protection
+echo -e "\n[STEP 4/4] Deploying Read-Only Filesystem & OverlayFS Protection..."
+bash "$SCRIPT_DIR/setup_readonly_fs.sh"
+
 echo -e "\n════════════════════════════════════════════════════════"
 echo "  🎉 PrintBooth Kiosk Appliance Configuration Complete! "
 echo "════════════════════════════════════════════════════════"
 echo "  What happens on reboot:"
-echo "  1. Silent Bootloader: No rainbow box, no Linux console dmesg."
-echo "  2. Custom Splash: Branded PrintBooth Obsidian splash appears."
+echo "  1. Silent Bootloader: Rainbow box stripped, zero console text, 0s delay."
+echo "  2. Custom Splash: Branded PrintBooth Obsidian splash with live progress."
 echo "  3. Zero Desktop: Desktop, taskbars, and icons are completely bypassed."
-echo "  4. Fullscreen Kiosk: Displays touchscreen terminal with zero mouse cursor."
-echo "  5. Crash Shield: If closed, it relaunches within 1 second."
-echo "  6. Zero Leftovers: Hardware queue is automatically cleared on startup."
+echo "  4. Fullscreen Kiosk: Touchscreen terminal auto-starts (zero mouse cursor)."
+echo "  5. Read-Only Protection: Power-cut safe! RAM overlay protects SD card."
+echo "  6. Zero Leftovers: Hardware queue is cleared on every reboot."
 echo ""
-echo "  To test now: bash $SCRIPT_DIR/start_kiosk.sh"
+echo "  Maintenance Commands:"
+echo "    kiosk-status   -> Check if OS is in Read-Only or Read-Write mode"
+echo "    kiosk-unlock   -> Switch to Read-Write mode for updates"
+echo "    kiosk-lock     -> Re-lock system into Read-Only Appliance mode"
+echo ""
+echo "  To test now without reboot: bash $SCRIPT_DIR/start_kiosk.sh"
 echo "  To reboot and test full bootloader: sudo reboot"
 echo "════════════════════════════════════════════════════════"
