@@ -135,8 +135,9 @@ class KioskBrainDaemon:
 
     def _get_auth_headers(self) -> Dict[str, str]:
         headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux armv7l) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 PrintBooth-Kiosk/1.0",
             "X-Kiosk-Id": self.kiosk_id,
-            "Accept": "application/json",
+            "Accept": "*/*",
         }
         if self.kiosk_secret:
             headers["X-Kiosk-Secret"] = self.kiosk_secret

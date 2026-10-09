@@ -79,8 +79,9 @@ class KioskWsClient:
 
     def _get_auth_headers(self):
         headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux armv7l) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 PrintBooth-Kiosk/1.0",
             "X-Kiosk-Id": self.kiosk_id,
-            "Accept": "application/json",
+            "Accept": "*/*",
         }
         if self.kiosk_secret:
             headers["X-Kiosk-Secret"] = self.kiosk_secret
@@ -451,16 +452,27 @@ class KioskWsClient:
         if local_target.exists() and local_target.stat().st_size > 0:
             return
 
-        # Always download from configured self.api_url
-        file_url = f"{self.api_url}/print/download/{order_id}"
+        # Build download URL with query params for station authentication
+        base_dl_url = payload.get("fileUrl") or f"{self.api_url}/print/download/{order_id}"
+        separator = "&" if "?" in base_dl_url else "?"
+        file_url = f"{base_dl_url}{separator}kioskId={urllib.parse.quote(self.kiosk_id)}"
+        if self.kiosk_secret:
+            file_url += f"&secret={urllib.parse.quote(self.kiosk_secret)}"
 
         try:
             print(f"[WSS Kiosk Client] ⚡ Pre-fetching document from {file_url}...")
             loop = asyncio.get_event_loop()
             def _download_with_auth():
+                import ssl
                 dl_req = urllib.request.Request(file_url, headers=self._get_auth_headers())
-                with urllib.request.urlopen(dl_req, timeout=25) as resp, open(local_target, "wb") as f:
-                    f.write(resp.read())
+                try:
+                    ctx = ssl.create_default_context()
+                    with urllib.request.urlopen(dl_req, context=ctx, timeout=25) as resp, open(local_target, "wb") as f:
+                        f.write(resp.read())
+                except ssl.SSLError:
+                    ctx = ssl._create_unverified_context()
+                    with urllib.request.urlopen(dl_req, context=ctx, timeout=25) as resp, open(local_target, "wb") as f:
+                        f.write(resp.read())
             await loop.run_in_executor(None, _download_with_auth)
             print(f"[WSS Kiosk Client] ✓ Pre-fetched {file_name} ({local_target.stat().st_size} bytes)")
 
