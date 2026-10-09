@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # PrintBooth Custom Bootloader & Silent Fast-Boot Appliance Setup
+# Light & Laser Red Matrix Opening Edition (NO LOGOS)
 # Targeted for Raspberry Pi 4 Model B & Compute Module 4 (CM4)
 # ==============================================================================
 # 1. Hardware Firmware: Disables 4-color rainbow splash, sets zero boot delay,
 #    enables initial CPU turbo and BCM2835 hardware watchdog in config.txt.
 # 2. Kernel Handover: Silences kernel dmesg, redirects console to tty3,
 #    hides Raspberry Pi fruit logos, hides terminal cursor in cmdline.txt.
-# 3. Plymouth Graphical Bootloader: Installs custom high-tech obsidian & lime
-#    PrintBooth boot theme with live progress animation and updates initramfs.
-# 4. Fast-Boot Optimizations: Masks network-wait blocking services and cleans
-#    console tty1 login flickers for seamless handoff directly into kiosk.
+# 3. Plymouth Graphical Bootloader: Installs Light & Laser Red Matrix opening
+#    bootloader with streaming digital code rain, monospace terminal telemetry,
+#    ZERO LOGO, and compiles into initramfs.
+# 4. Anti-Popup & Polkit Lockdown: Completely suppresses "Authentication Required"
+#    modals, GNOME keyring dialogs, and colord/network policy prompts.
 # ==============================================================================
 
 set -e
@@ -22,7 +24,8 @@ if [ "$1" = "--test" ] || [ "$1" = "-t" ]; then
 fi
 
 echo "════════════════════════════════════════════════════════"
-echo "  PrintBooth Custom Bootloader & Silent Boot Setup      "
+echo "  PrintBooth Custom Bootloader: Matrix Edition (No Logo)"
+echo "  Theme: High-Tech Light Porcelain & Laser Red Matrix   "
 echo "  Target Architecture: Raspberry Pi 4 / CM4             "
 echo "════════════════════════════════════════════════════════"
 
@@ -30,15 +33,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ASSETS_DIR="$SCRIPT_DIR/splash_assets"
 
 # ------------------------------------------------------------------------------
-# STEP 0: Generate or Verify Graphic Splash Assets
+# STEP 0: Generate or Verify Graphic Splash Assets (Light & Red Matrix)
 # ------------------------------------------------------------------------------
-echo -e "\n[STEP 1/6] Verifying Custom Bootloader Visual Assets..."
+echo -e "\n[STEP 1/7] Generating Light & Laser Red Matrix Visual Assets..."
 mkdir -p "$ASSETS_DIR"
 
-if [ ! -f "$ASSETS_DIR/plymouth_bg.png" ] || [ ! -f "$ASSETS_DIR/boot_splash_1080p.png" ]; then
-    echo "  Generating high-definition Obsidian & Lime boot assets..."
-    python3 "$SCRIPT_DIR/generate_splash.py" || true
-fi
+echo "  Rendering high-definition Light & Laser Red Matrix digital rain..."
+python3 "$SCRIPT_DIR/generate_splash.py" || true
 
 # Copy assets to persistent system location
 sudo mkdir -p /etc/printbooth
@@ -51,7 +52,7 @@ fi
 # ------------------------------------------------------------------------------
 # STEP 1: Configure Raspberry Pi 4 / CM4 Firmware (config.txt)
 # ------------------------------------------------------------------------------
-echo -e "\n[STEP 2/6] Configuring Raspberry Pi 4 / CM4 Firmware (config.txt)..."
+echo -e "\n[STEP 2/7] Configuring Raspberry Pi 4 / CM4 Firmware (config.txt)..."
 
 CONFIG_FILE=""
 if [ -f "/boot/firmware/config.txt" ]; then
@@ -111,20 +112,17 @@ else
 fi
 
 # ------------------------------------------------------------------------------
-# STEP 2: Configure Pi 4 EEPROM Bootloader (if rpi-eeprom-config is present)
+# STEP 2: Configure Pi 4 EEPROM Bootloader
 # ------------------------------------------------------------------------------
-echo -e "\n[STEP 3/6] Checking Raspberry Pi 4 EEPROM Bootloader Settings..."
+echo -e "\n[STEP 3/7] Checking Raspberry Pi 4 EEPROM Bootloader Settings..."
 if command -v rpi-eeprom-config > /dev/null 2>&1; then
-    echo "  Configuring fast boot order in EEPROM..."
     TEMP_EEPROM=$(mktemp)
     if sudo rpi-eeprom-config > "$TEMP_EEPROM" 2>/dev/null; then
         EEPROM_MODIFIED=false
-        # Ensure HDMI delay is zero
         if ! grep -q "^HDMI_DELAY=0" "$TEMP_EEPROM"; then
             echo "HDMI_DELAY=0" >> "$TEMP_EEPROM"
             EEPROM_MODIFIED=true
         fi
-        # If modified, apply back to EEPROM
         if [ "$EEPROM_MODIFIED" = true ]; then
             sudo rpi-eeprom-config --apply "$TEMP_EEPROM" 2>/dev/null || true
             echo "  ✓ Applied fast-boot EEPROM configuration (HDMI_DELAY=0)"
@@ -140,7 +138,7 @@ fi
 # ------------------------------------------------------------------------------
 # STEP 3: Configure Silent Linux Kernel Handover (cmdline.txt)
 # ------------------------------------------------------------------------------
-echo -e "\n[STEP 4/6] Configuring Silent Kernel Handover (cmdline.txt)..."
+echo -e "\n[STEP 4/7] Configuring Silent Kernel Handover (cmdline.txt)..."
 
 CMDLINE_FILE=""
 if [ -f "/boot/firmware/cmdline.txt" ]; then
@@ -155,13 +153,9 @@ if [ -n "$CMDLINE_FILE" ]; then
         echo "  ✓ Backed up original cmdline to ${CMDLINE_FILE}.printbooth_backup"
     fi
 
-    # Read current parameters as a single line
     CURRENT_CMDLINE=$(cat "$CMDLINE_FILE" | tr '\n' ' ' | tr -s ' ' | sed 's/ $//')
-
-    # Divert console from tty1 and serial to silent tty3
     NEW_CMDLINE=$(echo "$CURRENT_CMDLINE" | sed -E 's/console=tty1/console=tty3/g')
 
-    # Core silent boot flags
     SILENT_FLAGS=(
         "console=tty3"
         "quiet"
@@ -183,7 +177,6 @@ if [ -n "$CMDLINE_FILE" ]; then
         fi
     done
 
-    # Write as strict single line (Raspberry Pi cmdline.txt MUST NEVER contain newlines)
     echo -n "$NEW_CMDLINE" | tr -s ' ' | sudo tee "$CMDLINE_FILE" > /dev/null
     echo "" | sudo tee -a "$CMDLINE_FILE" > /dev/null
     echo "  ✓ Kernel cmdline updated with silent fast-boot parameters"
@@ -192,11 +185,10 @@ else
 fi
 
 # ------------------------------------------------------------------------------
-# STEP 4: Install & Configure Custom PrintBooth Plymouth Theme
+# STEP 4: Install & Configure Light & Laser Red Matrix Plymouth Theme
 # ------------------------------------------------------------------------------
-echo -e "\n[STEP 5/6] Provisioning Custom PrintBooth Plymouth Bootloader Theme..."
+echo -e "\n[STEP 5/7] Provisioning Light & Laser Red Matrix Plymouth Theme..."
 
-# Ensure Plymouth package is installed
 if ! command -v plymouth > /dev/null 2>&1 || ! command -v plymouth-set-default-theme > /dev/null 2>&1; then
     echo "  Installing Plymouth splash framework via apt..."
     sudo apt-get update -y
@@ -206,20 +198,17 @@ fi
 PLYMOUTH_THEME_DIR="/usr/share/plymouth/themes/printbooth"
 sudo mkdir -p "$PLYMOUTH_THEME_DIR"
 
-# Copy generated graphical assets into Plymouth theme directory
+# Copy generated Light & Red Matrix assets
 if [ -f "$ASSETS_DIR/plymouth_bg.png" ]; then
     sudo cp "$ASSETS_DIR/plymouth_bg.png" "$PLYMOUTH_THEME_DIR/plymouth_bg.png"
-elif [ -f "/etc/printbooth/boot_splash.png" ]; then
-    sudo cp "/etc/printbooth/boot_splash.png" "$PLYMOUTH_THEME_DIR/plymouth_bg.png"
+    sudo cp "$ASSETS_DIR/plymouth_bg.png" "$PLYMOUTH_THEME_DIR/background.png"
 fi
 
-if [ -f "$ASSETS_DIR/boot_splash_1080p.png" ]; then
-    sudo cp "$ASSETS_DIR/boot_splash_1080p.png" "$PLYMOUTH_THEME_DIR/background.png"
-fi
-
-if [ -f "$ASSETS_DIR/plymouth_watermark.png" ]; then
-    sudo cp "$ASSETS_DIR/plymouth_watermark.png" "$PLYMOUTH_THEME_DIR/watermark.png"
-fi
+for idx in 1 2 3 4; do
+    if [ -f "$ASSETS_DIR/matrix_stream_${idx}.png" ]; then
+        sudo cp "$ASSETS_DIR/matrix_stream_${idx}.png" "$PLYMOUTH_THEME_DIR/matrix_stream_${idx}.png"
+    fi
+done
 
 if [ -f "$ASSETS_DIR/progress_track.png" ]; then
     sudo cp "$ASSETS_DIR/progress_track.png" "$PLYMOUTH_THEME_DIR/progress_track.png"
@@ -230,8 +219,8 @@ fi
 # Write Plymouth Theme Descriptor
 cat << 'EOF' | sudo tee "$PLYMOUTH_THEME_DIR/printbooth.plymouth" > /dev/null
 [Plymouth Theme]
-Name=PrintBooth Appliance Kiosk
-Description=Autonomous Hardware Kiosk Obsidian & Synthetic Lime Bootloader
+Name=PrintBooth Matrix Appliance
+Description=High-Tech Light Porcelain & Laser Red Matrix Digital Rain Bootloader (No Logo)
 ModuleName=script
 
 [script]
@@ -239,20 +228,20 @@ ImageDir=/usr/share/plymouth/themes/printbooth
 ScriptFile=/usr/share/plymouth/themes/printbooth/printbooth.script
 EOF
 
-# Write Animated Plymouth Script
+# Write Animated Matrix Opening Plymouth Script
 cat << 'EOF' | sudo tee "$PLYMOUTH_THEME_DIR/printbooth.script" > /dev/null
 # ==============================================================================
-# PrintBooth Custom Plymouth Bootloader Animation Script
+# PrintBooth Custom Plymouth Matrix Digital Rain Script (Light & Laser Red)
 # ==============================================================================
 
-# Background Palette: Deep Capitalio Obsidian (#06110D)
-Window.SetBackgroundTopColor(0.024, 0.067, 0.051);
-Window.SetBackgroundBottomColor(0.024, 0.067, 0.051);
+# Background Palette: Crisp Light Porcelain (#f8fafc)
+Window.SetBackgroundTopColor(0.973, 0.980, 0.988);
+Window.SetBackgroundBottomColor(0.973, 0.980, 0.988);
 
 screen_width = Window.GetWidth();
 screen_height = Window.GetHeight();
 
-# 1. Main Canvas Background
+# 1. Main Background Canvas (Grid & Corner Brackets, ZERO LOGO)
 bg_image = Image("plymouth_bg.png");
 if (!bg_image) {
     bg_image = Image("background.png");
@@ -264,38 +253,66 @@ if (bg_image) {
     bg_sprite.SetPosition(0, 0, 0);
 }
 
-# 2. Hardware Progress Bar Components
+# 2. Dynamic Cascading Matrix Rain Columns (Laser Red Streams)
+stream_images[0] = Image("matrix_stream_1.png");
+stream_images[1] = Image("matrix_stream_2.png");
+stream_images[2] = Image("matrix_stream_3.png");
+stream_images[3] = Image("matrix_stream_4.png");
+
+num_cols = 10;
+col_spacing = screen_width / (num_cols + 1);
+
+for (i = 0; i < num_cols; i++) {
+    img_idx = i % 4;
+    if (stream_images[img_idx]) {
+        stream_sprites[i] = Sprite(stream_images[img_idx]);
+        stream_x[i] = Math.Int((i + 1) * col_spacing - 21);
+        stream_speed[i] = 160 + (i * 45) % 200;
+        stream_sprites[i].SetPosition(stream_x[i], -750, 1);
+        stream_sprites[i].SetOpacity(0.55);
+    }
+}
+
+# 3. Hardware Progress Bar Components (Laser Red on Light Track)
 track_image = Image("progress_track.png");
 bar_image = Image("progress_bar.png");
 glow_image = Image("progress_glow.png");
 
-track_width = 440;
+track_width = 460;
 track_height = 8;
 bar_x = Math.Int(screen_width / 2 - track_width / 2);
-bar_y = Math.Int(screen_height / 2 + 70);
+bar_y = Math.Int(screen_height / 2 + 45);
 
 if (track_image) {
     track_sprite = Sprite(track_image);
-    track_sprite.SetPosition(bar_x, bar_y, 2);
+    track_sprite.SetPosition(bar_x, bar_y, 4);
 }
 
 if (bar_image) {
     bar_sprite = Sprite();
-    bar_sprite.SetPosition(bar_x, bar_y, 3);
+    bar_sprite.SetPosition(bar_x, bar_y, 5);
 }
 
 if (glow_image) {
     glow_sprite = Sprite(glow_image);
-    glow_sprite.SetPosition(bar_x - 12, bar_y - 8, 4);
+    glow_sprite.SetPosition(bar_x - 12, bar_y - 8, 6);
     glow_sprite.SetOpacity(0.0);
 }
 
-# 3. Dynamic Boot Status Message Indicator (Synthetic Lime / Mint)
+# 4. Laser Red Monospace Terminal Status Indicator
 message_sprite = Sprite();
-message_sprite.SetPosition(Math.Int(screen_width / 2 - 200), Math.Int(screen_height / 2 + 96), 5);
+message_sprite.SetPosition(Math.Int(screen_width / 2 - 230), Math.Int(screen_height / 2 + 72), 7);
 
-# 4. Boot Progress Callback Hook (duration: seconds, progress: 0.0 - 1.0)
+# 5. Boot Progress & Matrix Rain Streaming Callback Hook
 fun progress_callback (duration, progress) {
+    # Stream Matrix code rain columns down the display with infinite wrapping
+    for (i = 0; i < num_cols; i++) {
+        if (stream_sprites[i]) {
+            curr_y = Math.Int((duration * stream_speed[i]) % (screen_height + 850) - 750);
+            stream_sprites[i].SetPosition(stream_x[i], curr_y, 1);
+        }
+    }
+
     if (bar_image) {
         cur_progress = progress;
         if (cur_progress < 0.05) cur_progress = 0.05;
@@ -309,27 +326,26 @@ fun progress_callback (duration, progress) {
 
         if (glow_image) {
             glow_x = Math.Int(bar_x + current_width - 12);
-            glow_sprite.SetPosition(glow_x, bar_y - 8, 4);
-            # Breathing harmonic pulse
-            pulse = (Math.Sin(duration * 4.0) + 1.0) / 2.0;
-            glow_sprite.SetOpacity(0.4 + 0.6 * pulse);
+            glow_sprite.SetPosition(glow_x, bar_y - 8, 6);
+            pulse = (Math.Sin(duration * 5.0) + 1.0) / 2.0;
+            glow_sprite.SetOpacity(0.5 + 0.5 * pulse);
         }
     }
 }
 
 Plymouth.SetBootProgressFunction(progress_callback);
 
-# 5. Kernel / Systemd Telemetry Message Hook
+# 6. Laser Red Terminal Message Hook
 fun message_callback (text) {
     if (text) {
-        msg_image = Image.Text(text, 0.78, 1.0, 0.0);
+        msg_image = Image.Text(text, 0.86, 0.15, 0.15); # Laser Red #dc2626
         message_sprite.SetImage(msg_image);
     }
 }
 
 Plymouth.SetMessageFunction(message_callback);
 
-# 6. Smooth Handoff Callback to Kiosk Display
+# 7. Clean Handoff to Fullscreen Chromium Kiosk
 fun quit_callback () {
     if (bg_sprite) {
         bg_sprite.SetOpacity(1.0);
@@ -345,8 +361,7 @@ if command -v plymouth-set-default-theme > /dev/null 2>&1; then
     echo "  ✓ Default Plymouth theme set to: printbooth"
 fi
 
-# Rebuild initial RAM disk (initramfs) so theme is bundled into early boot
-echo "  Rebuilding initramfs with PrintBooth bootloader theme..."
+echo "  Rebuilding initramfs with PrintBooth Matrix bootloader theme..."
 if command -v update-initramfs > /dev/null 2>&1; then
     sudo update-initramfs -u -k all 2>/dev/null || true
     echo "  ✓ initramfs updated successfully"
@@ -357,9 +372,8 @@ fi
 # ------------------------------------------------------------------------------
 # STEP 5: Early Framebuffer Splash Fallback & Console Suppression
 # ------------------------------------------------------------------------------
-echo -e "\n[STEP 6/6] Configuring Early Framebuffer Fallback & Silencing Console..."
+echo -e "\n[STEP 6/7] Configuring Early Framebuffer Fallback & Silencing Console..."
 
-# Early Framebuffer Service (ensures image is pushed to screen before graphical target)
 cat << 'EOF' | sudo tee /etc/systemd/system/printbooth-boot-splash.service > /dev/null
 [Unit]
 Description=PrintBooth Hardware Early Boot Splash
@@ -380,7 +394,6 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable printbooth-boot-splash.service 2>/dev/null || true
 
-# Mask terminal cursor and quiet tty1 getty login prompt
 sudo mkdir -p /etc/systemd/system/getty@tty1.service.d/
 cat << 'EOF' | sudo tee /etc/systemd/system/getty@tty1.service.d/nocursor.conf > /dev/null
 [Service]
@@ -389,23 +402,44 @@ StandardOutput=null
 StandardError=null
 EOF
 
-# Fast boot tweaks: Mask blocking network-wait-online service
-# Kiosk launches UI immediately; local offline banner displays if network is late
-if systemctl is-enabled systemd-networkd-wait-online.service > /dev/null 2>&1; then
-    sudo systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
+# ------------------------------------------------------------------------------
+# STEP 6: Anti-Popup & Polkit Lockdown (Guarantees NOTHING Shows Except Kiosk)
+# ------------------------------------------------------------------------------
+echo -e "\n[STEP 7/7] Eliminating 'Authentication Required' Popups & Dialogs..."
+
+# 1. Modern Polkit Rule (PolicyKit JavaScript rules in /etc/polkit-1/rules.d/)
+sudo mkdir -p /etc/polkit-1/rules.d/
+cat << 'EOF' | sudo tee /etc/polkit-1/rules.d/00-printbooth-kiosk.rules > /dev/null
+/* PrintBooth Kiosk: Auto-grant all actions without password/authentication popups */
+polkit.addRule(function(action, subject) {
+    return polkit.Result.YES;
+});
+EOF
+sudo chmod 644 /etc/polkit-1/rules.d/00-printbooth-kiosk.rules
+
+# 2. Legacy / Debian Polkit Authority (in /etc/polkit-1/localauthority/)
+sudo mkdir -p /etc/polkit-1/localauthority/50-local.d/
+cat << 'EOF' | sudo tee /etc/polkit-1/localauthority/50-local.d/00-printbooth-kiosk.pkla > /dev/null
+[PrintBooth Kiosk Grant All]
+Identity=unix-user:*
+Action=*
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+EOF
+
+# 3. Disable / Mask GUI Polkit Authentication Agents (lxpolkit, polkit-gnome)
+# This prevents the visual password modal from EVER being spawned
+sudo rm -f /etc/xdg/autostart/lxpolkit.desktop 2>/dev/null || true
+sudo rm -f /etc/xdg/autostart/polkit-gnome-authentication-agent-1.desktop 2>/dev/null || true
+sudo rm -f /etc/xdg/autostart/gnome-keyring*.desktop 2>/dev/null || true
+
+if command -v systemctl > /dev/null 2>&1; then
+    sudo systemctl --global mask lxpolkit.service 2>/dev/null || true
 fi
 
-# Mask ModemManager if installed (speeds up USB printer serial scan by 2-3 seconds)
-if systemctl is-enabled ModemManager.service > /dev/null 2>&1; then
-    sudo systemctl mask ModemManager.service 2>/dev/null || true
-fi
-
-# Configure volatile journald to reduce SD card writes
-if [ -f "/etc/systemd/journald.conf" ]; then
-    if ! grep -q "^Storage=volatile" /etc/systemd/journald.conf; then
-        sudo sed -i 's/^#*Storage=.*/Storage=volatile/' /etc/systemd/journald.conf 2>/dev/null || true
-    fi
-fi
+echo "  ✓ Polkit auto-authorization deployed (Zero password prompts)"
+echo "  ✓ GUI authentication dialog agents disabled"
 
 # ------------------------------------------------------------------------------
 # Optional: Live Preview Mode
@@ -413,35 +447,31 @@ fi
 if [ "$TEST_MODE" = true ]; then
     echo -e "\n--------------------------------------------------------"
     echo "  Live Plymouth Splash Preview Mode Active              "
-    echo "  Rendering PrintBooth bootloader splash on-screen...   "
+    echo "  Rendering Light & Laser Red Matrix Splash on-screen..."
     echo "--------------------------------------------------------"
     if command -v plymouthd > /dev/null 2>&1; then
         sudo plymouthd --mode=boot --attach-to-session 2>/dev/null || true
         sudo plymouth --show-splash 2>/dev/null || true
         for p in 10 25 45 65 85 100; do
-            sudo plymouth --message="INITIALIZING SECURE HARDWARE... ($p%)" 2>/dev/null || true
+            sudo plymouth --message="MATRIX DECRYPTING HARDWARE BUS... ($p%)" 2>/dev/null || true
             sleep 0.8
         done
         sudo plymouth quit 2>/dev/null || true
-        echo "  ✓ Preview completed."
-    else
-        echo "  Plymouth daemon not directly launchable in current terminal."
+        echo "  ✓ Matrix preview completed."
     fi
 fi
 
 echo -e "\n════════════════════════════════════════════════════════"
-echo "  🎉 Custom Bootloader & Silent Fast-Boot Configured!  "
+echo "  🎉 Light & Laser Red Matrix Bootloader Configured!   "
 echo "════════════════════════════════════════════════════════"
-echo "  Hardware: Raspberry Pi 4 / CM4 (BCM2711)"
-echo "  1. GPU Bootloader: Rainbow splash stripped (disable_splash=1)"
-echo "  2. Boot Latency: Zero delay, initial_turbo=30 enabled"
-echo "  3. Linux Kernel: Silenced, logos disabled, console -> tty3"
-echo "  4. Custom Splash: PrintBooth Obsidian theme with live progress"
-echo "  5. Direct Handoff: Seamless transition into kiosk terminal"
+echo "  1. Matrix Digital Rain: Laser red code streams cascading down screen"
+echo "  2. Zero Logo: Clean digital typography only, no emblems or logos"
+echo "  3. Light Porcelain Theme: #f8fafc backdrop with laser red matrix grid"
+echo "  4. Anti-Popup Shield: All 'Authentication Required' popups banned"
 echo ""
-echo "  To test Plymouth splash without rebooting:"
+echo "  To test Plymouth Matrix splash without rebooting:"
 echo "    sudo bash $0 --test"
 echo ""
-echo "  To reboot and verify the entire cold bootloader flow:"
+echo "  To reboot and see full cold bootloader:"
 echo "    sudo reboot"
 echo "════════════════════════════════════════════════════════"

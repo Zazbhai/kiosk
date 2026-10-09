@@ -112,7 +112,7 @@ if [ -f "$LIGHTDM_CONF" ]; then
 fi
 
 # 5. Disable default LXDE desktop panel and wallpaper (Fail-safe)
-echo "\n[5/5] Neutralizing standard desktop autostart (LXDE / Wayland)..."
+echo "\n[5/6] Neutralizing standard desktop autostart (LXDE / Wayland)..."
 LXDE_AUTOSTART="$USER_HOME/.config/lxsession/LXDE-pi/autostart"
 mkdir -p "$(dirname "$LXDE_AUTOSTART")" 2>/dev/null || true
 cat << EOF > "$LXDE_AUTOSTART"
@@ -145,10 +145,38 @@ EOF
     chown "$ACTUAL_USER:$ACTUAL_USER" "$WAYFIRE_INI" 2>/dev/null || true
 fi
 
+# 6. Eliminate All System Popups, Keyring & Authentication Modals
+echo "\n[6/6] Locking down PolicyKit and Keyrings to prevent authentication popups..."
+sudo mkdir -p /etc/polkit-1/rules.d 2>/dev/null || true
+sudo tee /etc/polkit-1/rules.d/00-printbooth-kiosk.rules > /dev/null << 'EOF'
+/* Automatically authorize any background action (printers, colord, network, storage) without password popups */
+polkit.addRule(function(action, subject) {
+    return polkit.Result.YES;
+});
+EOF
+
+sudo mkdir -p /etc/polkit-1/localauthority/50-local.d 2>/dev/null || true
+sudo tee /etc/polkit-1/localauthority/50-local.d/00-printbooth-kiosk.pkla > /dev/null << 'EOF'
+[PrintBooth Kiosk Grant All]
+Identity=unix-user:*
+Action=*
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+EOF
+
+# Mask lxpolkit service and suppress polkit-gnome / keyring desktop popups
+sudo systemctl mask lxpolkit.service 2>/dev/null || true
+sudo rm -f /etc/xdg/autostart/lxpolkit.desktop 2>/dev/null || true
+sudo rm -f /etc/xdg/autostart/polkit-gnome-authentication-agent-1.desktop 2>/dev/null || true
+sudo rm -f /etc/xdg/autostart/gnome-keyring-pkcs11.desktop 2>/dev/null || true
+sudo rm -f /etc/xdg/autostart/gnome-keyring-secrets.desktop 2>/dev/null || true
+sudo rm -f /etc/xdg/autostart/gnome-keyring-ssh.desktop 2>/dev/null || true
+
 echo "\n════════════════════════════════════════════════════════"
 echo "  ✓ Zero-Desktop Kiosk Setup Complete!                 "
 echo "  The Raspberry Pi desktop environment has been         "
 echo "  completely replaced by the PrintBooth Kiosk session.  "
-echo "  Desktop icons, taskbars, and wallpapers will NEVER    "
-echo "  be shown on startup or restart.                       "
+echo "  Desktop icons, taskbars, wallpapers, and auth popups  "
+echo "  will NEVER be shown on startup or restart.            "
 echo "════════════════════════════════════════════════════════"

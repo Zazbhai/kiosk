@@ -25,15 +25,45 @@
       <fullscreen>yes</fullscreen>
       <maximized>yes</maximized>
     </application>
+    <!-- Chromium Kiosk Window: Always forced on top layer -->
     <application name="chromium-browser">
       <decor>no</decor>
+      <layer>above</layer>
       <fullscreen>yes</fullscreen>
       <maximized>yes</maximized>
+      <focus>yes</focus>
     </application>
     <application name="chromium">
       <decor>no</decor>
+      <layer>above</layer>
       <fullscreen>yes</fullscreen>
       <maximized>yes</maximized>
+      <focus>yes</focus>
+    </application>
+    <!-- Suppress and bury any rogue authentication / system dialogs -->
+    <application type="dialog">
+      <decor>no</decor>
+      <layer>below</layer>
+      <iconic>yes</iconic>
+      <focus>no</focus>
+    </application>
+    <application class="*polkit*">
+      <decor>no</decor>
+      <layer>below</layer>
+      <iconic>yes</iconic>
+      <focus>no</focus>
+    </application>
+    <application class="*keyring*">
+      <decor>no</decor>
+      <layer>below</layer>
+      <iconic>yes</iconic>
+      <focus>no</focus>
+    </application>
+    <application class="*pinentry*">
+      <decor>no</decor>
+      <layer>below</layer>
+      <iconic>yes</iconic>
+      <focus>no</focus>
     </application>
   </applications>
 

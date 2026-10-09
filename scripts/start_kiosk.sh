@@ -136,6 +136,12 @@ clean_chromium_crash_state() {
     rm -rf ~/.config/chromium/Singleton* 2>/dev/null || true
     rm -rf ~/.config/chromium-browser/Singleton* 2>/dev/null || true
 
+    # Wipe stale disk cache so UI updates are always loaded freshly on restart
+    rm -rf ~/.cache/chromium 2>/dev/null || true
+    rm -rf ~/.cache/chromium-browser 2>/dev/null || true
+    rm -rf ~/.config/chromium/Default/Cache 2>/dev/null || true
+    rm -rf ~/.config/chromium-browser/Default/Cache 2>/dev/null || true
+
     # Strip crash flag from Preferences so the "Restore pages" bubble never appears
     for pref in ~/.config/chromium/Default/Preferences ~/.config/chromium-browser/Default/Preferences; do
         if [ -f "$pref" ]; then
@@ -160,12 +166,32 @@ cleanup_and_exit() {
     EXIT_REQUESTED=1
     echo ""
     echo "[Start Kiosk] 🛑 Termination signal received. Stopping Kiosk processes..."
+    if [ -n "$POPUP_WATCHDOG_PID" ]; then
+        kill "$POPUP_WATCHDOG_PID" 2>/dev/null || true
+    fi
     pkill -f "$CHROMIUM_CMD" 2>/dev/null || true
     pkill -f serve_kiosk_ui.py 2>/dev/null || true
     pkill -f unclutter 2>/dev/null || true
     exit 0
 }
 trap cleanup_and_exit SIGINT SIGTERM
+
+# 6b. Background Rogue Modal & Authentication Popup Killer Daemon
+# Prevents any PolicyKit, GNOME Keyring, or system authentication modals from ever covering the kiosk.
+(
+    while [ "$EXIT_REQUESTED" -eq 0 ]; do
+        if command -v xdotool >/dev/null 2>&1; then
+            for title in "Authentication" "Authentication Required" "Password" "Unlock Keyring" "Enter password to unlock" "PolicyKit" "Authentication is needed"; do
+                xdotool search --onlyvisible --name "$title" windowclose 2>/dev/null || true
+            done
+            for cls in "polkit-gnome-authentication-agent-1" "lxpolkit" "gcr-prompter" "Pinentry"; do
+                xdotool search --onlyvisible --class "$cls" windowclose 2>/dev/null || true
+            done
+        fi
+        sleep 1
+    done
+) &
+POPUP_WATCHDOG_PID=$!
 
 # 7. Dynamic Kiosk Supervisor Loop (Self-Healing Crash Watchdog)
 CRASH_COUNT=0
@@ -177,6 +203,17 @@ while [ "$EXIT_REQUESTED" -eq 0 ]; do
         --kiosk \
         --noerrdialogs \
         --disable-infobars \
+        --disk-cache-size=1 \
+        --media-cache-size=1 \
+        --password-store=basic \
+        --use-mock-keychain \
+        --disable-features=LockProfileCookieDatabase \
+        --no-first-run \
+        --no-default-browser-check \
+        --disable-notifications \
+        --disable-component-update \
+        --disable-breakpad \
+        --disable-hang-monitor \
         --check-for-update-interval=31536000 \
         --disable-pinch \
         --disable-translate \

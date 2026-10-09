@@ -105,25 +105,48 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: clamp(16px, 3vh, 32px);
-  filter: drop-shadow(0 20px 40px rgba(0, 0, 0, 0.45));
+  margin-bottom: clamp(20px, 4vh, 36px);
 }
 
-#oopss #error-text img {
-  height: clamp(200px, 36vh, 360px);
-  max-height: 44vh;
-  width: auto;
+.sad-mascot-svg {
+  width: clamp(180px, 32vh, 290px);
+  height: clamp(180px, 32vh, 290px);
   display: block;
+  overflow: visible;
+  filter: drop-shadow(0 20px 40px rgba(0, 0, 0, 0.45));
   user-select: none;
   pointer-events: none;
-  will-change: transform;
-  transform: translate3d(0, 0, 0);
-  animation: oopssFloat 3.2s cubic-bezier(0.16, 1, 0.3, 1) infinite alternate;
 }
 
-@keyframes oopssFloat {
-  0% { transform: translate3d(0, 0, 0); }
-  100% { transform: translate3d(0, -8px, 0); }
+.sad-mascot-group {
+  transform-origin: 50px 50px;
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+  animation: ld-swim-px 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes ld-swim-px {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  12.5%, 37.5% {
+    transform: translate3d(1px, -3px, 0) rotate(3deg);
+  }
+  25% {
+    transform: translate3d(0, -6px, 0) rotate(6deg);
+  }
+  62.5%, 87.5% {
+    transform: translate3d(1px, 3px, 0) rotate(-3deg);
+  }
+  75% {
+    transform: translate3d(0, 6px, 0) rotate(-6deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sad-mascot-group {
+    animation: none !important;
+  }
 }
 
 /* Headline */

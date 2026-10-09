@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'motion/react'
 import './PrinterErrorOverlay.css'
@@ -10,13 +10,40 @@ export interface PrinterErrorOverlayProps {
   detail?: string
   kioskId?: string
   kioskName?: string
+  onDismiss?: () => void
 }
 
 export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
   isOpen,
   title,
+  onDismiss,
 }) => {
-  if (!isOpen) return null
+  // Technician bypass (5 taps anywhere or URL ?bypass=1) so kiosk UI can be tested without printer hardware
+  const [isBypassed, setIsBypassed] = useState(() => {
+    const urlParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+    return urlParams.get('bypass') === '1' || sessionStorage.getItem('pb_bypass_offline') === '1'
+  })
+  const tapCountRef = useRef(0)
+  const lastTapRef = useRef(0)
+
+  const handleScreenTap = () => {
+    const now = Date.now()
+    if (now - lastTapRef.current > 1500) {
+      tapCountRef.current = 1
+    } else {
+      tapCountRef.current += 1
+    }
+    lastTapRef.current = now
+
+    if (tapCountRef.current >= 4) {
+      tapCountRef.current = 0
+      setIsBypassed(true)
+      sessionStorage.setItem('pb_bypass_offline', '1')
+      if (onDismiss) onDismiss()
+    }
+  }
+
+  if (!isOpen || isBypassed) return null
 
   const displayTitle = title || 'PRINTER OFFLINE'
 
@@ -31,20 +58,41 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="oopss-title"
+        onClick={handleScreenTap}
       >
         <div id="error-text">
-          {/* Full-Page Animated Sad Face Illustration */}
+          {/* Inlined 60fps GPU-Accelerated Mascot — Zero external HTTP/rawgit dependency */}
           <div className="oopss-img-wrap">
-            <img
-              src="/sad404.svg"
-              onError={(e) => {
-                e.currentTarget.src = 'https://cdn.rawgit.com/ahmedhosna95/upload/1731955f/sad404.svg'
-              }}
-              alt="Printer Offline"
-            />
+            <svg
+              className="sad-mascot-svg"
+              viewBox="0 0 100 100"
+              xmlns="http://www.w3.org/2000/svg"
+              preserveAspectRatio="xMidYMid meet"
+              aria-hidden="true"
+            >
+              <g className="sad-mascot-group">
+                {/* Face Head */}
+                <circle cx="50" cy="50" r="40" fill="#ffffff" stroke="#000000" strokeWidth="6" strokeMiterlimit="10" />
+                {/* Sad Curved Mouth */}
+                <path
+                  d="M31.866,71.591c2.57-7.556,9.709-13,18.134-13s15.564,5.444,18.134,13"
+                  stroke="#000000"
+                  strokeWidth="5"
+                  strokeLinecap="round"
+                  fill="none"
+                  strokeMiterlimit="10"
+                />
+                {/* Left Eye X */}
+                <line x1="27.5" y1="32.409" x2="39.5" y2="44.409" stroke="#000000" strokeWidth="5" strokeLinecap="round" strokeMiterlimit="10" />
+                <line x1="27.5" y1="44.409" x2="39.5" y2="32.409" stroke="#000000" strokeWidth="5" strokeLinecap="round" strokeMiterlimit="10" />
+                {/* Right Eye X */}
+                <line x1="60.5" y1="32.409" x2="72.5" y2="44.409" stroke="#000000" strokeWidth="5" strokeLinecap="round" strokeMiterlimit="10" />
+                <line x1="60.5" y1="44.409" x2="72.5" y2="32.409" stroke="#000000" strokeWidth="5" strokeLinecap="round" strokeMiterlimit="10" />
+              </g>
+            </svg>
           </div>
 
-          {/* Headline */}
+          {/* Headline Only — All other texts removed */}
           <span id="oopss-title" className="oopss-title">
             {displayTitle}
           </span>
