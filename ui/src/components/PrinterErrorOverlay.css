@@ -106,6 +106,7 @@
   align-items: center;
   justify-content: center;
   margin-bottom: clamp(16px, 3vh, 32px);
+  filter: drop-shadow(0 20px 40px rgba(0, 0, 0, 0.45));
 }
 
 #oopss #error-text img {
@@ -113,15 +114,16 @@
   max-height: 44vh;
   width: auto;
   display: block;
-  filter: drop-shadow(0 24px 48px rgba(0, 0, 0, 0.5));
   user-select: none;
   pointer-events: none;
-  animation: oopssFloat 3.2s ease-in-out infinite alternate;
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+  animation: oopssFloat 3.2s cubic-bezier(0.16, 1, 0.3, 1) infinite alternate;
 }
 
 @keyframes oopssFloat {
-  0% { transform: translateY(0px); }
-  100% { transform: translateY(-8px); }
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(0, -8px, 0); }
 }
 
 /* Headline */

@@ -15,10 +15,6 @@ export interface PrinterErrorOverlayProps {
 export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
   isOpen,
   title,
-  reason,
-  detail,
-  kioskId = 'PB-001',
-  kioskName,
 }) => {
   if (!isOpen) return null
 
