@@ -50,6 +50,12 @@ if command -v cupsctl > /dev/null 2>&1; then
     echo "  ✓ Configured CUPS zero-queue retention policy"
 fi
 
+# Register convenient kiosk-wifi helper command
+if [ -f "$SCRIPT_DIR/exit_kiosk_wifi.sh" ]; then
+    sudo ln -sf "$SCRIPT_DIR/exit_kiosk_wifi.sh" /usr/local/bin/kiosk-wifi
+    echo "  ✓ Registered 'kiosk-wifi' command"
+fi
+
 # 4. Step 4: Configure Read-Only Filesystem & OverlayFS Protection
 echo -e "\n[STEP 4/4] Deploying Read-Only Filesystem & OverlayFS Protection..."
 bash "$SCRIPT_DIR/setup_readonly_fs.sh"
@@ -66,6 +72,7 @@ echo "  5. Read-Only Protection: Power-cut safe! RAM overlay protects SD card."
 echo "  6. Zero Leftovers: Hardware queue is cleared on every reboot."
 echo ""
 echo "  Maintenance Commands:"
+echo "    kiosk-wifi     -> Exit kiosk mode, scan/connect Wi-Fi, and resume display"
 echo "    kiosk-status   -> Check if OS is in Read-Only or Read-Write mode"
 echo "    kiosk-unlock   -> Switch to Read-Write mode for updates"
 echo "    kiosk-lock     -> Re-lock system into Read-Only Appliance mode"

@@ -74,10 +74,15 @@
     </context>
   </mouse>
 
-  <!-- Restrict keyboard shortcuts (Allow only technician escape key sequence: Ctrl+Alt+Shift+Q) -->
+  <!-- Restrict keyboard shortcuts (Allow only technician escape & Wi-Fi configuration keys) -->
   <keyboard>
     <keybind key="C-A-S-q">
       <action name="Exit" />
+    </keybind>
+    <keybind key="C-A-w">
+      <action name="Execute">
+        <command>x-terminal-emulator -e sudo /home/pi/printer_automation/kiosk/scripts/exit_kiosk_wifi.sh</command>
+      </action>
     </keybind>
   </keyboard>
 </openbox_config>
