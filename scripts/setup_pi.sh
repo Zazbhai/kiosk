@@ -46,7 +46,12 @@ sudo apt-get install -y \
     plymouth \
     feh \
     curl \
-    git
+    git \
+    poppler-utils \
+    libreoffice-writer \
+    libreoffice-impress \
+    libreoffice-calc \
+    --no-install-recommends
 
 # 3. Configure CUPS permissions & remote admin
 echo -e "\n[3/7] Configuring CUPS permissions..."

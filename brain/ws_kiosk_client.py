@@ -466,13 +466,57 @@ class KioskWsClient:
         except Exception as e:
             print(f"[WSS Kiosk Client] Pre-fetch notice: {e}")
 
+    @staticmethod
+    def _calculate_total_pages(payload: dict, copies: int = 1) -> int:
+        """Accurately calculates total printable page count from payload data or range strings."""
+        # 1. Direct pageCount or totalPages if provided as numbers or valid numeric strings
+        for key in ("pageCount", "totalPages", "count"):
+            val = payload.get(key)
+            if val is not None:
+                try:
+                    cnt = int(val)
+                    if cnt > 0:
+                        return cnt * max(1, copies)
+                except (ValueError, TypeError):
+                    pass
+
+        # 2. Inspect pages / pageRange
+        raw_pages = str(payload.get("pageRange") or payload.get("pages") or "1").strip()
+        if raw_pages.upper() in ("ALL", "*", ""):
+            return 1 * max(1, copies)
+
+        # 3. Parse range string (e.g. "1, 12", "1-5", "1, 3-5")
+        selected_count = 0
+        for part in raw_pages.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if "-" in part:
+                bits = part.split("-", 1)
+                try:
+                    s, e = int(bits[0].strip()), int(bits[1].strip())
+                    if s <= e:
+                        selected_count += (e - s + 1)
+                    else:
+                        selected_count += 1
+                except ValueError:
+                    selected_count += 1
+            else:
+                try:
+                    int(part)
+                    selected_count += 1
+                except ValueError:
+                    selected_count += 1
+
+        return max(1, selected_count) * max(1, copies)
+
     async def _handle_print_order(self, order_id: str, payload: dict):
         """Executes the physical print and streams progress back over WSS."""
         if not order_id:
             return
 
         file_name = payload.get("fileName") or "document.pdf"
-        copies = int(payload.get("copies") or 1)
+        copies = max(1, int(payload.get("copies") or 1))
         raw_col = str(payload.get("colourMode") or payload.get("colour") or "BW").upper().replace("&", "")
         colour_mode = "COLOUR" if raw_col in ("COLOUR", "COLOR") else "BW"
         duplex = str(payload.get("duplex") or "SINGLE").upper()
@@ -506,6 +550,7 @@ class KioskWsClient:
             )
 
         # Dispatch to CUPS physical printer with all user settings applied
+        result = {}
         try:
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
@@ -529,29 +574,64 @@ class KioskWsClient:
             print(f"[WSS Kiosk Client] CUPS Spooler response: {result}")
         except Exception as e:
             print(f"[WSS Kiosk Client] CUPS dispatch error: {e}")
+            result = {"success": False, "error": str(e)}
 
-        # Simulate / stream spooler progress to customer's phone and kiosk UI
-        total_pages = int(payload.get("pageCount") or payload.get("pages") or payload.get("totalPages") or 1) * copies
-        for page in range(1, total_pages + 1):
-            percent = int((page / total_pages) * 100)
-            progress_msg = {
-                "type": "PRINT_PROGRESS",
+        # Check for spooler dispatch failure
+        if isinstance(result, dict) and not result.get("success"):
+            error_reason = result.get("error") or "Hardware spooler rejected the job"
+            print(f"[WSS Kiosk Client] ❌ Print job failed: {error_reason}")
+            fail_msg = {
+                "type": "PRINT_ERROR",
                 "kioskId": self.kiosk_id,
                 "orderId": order_id,
                 "payload": {
-                    "page": page,
-                    "totalPages": total_pages,
-                    "percent": percent,
-                    "phase": "PRINTING",
-                    "message": f"Printing page {page} of {total_pages}...",
+                    "orderId": order_id,
+                    "error": error_reason,
+                    "message": f"Print failed: {error_reason}",
                 }
             }
             if self.ws:
                 try:
-                    await self.ws.send(json.dumps(progress_msg))
+                    await self.ws.send(json.dumps(fail_msg))
                 except Exception:
                     pass
-            await asyncio.sleep(0.4)
+            # Still delete file for privacy
+            try:
+                for extra_f in TEMP_JOBS_DIR.glob(f"*{order_id}*"):
+                    try:
+                        if extra_f.is_file():
+                            extra_f.unlink()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            return
+
+        # Simulate / stream spooler progress to customer's phone and kiosk UI
+        try:
+            total_pages = self._calculate_total_pages(payload, copies)
+            for page in range(1, total_pages + 1):
+                percent = int((page / total_pages) * 100)
+                progress_msg = {
+                    "type": "PRINT_PROGRESS",
+                    "kioskId": self.kiosk_id,
+                    "orderId": order_id,
+                    "payload": {
+                        "page": page,
+                        "totalPages": total_pages,
+                        "percent": percent,
+                        "phase": "PRINTING",
+                        "message": f"Printing page {page} of {total_pages}...",
+                    }
+                }
+                if self.ws:
+                    try:
+                        await self.ws.send(json.dumps(progress_msg))
+                    except Exception:
+                        pass
+                await asyncio.sleep(0.4)
+        except Exception as prog_err:
+            print(f"[WSS Kiosk Client] Progress simulation notice: {prog_err}")
 
         # Emit completion
         complete_msg = {
@@ -576,6 +656,13 @@ class KioskWsClient:
             if local_target.exists():
                 local_target.unlink()
                 print(f"[WSS Kiosk Client] 🗑 PERMANENTLY DELETED user document for Order {order_id}: {local_target.name}")
+            # Also clean up any converted or generated files matching this order
+            for extra_f in TEMP_JOBS_DIR.glob(f"*{order_id}*"):
+                try:
+                    if extra_f.is_file():
+                        extra_f.unlink()
+                except Exception:
+                    pass
         except Exception as del_err:
             print(f"[WSS Kiosk Client] Warning deleting local document {local_target}: {del_err}")
 

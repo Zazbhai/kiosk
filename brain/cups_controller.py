@@ -597,6 +597,97 @@ class CupsController:
 
         return {"success": True, "activePrinter": clean_name, "actions": actions}
 
+    @staticmethod
+    def _convert_office_to_pdf(src_path: Path) -> Path:
+        """
+        Converts Microsoft Office (.pptx, .ppt, .docx, .doc, .xlsx, .xls) and
+        OpenDocument (.odt, .odp, .ods, .rtf, .txt) files to high-fidelity PDF.
+        Uses headless LibreOffice / soffice on Linux / Raspberry Pi, or COM on Windows.
+        """
+        src = Path(src_path)
+        if not src.exists():
+            return src
+
+        suffix = src.suffix.lower()
+        if suffix not in (
+            ".pptx", ".ppt", ".docx", ".doc", ".xlsx", ".xls",
+            ".odt", ".odp", ".ods", ".rtf", ".txt"
+        ):
+            return src
+
+        out_dir = src.parent
+        pdf_path = out_dir / f"{src.stem}.pdf"
+        if pdf_path.exists() and pdf_path.stat().st_size > 0:
+            if pdf_path.stat().st_mtime >= src.stat().st_mtime:
+                print(f"[CUPS Controller] Using cached converted PDF: '{pdf_path.name}'")
+                return pdf_path
+
+        # 1. On Windows: fallback to win32com if available
+        if sys.platform == "win32":
+            try:
+                if suffix in (".docx", ".doc"):
+                    from services.printer.windows_printer import convert_word_to_pdf
+                    return Path(convert_word_to_pdf(str(src)))
+                elif suffix in (".pptx", ".ppt"):
+                    from services.printer.windows_printer import convert_powerpoint_to_pdf
+                    return Path(convert_powerpoint_to_pdf(str(src)))
+            except Exception as e:
+                print(f"[CUPS Controller] Windows COM office convert notice: {e}")
+
+        # 2. Linux / cross-platform: Headless LibreOffice / soffice
+        office_bin = shutil.which("libreoffice") or shutil.which("soffice")
+        for candidate in ["/usr/bin/libreoffice", "/usr/bin/soffice", "/usr/local/bin/libreoffice"]:
+            if not office_bin and os.path.exists(candidate):
+                office_bin = candidate
+                break
+
+        if office_bin:
+            try:
+                print(f"[CUPS Controller] [OFFICE-CONVERT] Converting '{src.name}' ({suffix}) -> PDF via {office_bin}...")
+                env_inst = f"-env:UserInstallation=file:///tmp/libo_printbooth_{os.getpid()}"
+                cmd = [
+                    office_bin,
+                    "--headless",
+                    "--convert-to", "pdf",
+                    "--outdir", str(out_dir),
+                    env_inst,
+                    str(src.resolve()),
+                ]
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                if pdf_path.exists() and pdf_path.stat().st_size > 0:
+                    print(f"[CUPS Controller] ✓ Converted '{src.name}' -> '{pdf_path.name}' ({pdf_path.stat().st_size} bytes)")
+                    return pdf_path
+
+                # Also search out_dir for any fresh .pdf generated in the last 30s matching stem
+                now = time.time()
+                for cand in out_dir.glob("*.pdf"):
+                    if (now - cand.stat().st_mtime) <= 30 and (cand.stem.lower() in src.stem.lower() or src.stem.lower() in cand.stem.lower()):
+                        print(f"[CUPS Controller] ✓ Located converted PDF '{cand.name}'")
+                        return cand
+
+                print(f"[CUPS Controller] LibreOffice conversion warning: exit={res.returncode}, stderr={res.stderr.strip()}")
+            except subprocess.TimeoutExpired:
+                print(f"[CUPS Controller] LibreOffice conversion timed out after 60s for '{src.name}'")
+            except Exception as e:
+                print(f"[CUPS Controller] LibreOffice execution error: {e}")
+
+        # 3. Fallback to unoconv if installed
+        if shutil.which("unoconv"):
+            try:
+                print(f"[CUPS Controller] [OFFICE-CONVERT] Converting '{src.name}' -> PDF via unoconv...")
+                subprocess.run(["unoconv", "-f", "pdf", "-o", str(pdf_path), str(src)], timeout=45, capture_output=True)
+                if pdf_path.exists() and pdf_path.stat().st_size > 0:
+                    print(f"[CUPS Controller] ✓ Converted '{src.name}' via unoconv -> '{pdf_path.name}'")
+                    return pdf_path
+            except Exception as e:
+                print(f"[CUPS Controller] unoconv error: {e}")
+
+        print(
+            f"[CUPS Controller] ⚠️ WARNING: Cannot convert '{src.name}' ({suffix}) to PDF because LibreOffice is not installed! "
+            f"Please run on the kiosk: sudo apt-get install -y libreoffice-writer libreoffice-impress --no-install-recommends"
+        )
+        return src
+
     def prepare_printable_file(
         self,
         file_path: Path,
@@ -604,15 +695,13 @@ class CupsController:
         paper_size: str = "A4",
         scaling: str = "FIT",
         orientation: str = "AUTO",
+        convert_grayscale: bool = True,
     ) -> Path:
         """
-        Converts raster images (PNG, JPEG, WebP, etc.) to exact single-page PDFs:
-        1. Guarantees true monochrome (DeviceGray / mode 'L') when colour_mode == 'BW' to prevent CMYK ink usage.
-        2. Fits and scales the image to fill the page (both upscale and downscale) while preserving aspect ratio,
-           preventing images from printing as tiny rectangles in the center of the page.
-        3. Supports intelligent Auto-Orientation: detects landscape images and automatically configures
-           landscape canvas/orientation so wide images utilize the full sheet width.
-        4. Converts color PDFs to DeviceGray via Ghostscript when colour_mode == 'BW'.
+        Converts non-PDF documents and images to standard print-ready PDF:
+        1. Converts Microsoft Office documents (.pptx, .docx, .xlsx, etc.) to PDF via headless LibreOffice.
+        2. Converts raster images (PNG, JPEG, WebP, etc.) to exact single-page PDFs with margins & scaling.
+        3. Converts color PDFs to DeviceGray via Ghostscript when colour_mode == 'BW' and convert_grayscale is True.
         """
         p_path = Path(file_path)
         suffix = p_path.suffix.lower()
@@ -620,6 +709,13 @@ class CupsController:
         norm_paper = str(paper_size or "A4").upper().strip()
         norm_scale = str(scaling or "FIT").upper().strip()
         norm_orient = str(orientation or "AUTO").upper().strip()
+
+        # 1. Office Document conversion to standardized PDF
+        if suffix in (".pptx", ".ppt", ".docx", ".doc", ".xlsx", ".xls", ".odt", ".odp", ".ods", ".rtf", ".txt"):
+            converted_pdf = self._convert_office_to_pdf(p_path)
+            if converted_pdf and converted_pdf.exists() and converted_pdf.suffix.lower() == ".pdf":
+                p_path = converted_pdf
+                suffix = ".pdf"
 
         # Paper pixel dimensions at 300 DPI
         PAPER_DIMS_300DPI = {
@@ -631,7 +727,7 @@ class CupsController:
         }
         base_w, base_h = PAPER_DIMS_300DPI.get(norm_paper, (2480, 3508))
 
-        # 1. Raster Image conversion to standardized full-page PDF
+        # 2. Raster Image conversion to standardized full-page PDF
         if suffix in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".gif"):
             # Ensure PIL is available, auto-installing in venv if needed
             try:
@@ -758,8 +854,8 @@ class CupsController:
                 except Exception:
                     pass
 
-        # 2. PDF Grayscale Conversion
-        elif suffix == ".pdf" and not is_color:
+        # 3. PDF Grayscale Conversion
+        elif suffix == ".pdf" and not is_color and convert_grayscale:
             try:
                 mono_path = p_path.parent / f"mono_{p_path.name}"
                 gs_bin = shutil.which("gs") or ("/usr/bin/gs" if os.path.exists("/usr/bin/gs") else None)
@@ -1054,8 +1150,28 @@ class CupsController:
             except (ValueError, TypeError):
                 continue
 
-        # Inspect pages
+        # 1. Normalize document: Convert Office (.pptx, .docx, .xlsx, etc.) & images to standard PDF
+        has_page_colours = bool(col_map)
+        p_path = self.prepare_printable_file(
+            p_path,
+            colour_mode=colour_mode,
+            paper_size=paper_size,
+            scaling=scaling,
+            orientation=orientation,
+            convert_grayscale=(not has_page_colours and not is_color),
+        )
+
         suffix = p_path.suffix.lower()
+        if suffix in (".pptx", ".ppt", ".docx", ".doc", ".xlsx", ".xls", ".odt", ".odp"):
+            err_msg = (
+                f"Unsupported document format '{suffix}' for hardware printing. "
+                "LibreOffice is required to convert Office files to PDF. "
+                "Please run on the kiosk: sudo apt-get install -y libreoffice-writer libreoffice-impress --no-install-recommends"
+            )
+            print(f"[CUPS] ❌ {err_msg}")
+            return {"success": False, "error": err_msg, "printer": printer}
+
+        # Inspect pages
         is_pdf = suffix == ".pdf"
         total_pages = self._get_pdf_page_count(p_path) if is_pdf else 1
         selected_pages = self._parse_page_range(page_range, total_pages)
@@ -1165,22 +1281,28 @@ class CupsController:
                         pass
 
         # ── Uniform Color Mode Execution (All B&W or All Colour) ──
-        # Pre-process file: converts raster images to exact 1-page A4 PDFs (monochrome or color)
-        # to physically prevent CUPS imagetoraster from slicing images across multiple pages
-        target_path = self.prepare_printable_file(
-            p_path,
-            colour_mode=colour_mode,
-            paper_size=paper_size,
-            scaling=scaling,
-            orientation=orientation,
-        )
+        target_path = p_path
+        temp_uniform_files = []
+
+        # If user selected a subset of pages in a multi-page PDF, extract those exact pages
+        # so CUPS and printer hardware receive ONLY the pages the user requested!
+        effective_range = page_range
+        if is_pdf and selected_pages and len(selected_pages) < total_pages:
+            range_tag = "_".join(str(x) for x in selected_pages[:4])
+            extracted_name = f"extracted_{p_path.stem}_p{range_tag}.pdf"
+            extracted_path = p_path.parent / extracted_name
+            if self._extract_pdf_pages(p_path, selected_pages, extracted_path):
+                print(f"[CUPS] Sliced PDF to {len(selected_pages)} selected page(s): {selected_pages} -> '{extracted_path.name}'")
+                target_path = extracted_path
+                temp_uniform_files.append(extracted_path)
+                effective_range = None  # PDF already contains ONLY the selected pages!
 
         cups_opts = self.build_cups_options(
             copies=clean_copies,
             colour_mode=colour_mode,
             duplex=duplex,
             paper_size=paper_size,
-            page_range=page_range,
+            page_range=effective_range,
             scaling=scaling,
             pages_per_sheet=pages_per_sheet,
             orientation=orientation,
@@ -1189,50 +1311,64 @@ class CupsController:
         print(f"[CUPS] Dispatching '{target_path.name}' to printer '{printer}'")
         print(f"[CUPS] Hardware Options applied: {cups_opts}")
 
-        # Primary execution via Linux lp CLI on Raspberry Pi
-        if sys.platform != "win32":
-            # Attempt hardware mode sync if Brother utility exists
-            for br_bin in ["/usr/bin/brprintconf_dcpt420w", "/opt/brother/Printers/dcpt420w/lpd/brprintconf_dcpt420w"]:
-                if os.path.exists(br_bin):
-                    try:
-                        corm_arg = "FullColor" if is_color else "Mono"
-                        # Set BOTH -corm (color mode) and -copies (exact copy count) on Brother hardware
-                        subprocess.run([br_bin, "-corm", corm_arg, "-copies", str(clean_copies)], timeout=2, capture_output=True)
-                        print(f"[CUPS] Brother hardware configured via {br_bin}: -corm {corm_arg} -copies {clean_copies}")
-                    except Exception as e:
-                        print(f"[CUPS] Brother hardware config notice: {e}")
-                    break
+        try:
+            # Primary execution via Linux lp CLI on Raspberry Pi
+            if sys.platform != "win32":
+                # Attempt hardware mode sync if Brother utility exists
+                for br_bin in ["/usr/bin/brprintconf_dcpt420w", "/opt/brother/Printers/dcpt420w/lpd/brprintconf_dcpt420w"]:
+                    if os.path.exists(br_bin):
+                        try:
+                            corm_arg = "FullColor" if is_color else "Mono"
+                            # Set BOTH -corm (color mode) and -copies (exact copy count) on Brother hardware
+                            subprocess.run([br_bin, "-corm", corm_arg, "-copies", str(clean_copies)], timeout=2, capture_output=True)
+                            print(f"[CUPS] Brother hardware configured via {br_bin}: -corm {corm_arg} -copies {clean_copies}")
+                        except Exception as e:
+                            print(f"[CUPS] Brother hardware config notice: {e}")
+                        break
 
-            try:
-                cmd = ["lp", "-d", printer]
-                # ALWAYS explicitly pass -n <copies> (even for 1 copy) so CUPS CLI never falls back to an unwanted queue default!
-                cmd.extend(["-n", str(clean_copies)])
+                try:
+                    cmd = ["lp", "-d", printer]
+                    # ALWAYS explicitly pass -n <copies> (even for 1 copy) so CUPS CLI never falls back to an unwanted queue default!
+                    cmd.extend(["-n", str(clean_copies)])
 
-                if page_range and page_range.upper() not in ("ALL", ""):
-                    clean_range = str(page_range).replace(" ", "")
-                    cmd.extend(["-P", clean_range])
+                    if effective_range and effective_range.upper() not in ("ALL", ""):
+                        clean_range = str(effective_range).replace(" ", "")
+                        cmd.extend(["-P", clean_range])
 
-                for k, v in cups_opts.items():
-                    if k == "copies":
-                        # We already explicitly passed -n <copies> to CUPS CLI; skip duplicate -o copies
-                        continue
-                    cmd.extend(["-o", f"{k}={v}"])
+                    for k, v in cups_opts.items():
+                        if k == "copies":
+                            continue
+                        cmd.extend(["-o", f"{k}={v}"])
 
-                cmd.append(str(target_path.resolve()))
-                print(f"[CUPS CLI] Executing: {' '.join(cmd)}")
-                out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
-                print(f"[CUPS CLI] Success output: {out.strip()}")
-                return {"success": True, "output": out.strip(), "printer": printer}
-            except Exception as e:
-                print(f"[CUPS CLI] lp execution error: {e}. Trying pycups fallback...")
+                    cmd.append(str(target_path.resolve()))
+                    print(f"[CUPS CLI] Executing: {' '.join(cmd)}")
+                    out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
+                    print(f"[CUPS CLI] Success output: {out.strip()}")
+                    return {"success": True, "output": out.strip(), "printer": printer}
+                except Exception as e:
+                    print(f"[CUPS CLI] lp execution error: {e}. Trying pycups fallback...")
 
-        # Fallback to pycups if lp is unavailable or failed
-        if self._conn:
-            try:
-                job_id = self._conn.printFile(printer, str(target_path.resolve()), job_title, cups_opts)
-                return {"success": True, "job_id": job_id, "printer": printer}
-            except Exception as e:
-                print(f"[CUPS] pycups print error: {e}")
+            # Fallback to pycups if lp is unavailable or failed
+            if self._conn:
+                try:
+                    job_id = self._conn.printFile(printer, str(target_path.resolve()), job_title, cups_opts)
+                    return {"success": True, "job_id": job_id, "printer": printer}
+                except Exception as e:
+                    print(f"[CUPS] pycups print error: {e}")
+
+            if sys.platform != "win32":
+                return {
+                    "success": False,
+                    "error": f"CUPS spooler failed to dispatch job to '{printer}'. Check printer connection and queue status.",
+                    "printer": printer,
+                }
+        finally:
+            for tf in temp_uniform_files:
+                try:
+                    if tf.exists() and tf != p_path:
+                        tf.unlink()
+                except Exception:
+                    pass
 
         # Real Windows GDI hardware print engine
         if sys.platform == "win32":
