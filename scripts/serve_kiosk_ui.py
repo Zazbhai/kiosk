@@ -310,6 +310,27 @@ class KioskHTTPHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(data).encode("utf-8") + b"\n")
             return
 
+        if self.path.startswith("/api/kiosk-sessions"):
+            try:
+                base_api = API_URL.rstrip("/")
+                target_url = f"{base_api}{self.path}" if self.path.startswith("/api") else f"{base_api}/{self.path.lstrip('/')}"
+                req = urllib.request.Request(target_url, headers={"Accept": "application/json", "X-Kiosk-Id": KIOSK_ID})
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    data = resp.read()
+                    self.send_response(resp.status)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
+            except Exception as e:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8") + b"\n")
+                return
+
         # SPA routing fallback: serve index.html for virtual routes
         clean_path = self.path.split("?")[0]
         full_path = os.path.join(SERVE_DIR, clean_path.lstrip("/"))
@@ -327,6 +348,44 @@ class KioskHTTPHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         clean_path = self.path.split("?")[0]
+        if clean_path.startswith("/api/kiosk-sessions"):
+            content_len = int(self.headers.get("Content-Length", 0))
+            post_body = self.rfile.read(content_len) if content_len > 0 else b"{}"
+            try:
+                base_api = API_URL.rstrip("/")
+                target_url = f"{base_api}{clean_path}" if clean_path.startswith("/api") else f"{base_api}/{clean_path.lstrip('/')}"
+                req = urllib.request.Request(target_url, data=post_body, headers={"Content-Type": "application/json", "X-Kiosk-Id": KIOSK_ID}, method="POST")
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    data = resp.read()
+                    self.send_response(resp.status)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
+            except Exception as e:
+                # Fallback session response if central backend is temporarily unreachable
+                import time
+                body_dict = json.loads(post_body.decode("utf-8")) if post_body else {}
+                k_id = body_dict.get("kioskId") or KIOSK_ID
+                web_base = body_dict.get("webBaseUrl") or "http://localhost:5200"
+                fallback_qr = f"{web_base.rstrip('/')}/print?id={k_id}"
+                exp = int(time.time() * 1000) + 300000
+                fallback_data = {
+                    "success": True,
+                    "sessionId": f"kiosk_local_{k_id}_{int(time.time())}",
+                    "token": "local_fallback",
+                    "qrUrl": fallback_qr,
+                    "expiresAt": exp,
+                    "state": "QR_READY"
+                }
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(json.dumps(fallback_data).encode("utf-8") + b"\n")
+                return
+
         if clean_path in ("/api/verify-pin", "/api/print/verify-pin") or clean_path.endswith("/verify-pin"):
             content_len = int(self.headers.get("Content-Length", 0))
             post_body = self.rfile.read(content_len).decode("utf-8") if content_len > 0 else "{}"

@@ -48,9 +48,9 @@ if command -v cupsenable > /dev/null 2>&1; then
     cupsaccept -a 2>/dev/null || true
 fi
 
-# 1. Enforce Obsidian black background immediately (Zero desktop exposure)
+# 1. Enforce pure white background immediately (Zero desktop exposure)
 if command -v xsetroot > /dev/null 2>&1; then
-    xsetroot -solid "#06110D" 2>/dev/null || true
+    xsetroot -solid "#ffffff" 2>/dev/null || true
 fi
 
 # 1b. Display instant pre-Chromium hardware splash if available

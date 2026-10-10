@@ -1,23 +1,26 @@
 /* ─── PrintBooth Kiosk Session Screen ─────────────────────────────────────── */
 /* Encrypted QR session display + real-time user flow mirror                  */
+/* Premium High-Contrast White & Laser-Red Theme (#dc2626)                    */
 
 :root {
   --ks-red: #dc2626;
-  --ks-red-glow: rgba(220, 38, 38, 0.25);
+  --ks-red-hover: #b91c1c;
+  --ks-red-glow: rgba(220, 38, 38, 0.22);
+  --ks-red-subtle: rgba(220, 38, 38, 0.07);
   --ks-green: #16a34a;
   --ks-amber: #f59e0b;
-  --ks-blue: #3b82f6;
-  --ks-purple: #8b5cf6;
-  --ks-bg: #06110D;
-  --ks-surface: rgba(255, 255, 255, 0.04);
-  --ks-surface-2: rgba(255, 255, 255, 0.08);
-  --ks-border: rgba(255, 255, 255, 0.10);
-  --ks-border-strong: rgba(255, 255, 255, 0.18);
-  --ks-text-1: #fafafa;
-  --ks-text-2: #a1a1aa;
-  --ks-text-3: #52525b;
-  --ks-font: 'Geist', -apple-system, sans-serif;
-  --ks-mono: 'Geist Mono', monospace;
+  --ks-blue: #2563eb;
+  --ks-purple: #7c3aed;
+  --ks-bg: #ffffff;
+  --ks-surface: #ffffff;
+  --ks-surface-2: #f8fafc;
+  --ks-border: rgba(220, 38, 38, 0.15);
+  --ks-border-strong: rgba(220, 38, 38, 0.32);
+  --ks-text-1: #09090b;
+  --ks-text-2: #475569;
+  --ks-text-3: #64748b;
+  --ks-font: 'Geist', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --ks-mono: 'Geist Mono', "SF Mono", monospace;
   --ks-ease: cubic-bezier(0.16, 1, 0.3, 1);
   --ks-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
@@ -25,8 +28,8 @@
 /* ── Root ──────────────────────────────────────────────────────────────────── */
 .ks-root {
   position: relative;
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -35,26 +38,30 @@
   font-family: var(--ks-font);
   color: var(--ks-text-1);
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* Ambient mesh background */
+/* Ambient white and red lighting */
 .ks-bg-mesh {
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(ellipse 70% 55% at 50% 25%, rgba(220, 38, 38, 0.08) 0%, transparent 70%),
-    radial-gradient(ellipse 50% 40% at 20% 80%, rgba(220, 38, 38, 0.04) 0%, transparent 70%),
-    radial-gradient(ellipse 40% 40% at 80% 70%, rgba(200, 255, 0, 0.04) 0%, transparent 70%);
+  background-color: #ffffff;
+  background-image:
+    radial-gradient(ellipse 70% 50% at 50% 16%, rgba(220, 38, 38, 0.08) 0%, transparent 65%),
+    radial-gradient(ellipse 60% 45% at 85% 85%, rgba(220, 38, 38, 0.05) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 15% 85%, rgba(220, 38, 38, 0.04) 0%, transparent 60%);
   pointer-events: none;
 }
 
 /* ── Top Bar ───────────────────────────────────────────────────────────────── */
 .ks-topbar {
   position: fixed;
-  top: 14px;
-  left: 20px;
-  right: 20px;
-  z-index: 20;
+  top: 16px;
+  left: 24px;
+  right: 24px;
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -64,42 +71,45 @@
 .ks-topbar-pill {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 16px;
+  gap: 10px;
+  padding: 8px 18px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.95);
   border: 1px solid var(--ks-border);
+  box-shadow: 0 4px 16px rgba(220, 38, 38, 0.07), 0 2px 4px rgba(0, 0, 0, 0.03);
   backdrop-filter: blur(16px);
-  font-size: 0.78rem;
+  -webkit-backdrop-filter: blur(16px);
+  font-size: 0.82rem;
   font-weight: 600;
-  color: var(--ks-text-2);
+  color: #0f172a;
   font-family: var(--ks-mono);
 }
 
 .ks-topbar-right {
-  background: rgba(6, 17, 13, 0.8);
+  background: rgba(254, 242, 242, 0.96);
+  border-color: rgba(220, 38, 38, 0.28);
 }
 
 .ks-topbar-dot {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  background: #16a34a;
-  box-shadow: 0 0 6px rgba(22, 163, 74, 0.6);
+  background: var(--ks-red);
+  box-shadow: 0 0 8px rgba(220, 38, 38, 0.6);
   animation: ks-pulse-dot 2s ease-in-out infinite;
 }
 
 .ks-topbar-state-dot {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  box-shadow: 0 0 6px currentColor;
+  box-shadow: 0 0 8px currentColor;
   animation: ks-pulse-dot 1.5s ease-in-out infinite;
 }
 
 @keyframes ks-pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.85); }
 }
 
 /* ── Main Content Area ─────────────────────────────────────────────────────── */
@@ -109,169 +119,178 @@
   align-items: center;
   justify-content: center;
   width: 100%;
-  max-width: 640px;
-  padding: 72px 32px 48px;
-  gap: 28px;
-  animation: ks-fade-in 0.4s var(--ks-ease) both;
+  max-width: 680px;
+  padding: 68px 32px 44px;
+  gap: 22px;
+  animation: ks-fade-in 0.35s var(--ks-ease) both;
 }
 
 .ks-transition {
-  animation: ks-state-shift 0.5s var(--ks-ease) both;
+  animation: ks-state-shift 0.45s var(--ks-ease) both;
 }
 
 @keyframes ks-fade-in {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes ks-state-shift {
-  0% { opacity: 0.6; transform: scale(0.98); }
-  60% { transform: scale(1.01); }
+  0% { opacity: 0.7; transform: scale(0.985); }
+  60% { transform: scale(1.008); }
   100% { opacity: 1; transform: scale(1); }
 }
-
-/* ── Creating State ────────────────────────────────────────────────────────── */
-.ks-creating {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  color: var(--ks-text-2);
-}
-
-.ks-spinner {
-  width: 36px;
-  height: 36px;
-  border: 2px solid rgba(220, 38, 38, 0.2);
-  border-top-color: var(--ks-red);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── QR Panel (Idle State) ─────────────────────────────────────────────────── */
 .ks-qr-panel {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 24px;
+  gap: 20px;
   text-align: center;
-  animation: ks-fade-in 0.4s var(--ks-ease) both;
+  animation: ks-fade-in 0.35s var(--ks-ease) both;
+  width: 100%;
 }
 
 .ks-qr-header {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .ks-title {
-  font-size: 2.4rem;
+  font-size: 2.5rem;
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.035em;
   color: var(--ks-text-1);
   line-height: 1.1;
   margin: 0;
 }
 
 .ks-subtitle {
-  font-size: 1rem;
+  font-size: 1.05rem;
   color: var(--ks-text-2);
   line-height: 1.5;
-  max-width: 36ch;
+  max-width: 40ch;
+  margin: 0;
 }
 
 .ks-phase-badge {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 14px;
+  padding: 6px 16px;
   border-radius: 999px;
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   font-family: var(--ks-mono);
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  color: var(--ks-red);
 }
 
 .ks-phase-icon {
-  font-size: 0.85rem;
+  font-size: 0.9rem;
 }
 
 .ks-phase-badge-text {
   color: inherit;
 }
 
-/* QR Frame with corner brackets */
+/* ── QR Frame with Laser Red Corner Targets ─────────────────────────────────── */
 .ks-qr-frame {
   position: relative;
   padding: 16px;
   background: #ffffff;
-  border-radius: 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(220, 38, 38, 0.18);
   box-shadow:
-    0 0 0 1px rgba(220, 38, 38, 0.15),
-    0 0 40px rgba(220, 38, 38, 0.12),
-    0 20px 60px rgba(0, 0, 0, 0.5);
+    0 0 0 1px rgba(220, 38, 38, 0.18),
+    0 16px 48px rgba(220, 38, 38, 0.14),
+    0 4px 16px rgba(0, 0, 0, 0.04);
   animation: ks-qr-breathe 4s ease-in-out infinite;
 }
 
 @keyframes ks-qr-breathe {
-  0%, 100% { box-shadow: 0 0 0 1px rgba(220,38,38,0.15), 0 0 40px rgba(220,38,38,0.12), 0 20px 60px rgba(0,0,0,0.5); }
-  50% { box-shadow: 0 0 0 1px rgba(220,38,38,0.35), 0 0 70px rgba(220,38,38,0.22), 0 20px 60px rgba(0,0,0,0.5); }
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(220, 38, 38, 0.18),
+      0 16px 48px rgba(220, 38, 38, 0.14),
+      0 4px 16px rgba(0, 0, 0, 0.04);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgba(220, 38, 38, 0.35),
+      0 20px 60px rgba(220, 38, 38, 0.22),
+      0 6px 20px rgba(0, 0, 0, 0.06);
+  }
 }
 
 .ks-qr-corner {
   position: absolute;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border-color: var(--ks-red);
   border-style: solid;
 }
 
-.ks-qr-corner--tl { top: -6px; left: -6px; border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
-.ks-qr-corner--tr { top: -6px; right: -6px; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
-.ks-qr-corner--bl { bottom: -6px; left: -6px; border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
-.ks-qr-corner--br { bottom: -6px; right: -6px; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
+.ks-qr-corner--tl { top: -7px; left: -7px; border-width: 4px 0 0 4px; border-radius: 6px 0 0 0; }
+.ks-qr-corner--tr { top: -7px; right: -7px; border-width: 4px 4px 0 0; border-radius: 0 6px 0 0; }
+.ks-qr-corner--bl { bottom: -7px; left: -7px; border-width: 0 0 4px 4px; border-radius: 0 0 0 6px; }
+.ks-qr-corner--br { bottom: -7px; right: -7px; border-width: 0 4px 4px 0; border-radius: 0 0 6px 0; }
 
 .ks-qr-inner {
   display: block;
-  border-radius: 8px;
+  background: #ffffff;
+  border-radius: 12px;
   overflow: hidden;
+  line-height: 0;
 }
 
-/* Laser sweep animation */
+/* Laser sweep animation in Laser Red */
 .ks-qr-sweep {
   position: absolute;
-  left: 8px;
-  right: 8px;
-  top: 8px;
-  height: 2px;
+  left: 12px;
+  right: 12px;
+  top: 12px;
+  height: 2.5px;
   background: linear-gradient(90deg, transparent, var(--ks-red), transparent);
-  border-radius: 1px;
-  animation: ks-sweep 2.5s ease-in-out infinite;
+  box-shadow: 0 0 8px var(--ks-red);
+  border-radius: 2px;
+  animation: ks-sweep 2.6s ease-in-out infinite;
   pointer-events: none;
 }
 
 @keyframes ks-sweep {
-  0% { top: 8px; opacity: 0; }
-  10% { opacity: 0.7; }
-  90% { opacity: 0.7; }
-  100% { top: calc(100% - 8px); opacity: 0; }
+  0% { top: 12px; opacity: 0; }
+  10% { opacity: 0.85; }
+  90% { opacity: 0.85; }
+  100% { top: calc(100% - 12px); opacity: 0; }
 }
 
 /* Security badge */
 .ks-security-badge {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 14px;
-  background: rgba(22, 163, 74, 0.08);
-  border: 1px solid rgba(22, 163, 74, 0.2);
+  gap: 8px;
+  padding: 6px 16px;
+  background: rgba(220, 38, 38, 0.06);
+  border: 1px solid rgba(220, 38, 38, 0.2);
   border-radius: 999px;
-  font-size: 0.74rem;
-  color: rgba(22, 163, 74, 0.9);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ks-red);
   font-family: var(--ks-mono);
+}
+
+/* Quick actions row */
+.ks-qr-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 /* Waiting pill */
@@ -279,21 +298,96 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 18px;
-  background: var(--ks-surface);
+  padding: 8px 20px;
+  background: #ffffff;
   border: 1px solid var(--ks-border);
+  box-shadow: 0 2px 10px rgba(220, 38, 38, 0.06);
   border-radius: 999px;
-  font-size: 0.85rem;
-  color: var(--ks-text-2);
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: #334155;
 }
 
 .ks-await-dot {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: var(--ks-red);
+  box-shadow: 0 0 6px rgba(220, 38, 38, 0.6);
   animation: ks-pulse-dot 1.4s ease-in-out infinite;
   flex-shrink: 0;
+}
+
+/* Refresh QR button */
+.ks-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: #ffffff;
+  border: 1px solid var(--ks-border);
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ks-red);
+  font-family: var(--ks-mono);
+  cursor: pointer;
+  transition: all 0.2s var(--ks-ease);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+
+.ks-refresh-btn:hover {
+  background: #fef2f2;
+  border-color: var(--ks-red);
+}
+
+.ks-refresh-btn:active {
+  transform: scale(0.97);
+}
+
+.ks-refresh-icon {
+  font-size: 1.05rem;
+  line-height: 1;
+  display: inline-block;
+}
+
+.ks-spinning {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Switch to PIN Keypad button */
+.ks-pin-switch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 420px;
+  padding: 14px 28px;
+  margin-top: 6px;
+  background: #ffffff;
+  border: 1.5px solid var(--ks-red);
+  border-radius: 16px;
+  color: var(--ks-red);
+  font-family: var(--ks-font);
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(220, 38, 38, 0.1);
+  transition: all 0.2s var(--ks-ease);
+}
+
+.ks-pin-switch-btn:hover {
+  background: var(--ks-red);
+  color: #ffffff;
+  box-shadow: 0 6px 24px rgba(220, 38, 38, 0.35);
+  transform: translateY(-1px);
+}
+
+.ks-pin-switch-btn:active {
+  transform: scale(0.98);
 }
 
 /* ── Active Flow Panel ─────────────────────────────────────────────────────── */
@@ -301,17 +395,18 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 24px;
+  gap: 22px;
   width: 100%;
-  animation: ks-fade-in 0.4s var(--ks-ease) both;
+  animation: ks-fade-in 0.35s var(--ks-ease) both;
 }
 
 /* Step indicators */
 .ks-steps {
   display: flex;
   align-items: center;
-  gap: 0;
   justify-content: center;
+  width: 100%;
+  max-width: 580px;
 }
 
 .ks-step {
@@ -320,27 +415,28 @@
   align-items: center;
   gap: 6px;
   position: relative;
+  flex: 1;
 }
 
 .ks-step-dot {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
-  background: var(--ks-surface-2);
-  border: 1px solid var(--ks-border);
+  background: #f1f5f9;
+  border: 1.5px solid #cbd5e1;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--ks-text-3);
   transition: all 0.3s var(--ks-ease);
 }
 
 .ks-step--done .ks-step-dot {
-  background: rgba(22, 163, 74, 0.15);
-  border-color: rgba(22, 163, 74, 0.4);
-  color: var(--ks-green);
+  background: #dcfce7;
+  border-color: #22c55e;
+  color: #15803d;
 }
 
 .ks-step--active .ks-step-dot {
@@ -348,7 +444,7 @@
 }
 
 .ks-step-label {
-  font-size: 0.65rem;
+  font-size: 0.68rem;
   font-weight: 600;
   color: var(--ks-text-3);
   font-family: var(--ks-mono);
@@ -357,29 +453,31 @@
   white-space: nowrap;
 }
 
-.ks-step--done .ks-step-label, .ks-step--active .ks-step-label {
-  color: var(--ks-text-2);
+.ks-step--done .ks-step-label,
+.ks-step--active .ks-step-label {
+  color: var(--ks-text-1);
 }
 
 .ks-step-line {
   position: absolute;
-  top: 14px;
-  left: calc(100% + 4px);
-  width: 36px;
-  height: 1px;
-  background: var(--ks-border);
+  top: 15px;
+  left: 55%;
+  width: 90%;
+  height: 2px;
+  background: #e2e8f0;
   transition: background 0.4s ease;
+  z-index: 0;
 }
 
 .ks-step-line--done {
-  background: rgba(22, 163, 74, 0.4);
+  background: #22c55e;
 }
 
 /* Progress track */
 .ks-progress-track {
   width: 100%;
-  height: 3px;
-  background: var(--ks-surface-2);
+  height: 4px;
+  background: #f1f5f9;
   border-radius: 2px;
   overflow: hidden;
 }
@@ -388,7 +486,6 @@
   height: 100%;
   border-radius: 2px;
   transition: width 0.6s var(--ks-ease);
-  box-shadow: 0 0 8px currentColor;
 }
 
 /* Phase card */
@@ -398,16 +495,15 @@
   align-items: center;
   gap: 20px;
   padding: 24px 28px;
-  background: var(--ks-surface);
-  border: 1px solid var(--ks-border);
+  background: #ffffff;
+  border: 1.5px solid var(--ks-border);
   border-radius: 20px;
-  backdrop-filter: blur(12px);
-  transition: border-color 0.4s ease;
+  box-shadow: 0 8px 30px rgba(220, 38, 38, 0.08), 0 2px 8px rgba(0, 0, 0, 0.03);
 }
 
 .ks-phase-icon-wrap {
-  width: 56px;
-  height: 56px;
+  width: 58px;
+  height: 58px;
   border-radius: 16px;
   display: flex;
   align-items: center;
@@ -416,7 +512,7 @@
 }
 
 .ks-big-icon {
-  font-size: 1.6rem;
+  font-size: 1.7rem;
   line-height: 1;
 }
 
@@ -428,14 +524,14 @@
 }
 
 .ks-phase-title {
-  font-size: 1.3rem;
-  font-weight: 700;
+  font-size: 1.35rem;
+  font-weight: 800;
   letter-spacing: -0.02em;
   margin: 0;
 }
 
 .ks-phase-sub {
-  font-size: 0.88rem;
+  font-size: 0.92rem;
   color: var(--ks-text-2);
   line-height: 1.4;
   margin: 0;
@@ -444,14 +540,14 @@
 .ks-file-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 6px;
-  padding: 4px 10px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--ks-border);
-  border-radius: 8px;
-  font-size: 0.78rem;
-  color: var(--ks-text-2);
+  gap: 8px;
+  margin-top: 8px;
+  padding: 6px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  color: var(--ks-text-1);
   font-family: var(--ks-mono);
   max-width: 100%;
   overflow: hidden;
@@ -470,11 +566,12 @@
   align-items: center;
   gap: 20px;
   text-align: center;
-  animation: ks-otp-enter 0.5s var(--ks-spring) both;
+  animation: ks-otp-enter 0.45s var(--ks-spring) both;
+  width: 100%;
 }
 
 @keyframes ks-otp-enter {
-  from { opacity: 0; transform: scale(0.85) translateY(20px); }
+  from { opacity: 0; transform: scale(0.88) translateY(18px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
@@ -482,24 +579,24 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 16px;
-  background: rgba(22, 163, 74, 0.10);
-  border: 1px solid rgba(22, 163, 74, 0.3);
+  padding: 8px 18px;
+  background: rgba(22, 163, 74, 0.08);
+  border: 1px solid rgba(22, 163, 74, 0.28);
   border-radius: 999px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #4ade80;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #15803d;
 }
 
 .ks-otp-headline {
-  font-size: 1.8rem;
+  font-size: 2rem;
   font-weight: 800;
   letter-spacing: -0.03em;
   color: var(--ks-text-1);
   margin: 0;
 }
 
-/* OTP digits — massive display */
+/* Massive OTP Digits */
 .ks-otp-digits {
   display: flex;
   gap: 16px;
@@ -508,23 +605,23 @@
 }
 
 .ks-otp-digit {
-  width: 90px;
-  height: 110px;
+  width: 92px;
+  height: 114px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #ffffff;
-  border-radius: 18px;
+  border: 2.5px solid var(--ks-red);
+  border-radius: 20px;
   font-size: 4.5rem;
   font-weight: 900;
-  color: #09090b;
+  color: var(--ks-red);
   font-family: var(--ks-mono);
   letter-spacing: -0.02em;
   box-shadow:
-    0 0 0 2px rgba(22, 163, 74, 0.4),
-    0 0 40px rgba(22, 163, 74, 0.2),
-    0 20px 50px rgba(0, 0, 0, 0.5);
-  animation: ks-digit-pop 0.4s var(--ks-spring) both;
+    0 12px 35px rgba(220, 38, 38, 0.18),
+    0 2px 8px rgba(0, 0, 0, 0.05);
+  animation: ks-digit-pop 0.35s var(--ks-spring) both;
 }
 
 .ks-otp-digit:nth-child(1) { animation-delay: 0.05s; }
@@ -538,38 +635,38 @@
 }
 
 .ks-otp-hint {
-  font-size: 1rem;
+  font-size: 1.05rem;
   color: var(--ks-text-2);
   font-weight: 500;
 }
 
-/* Keypad arrow indicator */
-.ks-keypad-arrow {
-  display: flex;
+/* Keypad button */
+.ks-goto-keypad-btn {
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
-  margin-top: 4px;
-}
-
-.ks-keypad-arrow-line {
-  width: 60px;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--ks-red));
-  border-radius: 1px;
-  animation: ks-arrow-pulse 1.2s ease-in-out infinite alternate;
-}
-
-@keyframes ks-arrow-pulse {
-  from { opacity: 0.4; width: 40px; }
-  to { opacity: 1; width: 70px; }
-}
-
-.ks-keypad-arrow-text {
-  font-size: 0.75rem;
+  padding: 16px 36px;
+  background: var(--ks-red);
+  border: none;
+  border-radius: 16px;
+  color: #ffffff;
+  font-family: var(--ks-font);
+  font-size: 1.05rem;
   font-weight: 700;
-  color: var(--ks-red);
-  font-family: var(--ks-mono);
-  letter-spacing: 0.12em;
+  cursor: pointer;
+  box-shadow: 0 6px 24px rgba(220, 38, 38, 0.38);
+  transition: all 0.2s var(--ks-ease);
+}
+
+.ks-goto-keypad-btn:hover {
+  background: var(--ks-red-hover);
+  box-shadow: 0 8px 30px rgba(220, 38, 38, 0.5);
+  transform: translateY(-2px);
+}
+
+.ks-goto-keypad-btn:active {
+  transform: scale(0.97);
 }
 
 /* ── Printing Panel ────────────────────────────────────────────────────────── */
@@ -579,7 +676,7 @@
   align-items: center;
   gap: 16px;
   text-align: center;
-  animation: ks-fade-in 0.4s var(--ks-ease) both;
+  animation: ks-fade-in 0.35s var(--ks-ease) both;
 }
 
 .ks-printing-icon {
@@ -592,7 +689,7 @@
 }
 
 .ks-printing-title {
-  font-size: 2rem;
+  font-size: 2.2rem;
   font-weight: 800;
   letter-spacing: -0.03em;
   color: var(--ks-red);
@@ -600,33 +697,32 @@
 }
 
 .ks-printing-sub {
-  font-size: 0.95rem;
+  font-size: 1rem;
   color: var(--ks-text-2);
-  max-width: 32ch;
+  max-width: 34ch;
   line-height: 1.5;
   margin: 0;
 }
 
-/* Animated printing bars */
 .ks-printing-bars {
   display: flex;
   align-items: flex-end;
-  gap: 5px;
-  height: 32px;
-  margin-top: 4px;
+  gap: 6px;
+  height: 36px;
+  margin-top: 6px;
 }
 
 .ks-printing-bar {
-  width: 6px;
+  width: 7px;
   background: var(--ks-red);
-  border-radius: 3px;
+  border-radius: 4px;
   animation: ks-bar-bounce 0.8s ease-in-out infinite alternate;
-  opacity: 0.7;
+  opacity: 0.8;
 }
 
 @keyframes ks-bar-bounce {
-  from { height: 8px; opacity: 0.4; }
-  to { height: 28px; opacity: 1; }
+  from { height: 10px; opacity: 0.4; }
+  to { height: 32px; opacity: 1; }
 }
 
 /* ── Done Panel ────────────────────────────────────────────────────────────── */
@@ -634,14 +730,14 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 18px;
   text-align: center;
-  animation: ks-fade-in 0.5s var(--ks-spring) both;
+  animation: ks-fade-in 0.45s var(--ks-spring) both;
 }
 
 .ks-done-tick {
-  width: 80px;
-  height: 80px;
+  width: 86px;
+  height: 86px;
 }
 
 .ks-done-svg {
@@ -651,7 +747,7 @@
 
 .ks-done-circle {
   stroke: #16a34a;
-  stroke-width: 2.5;
+  stroke-width: 2.8;
   stroke-dasharray: 145;
   stroke-dashoffset: 145;
   animation: ks-draw-circle 0.6s var(--ks-ease) 0.1s forwards;
@@ -659,7 +755,7 @@
 
 .ks-done-check {
   stroke: #16a34a;
-  stroke-width: 3;
+  stroke-width: 3.5;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-dasharray: 40;
@@ -671,16 +767,16 @@
 @keyframes ks-draw-check { to { stroke-dashoffset: 0; } }
 
 .ks-done-title {
-  font-size: 2rem;
+  font-size: 2.2rem;
   font-weight: 800;
-  color: #4ade80;
+  color: #15803d;
   margin: 0;
 }
 
 .ks-done-sub {
-  font-size: 1rem;
+  font-size: 1.05rem;
   color: var(--ks-text-2);
-  max-width: 30ch;
+  max-width: 32ch;
   line-height: 1.5;
   margin: 0;
 }
@@ -689,54 +785,36 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   color: var(--ks-text-3);
   font-family: var(--ks-mono);
-  margin-top: 4px;
-}
-
-/* ── Go to Keypad Button ──────────────────────────────────────────────────── */
-.ks-goto-keypad-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 28px;
-  background: rgba(220, 38, 38, 0.10);
-  border: 1px solid rgba(220, 38, 38, 0.35);
-  border-radius: 14px;
-  color: #dc2626;
-  font-family: var(--ks-font);
-  font-size: 0.95rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s var(--ks-ease);
-  margin-top: 4px;
-}
-
-.ks-goto-keypad-btn:hover,
-.ks-goto-keypad-btn:active {
-  background: rgba(220, 38, 38, 0.18);
-  border-color: rgba(220, 38, 38, 0.55);
-  transform: scale(1.02);
+  margin-top: 6px;
 }
 
 /* ── Footer ────────────────────────────────────────────────────────────────── */
 .ks-footer {
   position: fixed;
-  bottom: 12px;
+  bottom: 14px;
   left: 24px;
   right: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  font-size: 0.68rem;
+  gap: 10px;
+  font-size: 0.74rem;
   color: var(--ks-text-3);
   font-family: var(--ks-mono);
   pointer-events: none;
 }
 
+.ks-footer strong {
+  color: var(--ks-text-1);
+}
+
 .ks-footer code {
   font-family: var(--ks-mono);
-  color: var(--ks-text-2);
+  color: var(--ks-text-1);
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
 }

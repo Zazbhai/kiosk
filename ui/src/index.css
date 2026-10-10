@@ -1,39 +1,40 @@
-/* Kiosk App — Fullscreen Touch-First Interface */
+/* Kiosk App — Fullscreen Touch-First Interface (White & Laser-Red Theme) */
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap');
 
 :root {
-  --clr-bg-900: #06110D;
-  --clr-bg-800: #091a12;
-  --clr-bg-700: #0f2a1c;
-  --clr-surface-1: rgba(255, 255, 255, 0.05);
-  --clr-surface-2: rgba(255, 255, 255, 0.09);
-  --clr-surface-3: rgba(255, 255, 255, 0.13);
-  --clr-border: rgba(255, 255, 255, 0.10);
-  --clr-border-strong: rgba(255, 255, 255, 0.18);
-  --clr-accent: #c8ff00;
-  --clr-accent-light: #d4ff33;
-  --clr-accent-dim: rgba(200, 255, 0, 0.18);
-  --clr-success: #10b981;
-  --clr-success-dim: rgba(16, 185, 129, 0.15);
+  --clr-bg-900: #ffffff;
+  --clr-bg-800: #fafbfc;
+  --clr-bg-700: #f4f4f5;
+  --clr-surface-1: #ffffff;
+  --clr-surface-2: #f8fafc;
+  --clr-surface-3: #f1f5f9;
+  --clr-border: rgba(220, 38, 38, 0.14);
+  --clr-border-strong: rgba(220, 38, 38, 0.28);
+  --clr-accent: #dc2626;
+  --clr-accent-light: #ef4444;
+  --clr-accent-dim: rgba(220, 38, 38, 0.12);
+  --clr-success: #16a34a;
+  --clr-success-dim: rgba(22, 163, 74, 0.12);
   --clr-warning: #f59e0b;
-  --clr-error: #ef4444;
-  --clr-error-dim: rgba(239, 68, 68, 0.15);
-  --clr-text-1: #fafafa;
-  --clr-text-2: #a1a1aa;
-  --clr-text-3: #71717a;
-  --font-sans: 'Geist', -apple-system, sans-serif;
-  --font-mono: 'Geist Mono', monospace;
+  --clr-error: #dc2626;
+  --clr-error-dim: rgba(220, 38, 38, 0.12);
+  --clr-text-1: #09090b;
+  --clr-text-2: #475569;
+  --clr-text-3: #64748b;
+  --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: 'Geist Mono', "SF Mono", monospace;
   --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 20px;
-  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --dur-normal: 200ms;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
 html {
-  font-size: 18px; /* Larger base for kiosk */
+  font-size: 18px; /* Larger base for touchscreen readability */
   -webkit-font-smoothing: antialiased;
 }
 
@@ -45,6 +46,7 @@ body {
   height: 100vh;
   overflow: hidden;
   user-select: none;
+  -webkit-user-select: none;
   cursor: default;
 }
 
@@ -66,15 +68,17 @@ body {
   padding: 48px;
   position: relative;
   overflow: hidden;
+  background: #ffffff;
 }
 
-/* Background mesh */
+/* Ambient crimson lighting on white background */
 .kiosk-bg-mesh {
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(ellipse 70% 60% at 50% 30%, rgba(200, 255, 0, 0.1) 0%, transparent 70%),
-    radial-gradient(ellipse 50% 40% at 80% 80%, rgba(160, 204, 0, 0.06) 0%, transparent 70%);
+  background-color: #ffffff;
+  background-image:
+    radial-gradient(ellipse 70% 60% at 50% 25%, rgba(220, 38, 38, 0.07) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 40% at 80% 80%, rgba(220, 38, 38, 0.04) 0%, transparent 70%);
   pointer-events: none;
 }
 
@@ -89,21 +93,28 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0 32px;
-  background: rgba(9, 9, 11, 0.6);
-  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--clr-border);
   font-size: 13px;
-  color: var(--clr-text-3);
+  color: var(--clr-text-2);
   font-family: var(--font-mono);
   z-index: 10;
 }
 
 .statusbar__left { display: flex; align-items: center; gap: 16px; }
 .statusbar__right { display: flex; align-items: center; gap: 16px; }
-.statusbar__kiosk { font-weight: 600; color: var(--clr-text-2); }
-.statusbar__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--clr-success); }
+.statusbar__kiosk { font-weight: 700; color: var(--clr-text-1); }
+.statusbar__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--clr-accent);
+  box-shadow: 0 0 6px rgba(220, 38, 38, 0.6);
+}
 
-/* Kiosk buttons — larger for touch */
+/* Kiosk buttons — large touch targets */
 .kiosk-btn {
   display: inline-flex;
   align-items: center;
@@ -113,7 +124,7 @@ body {
   border-radius: var(--radius-lg);
   font-family: var(--font-sans);
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   border: 1px solid transparent;
   transition: all var(--dur-normal) var(--ease-smooth);
@@ -126,38 +137,50 @@ body {
 
 .kiosk-btn-primary {
   background: var(--clr-accent);
-  color: #06110D;
-  font-weight: 700;
+  color: #ffffff;
   border-color: var(--clr-accent);
-  box-shadow: 0 4px 20px rgba(200, 255, 0, 0.3);
+  box-shadow: 0 4px 20px rgba(220, 38, 38, 0.35);
 }
-.kiosk-btn-primary:hover { background: var(--clr-accent-light); color: #06110D; box-shadow: 0 4px 30px rgba(200, 255, 0, 0.5); }
+.kiosk-btn-primary:hover {
+  background: #b91c1c;
+  color: #ffffff;
+  box-shadow: 0 6px 28px rgba(220, 38, 38, 0.5);
+}
 
 .kiosk-btn-secondary {
-  background: var(--clr-surface-2);
+  background: #ffffff;
   color: var(--clr-text-1);
   border-color: var(--clr-border-strong);
+  box-shadow: 0 2px 10px rgba(220, 38, 38, 0.06);
 }
-.kiosk-btn-secondary:hover { background: var(--clr-surface-3); }
+.kiosk-btn-secondary:hover {
+  background: #fef2f2;
+  border-color: var(--clr-accent);
+}
 
 .kiosk-btn-ghost {
   background: transparent;
   color: var(--clr-text-2);
   border-color: var(--clr-border);
 }
+.kiosk-btn-ghost:hover {
+  background: #fef2f2;
+  color: var(--clr-accent);
+}
 
 .kiosk-btn-danger {
   background: var(--clr-error-dim);
   color: var(--clr-error);
-  border-color: rgba(239,68,68,0.3);
+  border-color: rgba(220, 38, 38, 0.3);
 }
 
 /* Kiosk card */
 .kiosk-card {
-  background: var(--clr-surface-1);
+  background: #ffffff;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--clr-border);
+  box-shadow: 0 10px 30px rgba(220, 38, 38, 0.06), 0 2px 8px rgba(0, 0, 0, 0.03);
   border-radius: var(--radius-xl);
   padding: 40px;
 }
@@ -166,7 +189,7 @@ body {
 .kiosk-title {
   font-size: 3rem;
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.035em;
   color: var(--clr-text-1);
   line-height: 1.1;
 }
