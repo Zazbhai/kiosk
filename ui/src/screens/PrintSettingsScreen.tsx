@@ -1,43 +1,92 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ArrowRight, FileText, MapPin } from 'lucide-react'
+import { Receipt, XCircle, Clock } from '@phosphor-icons/react'
+import { motion } from 'motion/react'
 import {
-  ArrowLeft,
-  ArrowRight,
-  Palette,
-  Copy,
-  BookOpen,
-  FileText,
-  XCircle,
-  Clock,
-} from '@phosphor-icons/react'
+  MorphingPopover,
+  MorphingPopoverTrigger,
+  MorphingPopoverContent,
+  MorphingPopoverClose,
+} from '../components/ui/morphing-popover'
+import { MinimalCarousel, type CarouselCard } from '../components/watermelon/minimal-carousel'
+import {
+  AnimatedPaperIcon,
+  AnimatedColourIcon,
+  AnimatedCopiesIcon,
+  AnimatedSidesIcon,
+} from '../components/watermelon/CardAnimatedIcons'
+import { CustomPagesSlider } from '../components/watermelon/CustomPagesSlider'
+import { CustomCopiesControl } from '../components/watermelon/CustomCopiesControl'
+import { CustomColourControl } from '../components/watermelon/CustomColourControl'
+import RubberSegment from '../components/ui/RubberSegment'
+import {
+  parsePageRange,
+  calcFileTotalSheets,
+  calcFileTotalPrice,
+  getKioskPricing,
+  type ColourMode,
+  type DuplexMode,
+  type FileSettings,
+} from '../utils/printSettingsUtils'
+import { getKioskId, getKioskName } from '../utils/siteConfig'
 import './PrintSettingsScreen.css'
 
 // ─── Inactivity Constants (Auto-Return to Print from Phone) ─────────────────
 const INACTIVITY_TIMEOUT_MS = 90 * 1000 // 1 minute 30 seconds
 const INACTIVITY_WARNING_SECONDS = 15 // warning popup at 15s remaining
 
-type ColourMode = 'BW' | 'COLOUR'
-type DuplexMode = 'SINGLE' | 'DOUBLE'
-type DuplexBinding = 'LONG_EDGE' | 'SHORT_EDGE'
-type PagesMode = 'ALL' | 'FIRST' | 'ODD' | 'EVEN' | 'CUSTOM'
-
 export default function PrintSettingsScreen() {
   const navigate = useNavigate()
-  const fileName = sessionStorage.getItem('pb_file_name') ?? 'document.pdf'
-  const estimatedPages = Math.max(1, Number(sessionStorage.getItem('pb_doc_page_count') || sessionStorage.getItem('pb_page_count')) || 5)
+  const kioskId = getKioskId() || 'PB-001'
+  const kioskName = getKioskName() || 'Station 1'
 
-  // ── Core Settings State (Same as Web Kiosk) ──
-  const [colour, setColour] = useState<ColourMode>('BW')
-  const [duplex, setDuplex] = useState<DuplexMode>('SINGLE')
-  const [duplexBinding, setDuplexBinding] = useState<DuplexBinding>('LONG_EDGE')
-  const [pagesMode, setPagesMode] = useState<PagesMode>('ALL')
-  const [customRange, setCustomRange] = useState<string>('')
-  const [copies, setCopies] = useState<number>(1)
-  const [printDpi, setPrintDpi] = useState<'600' | '1200'>('600')
+  const fileName = sessionStorage.getItem('pb_file_name') || 'document.pdf'
+  const realPageCount = Math.max(
+    1,
+    Number(sessionStorage.getItem('pb_doc_page_count') || sessionStorage.getItem('pb_page_count')) || 5
+  )
 
-  // Per-page customisation state (optional drawer/strip)
-  const [isPerPageOpen, setIsPerPageOpen] = useState(false)
-  const [pageColours, setPageColours] = useState<Record<number, ColourMode>>({})
+  // ── Settings State (Identical to Web) ──
+  const [settings, setSettings] = useState<FileSettings>(() => {
+    const raw = sessionStorage.getItem('pb_settings')
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw)
+        return {
+          pages: parsed.pages || parsed.pagesMode === 'CUSTOM' ? (parsed.pageRange || 'ALL') : (parsed.pagesMode || 'ALL'),
+          copies: Math.max(1, Number(parsed.copies) || 1),
+          pageCopies: parsed.pageCopies,
+          colour: (parsed.colour || 'BW') as ColourMode,
+          pageColours: parsed.pageColours,
+          duplex: (parsed.duplex || 'SINGLE') as DuplexMode,
+          paperSize: 'A4',
+          scaling: 'FIT',
+          dpi: parsed.printDpi || '600',
+        }
+      } catch {}
+    }
+    return {
+      pages: 'ALL',
+      copies: 1,
+      colour: 'BW',
+      duplex: 'SINGLE',
+      paperSize: 'A4',
+      scaling: 'FIT',
+      dpi: '600',
+    }
+  })
+
+  // Start with colour card active (exactly as web)
+  const [activeCardId, setActiveCardId] = useState<string | null>('spending')
+
+  const patchSettings = useCallback((patch: Partial<FileSettings>) => {
+    setSettings((prev) => {
+      const next = { ...prev, ...patch }
+      sessionStorage.setItem('pb_settings', JSON.stringify(next))
+      return next
+    })
+  }, [])
 
   // ── Inactivity Auto-Cancel & Timer ──
   const [inactivityRemaining, setInactivityRemaining] = useState<number | null>(null)
@@ -97,494 +146,346 @@ export default function PrintSettingsScreen() {
     }
   }, [handleCancelOrder])
 
-  // ── Parse Selected Pages ──
-  const selectedPages = useMemo<number[]>(() => {
-    if (pagesMode === 'ALL') {
-      return Array.from({ length: estimatedPages }, (_, i) => i + 1)
+  // ── Calculations ──
+  const selectedPagesList = useMemo(() => {
+    return parsePageRange(settings.pages, realPageCount)
+  }, [settings.pages, realPageCount])
+
+  const pageCount = selectedPagesList.length
+
+  const totalPagePrints = useMemo(() => {
+    if (settings.pageCopies && Object.keys(settings.pageCopies).length > 0) {
+      return selectedPagesList.reduce((sum, p) => {
+        const c = Number(settings.pageCopies?.[String(p)]) || settings.copies || 1
+        return sum + Math.max(1, c)
+      }, 0)
     }
-    if (pagesMode === 'FIRST') {
-      return [1]
+    return selectedPagesList.length * Math.max(1, settings.copies)
+  }, [selectedPagesList, settings.pageCopies, settings.copies])
+
+  const isCustomColour =
+    selectedPagesList.length > 1 &&
+    Boolean(settings.pageColours && Object.keys(settings.pageColours).length > 0)
+
+  const kioskPricing = getKioskPricing()
+  const prices = useMemo(
+    () => ({
+      BW_SINGLE: kioskPricing.bwSingle,
+      BW_DOUBLE: kioskPricing.bwDouble,
+      COLOUR_SINGLE: kioskPricing.colorSingle,
+      COLOUR_DOUBLE: kioskPricing.colorDouble,
+    }),
+    [kioskPricing]
+  )
+
+  const pricePerPage = useMemo(() => {
+    if (settings.colour === 'BW' && settings.duplex === 'SINGLE') return prices.BW_SINGLE
+    if (settings.colour === 'BW' && settings.duplex === 'DOUBLE') return prices.BW_DOUBLE
+    if (settings.colour === 'COLOUR' && settings.duplex === 'SINGLE') return prices.COLOUR_SINGLE
+    return prices.COLOUR_DOUBLE
+  }, [settings.colour, settings.duplex, prices])
+
+  const colourCardValue = useMemo(() => {
+    if (isCustomColour && settings.pageColours) {
+      let col = 0
+      let mono = 0
+      selectedPagesList.forEach((p) => {
+        const mode = settings.pageColours?.[String(p)] ?? settings.colour ?? 'BW'
+        if (mode === 'COLOUR') col++
+        else mono++
+      })
+      return `Custom (${col} Col, ${mono} B&W)`
     }
-    if (pagesMode === 'ODD') {
-      return Array.from({ length: estimatedPages }, (_, i) => i + 1).filter(p => p % 2 !== 0)
-    }
-    if (pagesMode === 'EVEN') {
-      const evens = Array.from({ length: estimatedPages }, (_, i) => i + 1).filter(p => p % 2 === 0)
-      return evens.length > 0 ? evens : [1]
-    }
-    // CUSTOM syntax: "1-3, 5"
-    if (pagesMode === 'CUSTOM' && customRange.trim()) {
-      const set = new Set<number>()
-      const parts = customRange.split(',').map(s => s.trim()).filter(Boolean)
-      for (const p of parts) {
-        if (p.includes('-')) {
-          const [startStr, endStr] = p.split('-')
-          const s = Math.max(1, parseInt(startStr, 10) || 1)
-          const e = Math.min(estimatedPages, parseInt(endStr, 10) || estimatedPages)
-          if (s <= e) {
-            for (let i = s; i <= e; i++) set.add(i)
-          }
-        } else {
-          const n = parseInt(p, 10)
-          if (!isNaN(n) && n >= 1 && n <= estimatedPages) {
-            set.add(n)
-          }
-        }
-      }
-      const list = Array.from(set).sort((a, b) => a - b)
-      return list.length > 0 ? list : [1]
-    }
-    return Array.from({ length: estimatedPages }, (_, i) => i + 1)
-  }, [pagesMode, customRange, estimatedPages])
+    return settings.colour === 'BW'
+      ? `B&W · ₹${prices.BW_SINGLE}/pg`
+      : `Colour · ₹${prices.COLOUR_SINGLE}/pg`
+  }, [isCustomColour, settings.pageColours, settings.colour, selectedPagesList, prices])
 
-  // ── Cost & Paper Calculations ──
-  const pageDetails = useMemo(() => {
-    let bwCount = 0
-    let colourCount = 0
+  const totalSheets = useMemo(() => {
+    return calcFileTotalSheets(
+      realPageCount,
+      settings.pages,
+      settings.copies,
+      settings.duplex,
+      settings.pageCopies,
+      settings.pagesPerSheet || 1
+    )
+  }, [realPageCount, settings.pages, settings.copies, settings.duplex, settings.pageCopies, settings.pagesPerSheet])
 
-    selectedPages.forEach(p => {
-      const pageCol = isPerPageOpen && pageColours[p] ? pageColours[p] : colour
-      if (pageCol === 'COLOUR') {
-        colourCount++
-      } else {
-        bwCount++
-      }
-    })
+  const fileTotalPrice = useMemo(() => {
+    return calcFileTotalPrice(
+      realPageCount,
+      settings.pages,
+      settings.copies,
+      settings.duplex,
+      settings.colour,
+      settings.pageColours,
+      settings.pageCopies
+    )
+  }, [realPageCount, settings.pages, settings.copies, settings.duplex, settings.colour, settings.pageColours, settings.pageCopies])
 
-    const includedPages = selectedPages.length
-    const sheetsPerCopy = duplex === 'DOUBLE' ? Math.max(1, Math.ceil(includedPages / 2)) : includedPages
-    const totalSheets = sheetsPerCopy * copies
-
-    const bwRate = duplex === 'DOUBLE' ? 1.5 : 2.0
-    const colourRate = duplex === 'DOUBLE' ? 6.0 : 8.0
-    const dpiMultiplier = printDpi === '1200' ? 1.2 : 1.0
-
-    const baseCostPerCopy = (bwCount * bwRate) + (colourCount * colourRate)
-    const subtotalPerCopy = baseCostPerCopy * dpiMultiplier
-    const totalAmount = Math.max(2, Math.round(subtotalPerCopy * copies))
-
-    const standardSheets = includedPages * copies
-    const savedSheets = Math.max(0, standardSheets - totalSheets)
-    const savedPercentage = standardSheets > 0 ? Math.round((savedSheets / standardSheets) * 100) : 0
-
-    return {
-      bwCount,
-      colourCount,
-      includedPages,
-      sheetsPerCopy,
-      totalSheets,
-      totalAmount,
-      savedSheets,
-      savedPercentage,
-    }
-  }, [selectedPages, isPerPageOpen, pageColours, colour, duplex, printDpi, copies])
-
-  // Toggle page color in per-page strip
-  const togglePageColor = (pageNumber: number) => {
-    setPageColours(prev => {
-      const current = prev[pageNumber] || colour
-      return {
-        ...prev,
-        [pageNumber]: current === 'BW' ? 'COLOUR' : 'BW',
-      }
-    })
-  }
-
-  const setAllPagesColor = (target: ColourMode) => {
-    const updated: Record<number, ColourMode> = {}
-    selectedPages.forEach(p => { updated[p] = target })
-    setPageColours(updated)
-    setColour(target)
-  }
+  // ── Carousel Cards (Identical to Web) ──
+  const CARDS: CarouselCard[] = [
+    {
+      id: 'gxuri',
+      title: 'Pages',
+      value:
+        settings.pages === 'ALL' || realPageCount <= 1
+          ? `All (${realPageCount} ${realPageCount === 1 ? 'Page' : 'Pgs'})`
+          : settings.pages === '1'
+          ? 'First Page'
+          : `Pages ${settings.pages} (${selectedPagesList.length} pgs)`,
+      color: 'card-theme-pages',
+      icon: AnimatedPaperIcon,
+      fullWidthActions: true,
+      renderActions: () => (
+        <CustomPagesSlider
+          totalPages={realPageCount}
+          value={settings.pages}
+          onChange={(newVal) => patchSettings({ pages: newVal })}
+        />
+      ),
+    },
+    {
+      id: 'savings',
+      title: 'Copies',
+      value:
+        settings.pageCopies && Object.keys(settings.pageCopies).length > 0
+          ? `Custom (${totalPagePrints} total)`
+          : `${settings.copies} ${settings.copies === 1 ? 'Copy' : 'Copies'}`,
+      color: 'card-theme-copies',
+      icon: AnimatedCopiesIcon,
+      fullWidthActions: true,
+      renderActions: () => (
+        <CustomCopiesControl
+          selectedPages={selectedPagesList}
+          globalCopies={settings.copies}
+          pageCopies={settings.pageCopies}
+          onGlobalCopiesChange={(newVal) => patchSettings({ copies: newVal })}
+          onPageCopiesChange={(newMap) => patchSettings({ pageCopies: newMap })}
+        />
+      ),
+    },
+    {
+      id: 'yield',
+      title: 'Sides',
+      value: settings.duplex === 'SINGLE' ? 'Single-Sided' : 'Double-Sided',
+      color: 'card-theme-sides',
+      icon: AnimatedSidesIcon,
+      renderActions: () => (
+        <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+          <RubberSegment
+            items={[
+              { value: 'SINGLE', label: 'Single' },
+              { value: 'DOUBLE', label: 'Double' },
+            ]}
+            value={settings.duplex}
+            onChange={(val) => patchSettings({ duplex: val as DuplexMode })}
+            trackColor="rgba(15, 23, 42, 0.05)"
+            thumbColor="#dc2626"
+            textColor="#475569"
+            activeTextColor="#ffffff"
+            size="sm"
+            radius={8}
+            inset={3}
+            equalSlots
+            stretch={85}
+            squash={3}
+            speed={1.15}
+          />
+        </div>
+      ),
+    },
+    {
+      id: 'spending',
+      title: 'Colour',
+      value: colourCardValue,
+      color: 'card-theme-colour',
+      icon: AnimatedColourIcon,
+      fullWidthActions: true,
+      renderActions: () => (
+        <CustomColourControl
+          selectedPages={selectedPagesList}
+          globalColour={settings.colour}
+          pageColours={settings.pageColours}
+          onGlobalColourChange={(newVal) => patchSettings({ colour: newVal })}
+          onPageColoursChange={(newMap) => patchSettings({ pageColours: newMap })}
+        />
+      ),
+    },
+  ]
 
   function handleContinue() {
     sessionStorage.setItem('pb_file_name', fileName)
-    sessionStorage.setItem('pb_page_count', String(selectedPages.length))
-    sessionStorage.setItem('pb_doc_page_count', String(estimatedPages))
-    sessionStorage.setItem('pb_selected_pages', JSON.stringify(selectedPages))
-    sessionStorage.setItem('pb_page_range', pagesMode === 'ALL' ? 'ALL' : customRange || String(selectedPages.join(',')))
-    sessionStorage.setItem('pb_copies', String(copies))
-    sessionStorage.setItem('pb_colour_mode', colour)
-    sessionStorage.setItem('pb_total_price', String(pageDetails.totalAmount))
-    sessionStorage.setItem('pb_settings', JSON.stringify({
-      copies,
-      colour,
-      duplex,
-      duplexBinding,
-      pagesMode,
-      selectedPages,
-      printDpi,
-      paperSize: 'A4',
-      isPerPage: isPerPageOpen,
-      pageColours,
-    }))
+    sessionStorage.setItem('pb_page_count', String(pageCount))
+    sessionStorage.setItem('pb_doc_page_count', String(realPageCount))
+    sessionStorage.setItem('pb_selected_pages', JSON.stringify(selectedPagesList))
+    sessionStorage.setItem('pb_page_range', settings.pages)
+    sessionStorage.setItem('pb_copies', String(settings.copies))
+    sessionStorage.setItem('pb_colour_mode', settings.colour)
+    sessionStorage.setItem('pb_total_price', String(fileTotalPrice))
+    sessionStorage.setItem(
+      'pb_settings',
+      JSON.stringify({
+        ...settings,
+        scaling: 'FIT',
+        paperSize: 'A4',
+      })
+    )
     navigate('/review')
   }
 
   return (
-    <div className="ks-compact-settings-root">
-      <div className="ks-compact-bg-mesh" />
+    <div className="ks-web-settings-root">
+      <div className="ks-web-settings-mesh" />
 
       {/* ── Top Bar ── */}
-      <header className="ks-compact-topbar">
-        <div className="ks-compact-topbar__left">
-          <div className="ks-compact-topbar__dot" />
-          <span className="ks-compact-topbar__kiosk">PB-001</span>
-          <span className="ks-compact-topbar__file">{fileName}</span>
-          <span className="ks-compact-topbar__badge">{estimatedPages} Pages Total</span>
+      <header className="ks-web-topbar">
+        <div className="ks-web-topbar__left">
+          <div className="ks-web-topbar__dot" />
+          <span>{kioskId} • {kioskName}</span>
         </div>
         <button
           type="button"
-          className="ks-compact-cancel-btn"
+          className="ks-web-cancel-btn"
           onClick={handleCancelOrder}
           title="Cancel order and return to scan QR"
+          id="kiosk-cancel-order-settings"
         >
-          <XCircle size={17} weight="bold" />
-          Cancel Order
+          <XCircle size={16} weight="bold" />
+          <span>Cancel Order</span>
         </button>
       </header>
 
-      {/* ── Title Header ── */}
-      <div className="ks-compact-header">
-        <h1 className="ks-compact-title">Print Settings</h1>
-        <p className="ks-compact-sub">Format, sides, and colour options for your document</p>
-      </div>
-
-      {/* ── 2x2 Bento Settings Grid ── */}
-      <div className="ks-compact-grid">
-
-        {/* ── Card 1: Colour Mode ── */}
-        <div className="ks-bento-card">
-          <div className="ks-bento-card__head">
-            <div className="ks-bento-card__title-group">
-              <div className="ks-bento-card__icon">
-                <Palette size={18} weight="duotone" />
-              </div>
-              <span className="ks-bento-card__title">Colour Mode</span>
-            </div>
-            <span className={`ks-bento-card__badge ${colour === 'COLOUR' || isPerPageOpen ? 'ks-bento-card__badge--highlight' : ''}`}>
-              {isPerPageOpen
-                ? `${pageDetails.colourCount} Col, ${pageDetails.bwCount} B&W`
-                : colour === 'COLOUR' ? 'Colour · ₹8.00/pg' : 'B&W · ₹2.00/pg'}
+      {/* ── Main Container (Matches Web Clean Settings Container) ── */}
+      <div className="clean-settings-container">
+        {/* Header */}
+        <div className="clean-header">
+          <h1 className="clean-title">Print Settings</h1>
+          <div className="clean-subtitle">
+            <span className="subtitle-item">
+              <FileText size={13} className="subtitle-icon" />
+              <span>{fileName}</span>
+            </span>
+            <span className="subtitle-separator">·</span>
+            <span className="subtitle-item">
+              <MapPin size={13} className="subtitle-icon" />
+              <span>{kioskName}</span>
             </span>
           </div>
+        </div>
 
-          <div className="ks-bento-card__body">
-            <div className="ks-seg-group">
-              <button
-                type="button"
-                className={`ks-seg-btn ${colour === 'BW' && !isPerPageOpen ? 'ks-seg-btn--active' : ''}`}
-                onClick={() => {
-                  setColour('BW')
-                  setIsPerPageOpen(false)
-                }}
-              >
-                <div className="ks-mono-dot" />
-                Black & White (₹2)
-              </button>
-              <button
-                type="button"
-                className={`ks-seg-btn ${colour === 'COLOUR' && !isPerPageOpen ? 'ks-seg-btn--active-colour' : ''}`}
-                onClick={() => {
-                  setColour('COLOUR')
-                  setIsPerPageOpen(false)
-                }}
-              >
-                <div className="ks-colour-dot" />
-                Full Colour (₹8)
-              </button>
-            </div>
+        {/* Minimal Carousel Card Section */}
+        <div className="clean-carousel-stage">
+          <MinimalCarousel
+            cards={CARDS}
+            activeId={activeCardId}
+            onActiveChange={(id) => setActiveCardId(id)}
+          />
+        </div>
+      </div>
 
-            {/* Per-Page Customize Option */}
-            <div className="ks-sub-toggle-bar">
-              <button
-                type="button"
-                className="ks-link-btn"
-                onClick={() => {
-                  if (!isPerPageOpen) {
-                    const init: Record<number, ColourMode> = {}
-                    selectedPages.forEach(p => { init[p] = colour })
-                    setPageColours(init)
-                    setIsPerPageOpen(true)
-                  } else {
-                    setIsPerPageOpen(false)
-                  }
-                }}
-              >
-                {isPerPageOpen ? '✓ Done Customising' : '🎨 Customise per-page…'}
-              </button>
-              {isPerPageOpen && (
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <button type="button" className="ks-link-btn" onClick={() => setAllPagesColor('BW')}>All B&W</button>
-                  <button type="button" className="ks-link-btn" onClick={() => setAllPagesColor('COLOUR')}>All Colour</button>
+      {/* Floating Bottom Action Bar with Standout Highlighted Price & Morphing Receipt */}
+      <div className="clean-action-bar">
+        <div className="clean-price-pill">
+          <div className="price-top-meta">
+            <span className="price-pill-label">Total Estimate</span>
+            <MorphingPopover>
+              <MorphingPopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="price-pill-breakdown"
+                  title="Click to view full price calculation"
+                >
+                  <motion.span layoutId="price-calc-badge-label" layout="position">
+                    {totalSheets} {totalSheets === 1 ? 'Sheet' : 'Sheets'} · ₹{pricePerPage}/sheet
+                  </motion.span>
+                </button>
+              </MorphingPopoverTrigger>
+              <MorphingPopoverContent className="theme-crimson position-top align-start">
+                <div className="price-calc-popover-content">
+                  <div className="price-calc-header">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Receipt size={17} weight="bold" color="#dc2626" />
+                      <motion.h4
+                        layoutId="price-calc-badge-label"
+                        layout="position"
+                        className="price-calc-title"
+                      >
+                        Price Breakdown
+                      </motion.h4>
+                    </div>
+                    <span className="price-calc-badge">Live Quote</span>
+                  </div>
+                  <div className="price-calc-list">
+                    <div className="price-calc-row">
+                      <span>Rate per sheet</span>
+                      <span className="price-calc-val">
+                        ₹{pricePerPage}.00 ({settings.colour === 'BW' ? 'B&W' : 'Colour'})
+                      </span>
+                    </div>
+                    <div className="price-calc-row">
+                      <span>Pages Selected</span>
+                      <span className="price-calc-val">{pageCount} pgs</span>
+                    </div>
+                    <div className="price-calc-row">
+                      <span>Copies</span>
+                      <span className="price-calc-val">
+                        {settings.pageCopies && Object.keys(settings.pageCopies).length > 0
+                          ? `Custom (${totalPagePrints} prints)`
+                          : `${settings.copies}x`}
+                      </span>
+                    </div>
+                    <div className="price-calc-row">
+                      <span>Total Print Sheets</span>
+                      <span className="price-calc-val">{totalSheets} sheets</span>
+                    </div>
+                    <div className="price-calc-row highlight">
+                      <span>Total Payable</span>
+                      <span className="price-calc-val">₹{fileTotalPrice}.00</span>
+                    </div>
+                  </div>
+                  <div className="price-calc-footer">
+                    <MorphingPopoverClose asChild>
+                      <button type="button" className="price-calc-done-btn">
+                        Done
+                      </button>
+                    </MorphingPopoverClose>
+                  </div>
                 </div>
-              )}
-            </div>
-
-            {/* Per-Page Mini Strip (Active only when toggled) */}
-            {isPerPageOpen && (
-              <div className="ks-page-chips-scroll">
-                {selectedPages.map(p => {
-                  const pCol = pageColours[p] || colour
-                  return (
-                    <button
-                      key={p}
-                      type="button"
-                      className={`ks-page-chip ${pCol === 'COLOUR' ? 'ks-page-chip--col' : 'ks-page-chip--bw'}`}
-                      onClick={() => togglePageColor(p)}
-                      title={`Page ${p}: Click to switch colour`}
-                    >
-                      P.{p}: {pCol === 'COLOUR' ? '🌈 Col' : '⬛ B&W'}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
+              </MorphingPopoverContent>
+            </MorphingPopover>
           </div>
-        </div>
-
-        {/* ── Card 2: Sides (Duplex) ── */}
-        <div className="ks-bento-card">
-          <div className="ks-bento-card__head">
-            <div className="ks-bento-card__title-group">
-              <div className="ks-bento-card__icon">
-                <BookOpen size={18} weight="duotone" />
-              </div>
-              <span className="ks-bento-card__title">Print Sides</span>
-            </div>
-            <span className={`ks-bento-card__badge ${duplex === 'DOUBLE' ? 'ks-bento-card__badge--highlight' : ''}`}>
-              {duplex === 'DOUBLE' ? '2-Sided · 25% Off' : 'Single-Sided'}
-            </span>
-          </div>
-
-          <div className="ks-bento-card__body">
-            <div className="ks-seg-group">
-              <button
-                type="button"
-                className={`ks-seg-btn ${duplex === 'SINGLE' ? 'ks-seg-btn--active' : ''}`}
-                onClick={() => setDuplex('SINGLE')}
-              >
-                📄 1-Sided
-              </button>
-              <button
-                type="button"
-                className={`ks-seg-btn ${duplex === 'DOUBLE' ? 'ks-seg-btn--active-colour' : ''}`}
-                onClick={() => setDuplex('DOUBLE')}
-              >
-                📑 2-Sided (Duplex)
-              </button>
-            </div>
-
-            {/* Flip Edge Sub-Options (Only when 2-Sided) */}
-            {duplex === 'DOUBLE' ? (
-              <div className="ks-sub-toggle-bar">
-                <button
-                  type="button"
-                  className={`ks-sub-chip ${duplexBinding === 'LONG_EDGE' ? 'ks-sub-chip--active' : ''}`}
-                  onClick={() => setDuplexBinding('LONG_EDGE')}
-                >
-                  📖 Long-Edge (Booklet)
-                </button>
-                <button
-                  type="button"
-                  className={`ks-sub-chip ${duplexBinding === 'SHORT_EDGE' ? 'ks-sub-chip--active' : ''}`}
-                  onClick={() => setDuplexBinding('SHORT_EDGE')}
-                >
-                  🗓️ Short-Edge (Calendar)
-                </button>
-              </div>
-            ) : (
-              <div className="ks-sub-toggle-bar" style={{ opacity: 0.6 }}>
-                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Standard 1 page per sheet</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* ── Card 3: Pages to Print ── */}
-        <div className="ks-bento-card">
-          <div className="ks-bento-card__head">
-            <div className="ks-bento-card__title-group">
-              <div className="ks-bento-card__icon">
-                <FileText size={18} weight="duotone" />
-              </div>
-              <span className="ks-bento-card__title">Pages to Print</span>
-            </div>
-            <span className="ks-bento-card__badge">
-              {selectedPages.length} of {estimatedPages} Pgs
-            </span>
-          </div>
-
-          <div className="ks-bento-card__body">
-            <div className="ks-pages-preset-grid">
-              <button
-                type="button"
-                className={`ks-preset-pill ${pagesMode === 'ALL' ? 'ks-preset-pill--active' : ''}`}
-                onClick={() => setPagesMode('ALL')}
-              >
-                All ({estimatedPages})
-              </button>
-              <button
-                type="button"
-                className={`ks-preset-pill ${pagesMode === 'FIRST' ? 'ks-preset-pill--active' : ''}`}
-                onClick={() => setPagesMode('FIRST')}
-              >
-                Pg 1
-              </button>
-              <button
-                type="button"
-                className={`ks-preset-pill ${pagesMode === 'ODD' ? 'ks-preset-pill--active' : ''}`}
-                onClick={() => setPagesMode('ODD')}
-              >
-                Odd
-              </button>
-              <button
-                type="button"
-                className={`ks-preset-pill ${pagesMode === 'CUSTOM' ? 'ks-preset-pill--active' : ''}`}
-                onClick={() => {
-                  setPagesMode('CUSTOM')
-                  if (!customRange) setCustomRange(`1-${Math.min(3, estimatedPages)}`)
-                }}
-              >
-                Custom
-              </button>
-            </div>
-
-            {pagesMode === 'CUSTOM' && (
-              <input
-                type="text"
-                className="ks-custom-range-input"
-                placeholder="e.g. 1-3, 5"
-                value={customRange}
-                onChange={e => setCustomRange(e.target.value)}
-                autoFocus
-              />
-            )}
-          </div>
-        </div>
-
-        {/* ── Card 4: Copies ── */}
-        <div className="ks-bento-card">
-          <div className="ks-bento-card__head">
-            <div className="ks-bento-card__title-group">
-              <div className="ks-bento-card__icon">
-                <Copy size={18} weight="duotone" />
-              </div>
-              <span className="ks-bento-card__title">Copies</span>
-            </div>
-            <span className="ks-bento-card__badge">
-              {copies} {copies === 1 ? 'Copy' : 'Copies'}
-            </span>
-          </div>
-
-          <div className="ks-bento-card__body">
-            <div className="ks-copies-row">
-              <div className="ks-copies-stepper">
-                <button
-                  type="button"
-                  className="ks-stepper-btn"
-                  onClick={() => setCopies(c => Math.max(1, c - 1))}
-                  disabled={copies <= 1}
-                >
-                  −
-                </button>
-                <span className="ks-stepper-val">{copies}</span>
-                <button
-                  type="button"
-                  className="ks-stepper-btn"
-                  onClick={() => setCopies(c => Math.min(50, c + 1))}
-                  disabled={copies >= 50}
-                >
-                  +
-                </button>
-              </div>
-
-              <div className="ks-copies-presets">
-                {[1, 2, 3, 5, 10].map(cnt => (
-                  <button
-                    key={cnt}
-                    type="button"
-                    className={`ks-copy-chip ${copies === cnt ? 'ks-copy-chip--active' : ''}`}
-                    onClick={() => setCopies(cnt)}
-                  >
-                    {cnt}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Compact Utility Strip (Quality & Paper) ── */}
-      <div className="ks-compact-meta-strip">
-        <span>Paper: <strong>A4</strong></span>
-        <span>•</span>
-        <span>Quality:</span>
-        <button
-          type="button"
-          className={`ks-meta-opt-btn ${printDpi === '600' ? 'ks-meta-opt-btn--active' : ''}`}
-          onClick={() => setPrintDpi('600')}
-        >
-          ⚡ 600 DPI (Laser)
-        </button>
-        <button
-          type="button"
-          className={`ks-meta-opt-btn ${printDpi === '1200' ? 'ks-meta-opt-btn--active' : ''}`}
-          onClick={() => setPrintDpi('1200')}
-        >
-          💎 1200 DPI (HD)
-        </button>
-      </div>
-
-      {/* ── Fixed Bottom Action Bar ── */}
-      <footer className="ks-compact-bottom-bar">
-        <button
-          type="button"
-          className="ks-bottom-back-btn"
-          onClick={() => navigate('/upload')}
-        >
-          <ArrowLeft size={18} weight="bold" />
-          Back
-        </button>
-
-        <div className="ks-bottom-price-group">
-          <div className="ks-bottom-price-val">₹{pageDetails.totalAmount}.00</div>
-          <div className="ks-bottom-price-sub">
-            <span>{pageDetails.totalSheets} sheets ({pageDetails.includedPages} pgs × {copies}x)</span>
-            {pageDetails.savedSheets > 0 && (
-              <span className="ks-bottom-eco-pill">
-                🌱 Saved {pageDetails.savedSheets} sheets
-              </span>
-            )}
+          <div className="price-figure-wrap">
+            <span className="price-currency-symbol">₹</span>
+            <span className="price-pill-amount">{fileTotalPrice}</span>
+            <span className="price-tax-badge">inc. GST</span>
           </div>
         </div>
 
         <button
           type="button"
-          className="ks-bottom-continue-btn"
+          className="clean-continue-btn"
           onClick={handleContinue}
           id="settings-kiosk-continue"
         >
-          Review Order
-          <ArrowRight size={18} weight="bold" />
+          <span>Review Order</span>
+          <ArrowRight size={16} />
         </button>
-      </footer>
+      </div>
 
-      {/* ── 15-Second Inactivity Warning Dialog Modal ── */}
+      {/* ── Inactivity Warning Modal (Auto-Cancel Protection) ── */}
       {inactivityRemaining !== null && (
         <div className="ks-inactivity-modal-backdrop" onClick={resetInactivity}>
-          <div className="ks-inactivity-modal-card" onClick={e => e.stopPropagation()}>
+          <div className="ks-inactivity-modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="ks-inactivity-icon-pulse">
-              <Clock size={40} weight="fill" color="#dc2626" />
+              <Clock size={44} weight="fill" color="#dc2626" />
             </div>
-            <div className="ks-inactivity-countdown-badge">
-              {inactivityRemaining}
-            </div>
+            <div className="ks-inactivity-countdown-badge">{inactivityRemaining}</div>
             <h3 className="ks-inactivity-title">Are you still there?</h3>
             <p className="ks-inactivity-message">
-              Returning to home in <strong>{inactivityRemaining} seconds</strong> due to inactivity.
-              Touch anywhere to keep your session alive.
+              Returning to home screen in <strong>{inactivityRemaining} seconds</strong> due to
+              inactivity. Touch anywhere to keep your session alive.
             </p>
             <div className="ks-inactivity-actions">
               <button

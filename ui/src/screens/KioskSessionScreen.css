@@ -72,8 +72,8 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 18px;
-  border-radius: 999px;
+  padding: 8px 16px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.95);
   border: 1px solid var(--ks-border);
   box-shadow: 0 4px 16px rgba(220, 38, 38, 0.07), 0 2px 4px rgba(0, 0, 0, 0.03);
@@ -91,18 +91,41 @@
 }
 
 .ks-topbar-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
   background: var(--ks-red);
   box-shadow: 0 0 6px rgba(220, 38, 38, 0.5);
 }
 
 .ks-topbar-state-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
   box-shadow: 0 0 6px currentColor;
+}
+
+.ks-always-cancel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1.5px solid rgba(220, 38, 38, 0.35);
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--ks-red);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.1);
+  transition: all 0.2s var(--ks-ease);
+}
+
+.ks-always-cancel-btn:hover {
+  background: #fef2f2;
+  border-color: var(--ks-red);
+  transform: translateY(-1px);
 }
 
 /* ── Main Content Area ─────────────────────────────────────────────────────── */
@@ -154,11 +177,9 @@
   width: 100%;
   max-width: 520px;
   padding: 36px 42px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  background: #ffffff;
   border: 1.5px solid rgba(220, 38, 38, 0.24);
-  border-radius: 32px;
+  border-radius: 16px;
   box-shadow:
     0 24px 64px rgba(0, 0, 0, 0.16),
     0 4px 20px rgba(220, 38, 38, 0.08);
@@ -196,11 +217,43 @@
   justify-content: center;
   padding: 22px;
   background: #ffffff;
-  border-radius: 22px;
+  border-radius: 12px;
   border: 1.5px solid rgba(220, 38, 38, 0.2);
   box-shadow:
     0 8px 24px rgba(0, 0, 0, 0.06),
     0 2px 8px rgba(220, 38, 38, 0.04);
+}
+
+/* Switch to PIN Keypad button (Rectangular Rounded, NO CIRCLE/PILL) */
+.ks-pin-switch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 400px;
+  padding: 13px 22px;
+  margin-top: 4px;
+  background: #ffffff;
+  border: 1.5px solid var(--ks-red);
+  border-radius: 10px;
+  color: var(--ks-red);
+  font-family: var(--ks-font);
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.08);
+  transition: all 0.2s var(--ks-ease);
+}
+
+.ks-pin-switch-btn:hover {
+  background: #fef2f2;
+  box-shadow: 0 6px 20px rgba(220, 38, 38, 0.18);
+  transform: translateY(-1px);
+}
+
+.ks-pin-switch-btn:active {
+  transform: scale(0.98);
 }
 
 /* ── Active Flow Panel ─────────────────────────────────────────────────────── */
@@ -234,7 +287,7 @@
 .ks-step-dot {
   width: 30px;
   height: 30px;
-  border-radius: 50%;
+  border-radius: 6px;
   background: #f1f5f9;
   border: 1.5px solid #cbd5e1;
   display: flex;
@@ -394,8 +447,8 @@
   gap: 8px;
   padding: 8px 18px;
   background: rgba(22, 163, 74, 0.08);
-  border: 1px solid rgba(22, 163, 74, 0.28);
-  border-radius: 999px;
+  border: 1px solid rgba(220, 163, 74, 0.28);
+  border-radius: 8px;
   font-size: 0.84rem;
   font-weight: 700;
   color: #15803d;
@@ -674,7 +727,7 @@
 .ks-flow-tab-num {
   width: 26px;
   height: 26px;
-  border-radius: 50%;
+  border-radius: 6px;
   background: #f1f5f9;
   color: var(--ks-text-3);
   display: flex;
@@ -771,7 +824,7 @@
   transform: translateY(-50%);
   width: 44px;
   height: 44px;
-  border-radius: 50%;
+  border-radius: 8px;
   background: #ffffff;
   border: 1px solid rgba(220, 38, 38, 0.25);
   color: var(--ks-text-1);
@@ -1535,7 +1588,7 @@
   gap: 8px;
   padding: 8px 18px;
   min-height: 42px;
-  border-radius: 999px;
+  border-radius: 8px;
   background: #ffffff;
   border: 1.5px solid #dc2626;
   color: #dc2626;
@@ -1636,7 +1689,7 @@
   position: relative;
   width: 68px;
   height: 68px;
-  border-radius: 50%;
+  border-radius: 12px;
   background: rgba(220, 38, 38, 0.1);
   display: flex;
   align-items: center;
@@ -1646,7 +1699,7 @@
 .ks-inactivity-pulse-ring {
   position: absolute;
   inset: -6px;
-  border-radius: 50%;
+  border-radius: 14px;
   border: 2px solid rgba(220, 38, 38, 0.4);
   animation: ks-pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
 }
@@ -1669,7 +1722,7 @@
   justify-content: center;
   width: 84px;
   height: 84px;
-  border-radius: 50%;
+  border-radius: 14px;
   background: #fee2e2;
   border: 3px solid #dc2626;
   box-shadow: 0 4px 20px rgba(220, 38, 38, 0.25);

@@ -1,0 +1,266 @@
+/* ═══════════════════════════════════════════════════════════════
+   Morphing Popover Animation & Glassmorphism Effects
+   ═══════════════════════════════════════════════════════════════ */
+
+.morphing-popover-root {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.morphing-popover-trigger-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.morphing-popover-trigger-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  padding: 0;
+  outline: none;
+}
+
+/* Subtle Backdrop when open */
+.morphing-popover-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.22);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 998;
+}
+
+/* Popover Content Card with Premium Frosted Glassmorphism */
+.morphing-popover-card {
+  position: absolute;
+  z-index: 999;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 260px;
+  max-width: min(92vw, 360px);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(32px) saturate(220%) contrast(102%);
+  -webkit-backdrop-filter: blur(32px) saturate(220%) contrast(102%);
+  border: 1.5px solid rgba(255, 255, 255, 0.95);
+  box-shadow:
+    0 20px 48px -12px rgba(15, 23, 42, 0.25),
+    0 8px 20px -4px rgba(220, 38, 38, 0.12),
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 1),
+    inset 0 0 20px rgba(255, 255, 255, 0.5);
+  padding: 16px 18px;
+  color: #0f172a;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Alignments */
+.morphing-popover-card.align-start {
+  left: 0;
+  transform: none;
+}
+
+.morphing-popover-card.align-end {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+/* Reddish Brand Popover Variant */
+.morphing-popover-card.theme-crimson {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.94) 0%, rgba(254, 242, 242, 0.90) 100%);
+  border-color: rgba(254, 202, 202, 0.95);
+  box-shadow:
+    0 24px 52px -10px rgba(220, 38, 38, 0.22),
+    0 8px 24px -4px rgba(0, 0, 0, 0.1),
+    inset 0 1.5px 2px rgba(255, 255, 255, 1);
+}
+
+.morphing-popover-card.position-top {
+  top: auto;
+  bottom: calc(100% + 14px);
+}
+
+/* ── Change Document Popover Content ── */
+.change-doc-popover-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 270px;
+}
+
+.change-doc-popover-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.change-doc-warn-icon {
+  color: #dc2626;
+  flex-shrink: 0;
+}
+
+.change-doc-title {
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.change-doc-desc {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.45;
+  color: #64748b;
+  margin: 0;
+}
+
+.change-doc-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.change-doc-cancel-btn {
+  background: transparent;
+  border: 1px solid rgba(203, 213, 225, 0.8);
+  color: #475569;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.change-doc-cancel-btn:hover {
+  background: rgba(241, 245, 249, 0.8);
+  color: #0f172a;
+}
+
+.change-doc-confirm-btn {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border: none;
+  color: #ffffff;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.35);
+  transition: all 0.15s ease;
+}
+
+.change-doc-confirm-btn:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  transform: scale(1.02);
+}
+
+/* ── Live Price Calculation Popover Content ── */
+.price-calc-popover-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 290px;
+}
+
+.price-calc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+  padding-bottom: 8px;
+}
+
+.price-calc-title {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.price-calc-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #dc2626;
+  background: rgba(239, 68, 68, 0.1);
+  padding: 2px 7px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.price-calc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.price-calc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: #475569;
+}
+
+.price-calc-row.highlight {
+  font-weight: 700;
+  color: #0f172a;
+  border-top: 1px dashed rgba(203, 213, 225, 0.8);
+  padding-top: 6px;
+  margin-top: 2px;
+}
+
+.price-calc-row.highlight .price-calc-val {
+  font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+  font-size: 16px;
+  font-weight: 800;
+  color: #dc2626;
+}
+
+.price-calc-val {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.price-calc-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+.price-calc-done-btn {
+  background: #0f172a;
+  color: #ffffff;
+  border: none;
+  padding: 5px 14px;
+  border-radius: 8px;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.price-calc-done-btn:hover {
+  background: #1e293b;
+  transform: scale(1.02);
+}
+

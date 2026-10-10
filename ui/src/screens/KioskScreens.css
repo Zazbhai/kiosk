@@ -115,7 +115,7 @@
 
 .kiosk-waiting__dot {
   width: 10px; height: 10px;
-  border-radius: 50%;
+  border-radius: 2px;
   background: var(--clr-accent-light);
 }
 

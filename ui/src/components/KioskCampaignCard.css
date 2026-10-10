@@ -87,7 +87,7 @@
 .ks-ad-dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: 3px;
   background: #cbd5e1;
   border: none;
   padding: 0;

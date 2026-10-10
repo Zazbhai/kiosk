@@ -48,7 +48,7 @@
   -webkit-transform: translate3d(-50%, -50%, 0);
   width: min(800px, 90vw);
   height: min(800px, 90vw);
-  border-radius: 50%;
+  border-radius: 24px;
   background: radial-gradient(circle, rgba(255, 255, 255, 0.08) 0%, transparent 68%);
   pointer-events: none;
   will-change: opacity;
@@ -74,7 +74,7 @@
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: #ffffff;
   padding: 8px 16px;
-  border-radius: 9999px;
+  border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -84,7 +84,7 @@
 .oopss-station-dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: 2px;
   background: #facc15;
   box-shadow: 0 0 6px #facc15;
 }
@@ -162,7 +162,7 @@
   width: clamp(110px, 18vw, 170px);
   height: 12px;
   background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.42) 0%, rgba(0, 0, 0, 0) 70%);
-  border-radius: 50%;
+  border-radius: 6px;
   margin-top: 10px;
   will-change: transform, opacity;
   transform: translate3d(0, 0, 0);
@@ -232,7 +232,7 @@
   background: rgba(0, 0, 0, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.18);
   padding: 10px 22px;
-  border-radius: 9999px;
+  border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
@@ -240,7 +240,7 @@
   position: relative;
   width: 10px;
   height: 10px;
-  border-radius: 50%;
+  border-radius: 2px;
   background: #facc15;
 }
 
@@ -248,7 +248,7 @@
   content: '';
   position: absolute;
   inset: -2px;
-  border-radius: 50%;
+  border-radius: 2px;
   background: #facc15;
   opacity: 0.6;
   animation: liveDotPulse 1.6s ease-in-out infinite;
@@ -323,7 +323,7 @@
   border: 1px solid rgba(255, 255, 255, 0.22);
   color: #ffffff;
   padding: 12px 28px;
-  border-radius: 9999px;
+  border-radius: 8px;
   font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.02em;

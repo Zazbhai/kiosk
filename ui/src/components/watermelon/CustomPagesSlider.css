@@ -1,0 +1,447 @@
+/* ══════════════════════════════════════════════════════════
+   Custom Pages Slider & Interactive Chip Selector
+   ══════════════════════════════════════════════════════════ */
+
+.cps-wrapper {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 10px;
+}
+
+.cps-mode-toggle-wrap {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.cps-single-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0 2px 0;
+  width: 100%;
+}
+
+.cps-single-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(220, 38, 38, 0.08);
+  border: 1.5px solid rgba(220, 38, 38, 0.22);
+  color: #dc2626;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 16px;
+  border-radius: 6px;
+  letter-spacing: 0.01em;
+  box-shadow: 0 2px 6px -1px rgba(220, 38, 38, 0.12);
+}
+
+.cps-single-check {
+  color: #dc2626;
+}
+
+.cps-all-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.03);
+  border: 1px dashed rgba(15, 23, 42, 0.12);
+  text-align: center;
+  animation: cpsFadeIn 0.2s ease;
+}
+
+.cps-all-indicator-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+@keyframes cpsFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.cps-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1.5px solid rgba(239, 68, 68, 0.28);
+  border-radius: 18px;
+  padding: 14px 16px;
+  box-shadow:
+    0 10px 24px -4px rgba(220, 38, 38, 0.08),
+    0 2px 6px -1px rgba(0, 0, 0, 0.04),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 1);
+  box-sizing: border-box;
+  margin-top: 4px;
+}
+
+/* ── Top Header ── */
+.cps-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.cps-header-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.cps-header-icon {
+  color: #dc2626;
+}
+
+.cps-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cps-badge-count {
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(220, 38, 38, 0.08);
+  color: #dc2626;
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  padding: 2px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.02em;
+}
+
+.cps-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.05);
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cps-close-btn:hover {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+}
+
+/* ── 1. Dual Range Slider Section ── */
+.cps-slider-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: linear-gradient(135deg, rgba(254, 242, 242, 0.6) 0%, rgba(255, 255, 255, 0.7) 100%);
+  border: 1px solid rgba(254, 202, 202, 0.6);
+  border-radius: 14px;
+  padding: 10px 14px;
+}
+
+.cps-slider-meta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.cps-slider-bound-tag {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid rgba(220, 38, 38, 0.18);
+  border-radius: 8px;
+  padding: 3px 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.cps-bound-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #64748b;
+  letter-spacing: 0.04em;
+}
+
+.cps-bound-val {
+  font-size: 14px;
+  font-weight: 800;
+  color: #dc2626;
+  font-variant-numeric: tabular-nums;
+}
+
+.cps-slider-arrow {
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+}
+
+/* Dual Range Slider Container */
+.cps-dual-slider-wrap {
+  position: relative;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  margin: 4px 0;
+}
+
+.cps-slider-track-bg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 6px;
+  border-radius: 3px;
+  background: #e2e8f0;
+  pointer-events: none;
+}
+
+.cps-slider-track-fill {
+  position: absolute;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+  box-shadow: 0 0 8px rgba(220, 38, 38, 0.4);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.cps-range-input {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  background: none;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+  z-index: 2;
+}
+
+.cps-range-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: #ffffff;
+  border: 3px solid #dc2626;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.35);
+  cursor: grab;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cps-range-input::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.45);
+}
+
+.cps-range-input::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.22);
+}
+
+.cps-range-input::-moz-range-thumb {
+  pointer-events: auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: #ffffff;
+  border: 3px solid #dc2626;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.35);
+  cursor: grab;
+}
+
+.cps-slider-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: #94a3b8;
+  font-weight: 600;
+  padding: 0 2px;
+}
+
+/* ── 2. Individual Page Chips Strip ── */
+.cps-chips-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cps-chips-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cps-chips-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #475569;
+  letter-spacing: 0.03em;
+}
+
+.cps-chips-hint {
+  font-size: 11px;
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.cps-chips-scroll {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 120px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.cps-page-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 32px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  border: 1.5px solid #e2e8f0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+}
+
+.cps-page-chip:hover {
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+  transform: translateY(-1px);
+}
+
+.cps-page-chip.selected {
+  background: #dc2626 !important;
+  border-color: #dc2626 !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.32);
+}
+
+.cps-page-chip.in-range:not(.selected) {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.3);
+  color: #dc2626;
+}
+
+.cps-chip-check {
+  margin-right: 1px;
+}
+
+/* ── 3. Direct Syntax Input Row ── */
+.cps-input-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cps-input-shell {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 170px;
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 9px;
+  padding: 4px 8px;
+  gap: 6px;
+  transition: border-color 0.15s ease;
+}
+
+.cps-input-shell:focus-within {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+}
+
+.cps-input-prefix {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #64748b;
+  user-select: none;
+}
+
+.cps-text-input {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #0f172a;
+  width: 100%;
+  font-family: inherit;
+}
+
+.cps-clear-input-btn {
+  font-size: 10px;
+  font-weight: 700;
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+  border: none;
+  border-radius: 5px;
+  padding: 3px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cps-preset-pills {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cps-preset-btn {
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cps-preset-btn:hover {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.25);
+  color: #dc2626;
+}
+
+.cps-input-error-msg {
+  font-size: 11px;
+  font-weight: 600;
+  color: #dc2626;
+  margin-top: -4px;
+}

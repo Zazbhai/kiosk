@@ -8,11 +8,11 @@
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
-  background: #09090b;
+  background: #ffffff;
   contain: strict;
 }
 
-/* Moving Ad Layer */
+/* Moving Ad Layer (Subtle ambient tint, covered with white) */
 .kiosk-ad-layer {
   position: absolute;
   inset: -60px; /* Bleed for smooth panning without edge seams */
@@ -22,19 +22,16 @@
   will-change: transform, opacity;
   transform: translate3d(0, 0, 0);
   transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1);
-  filter: saturate(1.15) brightness(0.95);
+  filter: saturate(0.5) brightness(1.1);
 }
 
-/* Calibrated Contrast Overlay (Ensures background ad is vibrant while text & QR are 100% crisp) */
+/* White Cover Overlay (Covers the ad with clean white diffusion) */
 .kiosk-ad-vignette {
   position: absolute;
   inset: 0;
-  background: radial-gradient(
-    ellipse 75% 70% at 50% 48%,
-    rgba(15, 23, 42, 0.22) 0%,
-    rgba(15, 23, 42, 0.42) 55%,
-    rgba(15, 23, 42, 0.72) 100%
-  );
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   pointer-events: none;
   z-index: 2;
 }
@@ -46,30 +43,29 @@
 
 @keyframes adDriftMotion {
   0% {
-    transform: translate3d(-30px, -20px, 0) scale(1.04);
+    transform: translate3d(-25px, -15px, 0) scale(1.03);
   }
   50% {
-    transform: translate3d(15px, 10px, 0) scale(1.08);
+    transform: translate3d(10px, 8px, 0) scale(1.06);
   }
   100% {
-    transform: translate3d(35px, 25px, 0) scale(1.12);
+    transform: translate3d(25px, 20px, 0) scale(1.08);
   }
 }
 
-/* ─── Bottom Moving Text Ticker (Moving Left-to-Right, Little Transparency Only) ─── */
-.ks-ad-bottom-ticker {
+/* ─── Bottom Moving Text (Transparent Background, No Box, Moving Left-to-Right) ─── */
+.ks-ad-bottom-bar {
   position: fixed;
-  bottom: 0;
+  bottom: 8px;
   left: 0;
   right: 0;
-  height: 52px;
+  height: 42px;
   z-index: 60;
-  /* Little transparency only: 94% solid dark obsidian glass */
-  background: rgba(15, 23, 42, 0.94);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-top: 1.5px solid rgba(220, 38, 38, 0.45);
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.35);
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-top: none !important;
+  box-shadow: none !important;
   display: flex;
   align-items: center;
   overflow: hidden;
@@ -78,66 +74,31 @@
   box-sizing: border-box;
 }
 
-/* Fixed Sponsor Badge on Left */
-.ks-ad-ticker-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: #dc2626;
-  color: #ffffff;
-  font-family: var(--ks-font, 'Geist', sans-serif);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 5px 12px;
-  margin-left: 14px;
-  border-radius: 9999px;
-  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.4);
-  flex-shrink: 0;
-  z-index: 2;
-}
-
-.ks-ad-ticker-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #ffffff;
-  animation: pulseDot 1.4s ease-in-out infinite alternate;
-}
-
-@keyframes pulseDot {
-  from { opacity: 0.5; transform: scale(0.9); }
-  to { opacity: 1; transform: scale(1.2); }
-}
-
 /* Marquee Viewport & Track */
 .ks-ad-ticker-viewport {
-  flex: 1;
+  width: 100%;
   overflow: hidden;
   position: relative;
   height: 100%;
   display: flex;
   align-items: center;
-  mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
-  -webkit-mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
 }
 
 /* Continuous movement from LEFT TO RIGHT */
 .ks-ad-ticker-track-ltr {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   white-space: nowrap;
   will-change: transform;
-  animation: tickerMoveLeftToRight 30s linear infinite;
+  animation: tickerMoveLeftToRight 25s linear infinite;
 }
 
 @keyframes tickerMoveLeftToRight {
   0% {
-    transform: translate3d(-33.333333%, 0, 0);
+    transform: translate3d(-100%, 0, 0);
   }
   100% {
-    transform: translate3d(0%, 0, 0);
+    transform: translate3d(100vw, 0, 0);
   }
 }
 
@@ -145,35 +106,59 @@
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  padding-right: 48px;
+  flex-shrink: 0;
+}
+
+/* Sponsor Badge (Rounded Rectangle, NO CIRCLE/PILL) */
+.ks-ad-ticker-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #dc2626;
+  color: #ffffff;
+  font-family: var(--ks-font, 'Geist', sans-serif);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.25);
   flex-shrink: 0;
 }
 
 .ks-ad-ticker-advertiser {
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   font-weight: 800;
-  color: #38bdf8;
+  color: #dc2626;
   letter-spacing: -0.01em;
 }
 
 .ks-ad-ticker-divider {
-  color: rgba(255, 255, 255, 0.35);
-  font-size: 0.8rem;
+  color: #94a3b8;
+  font-size: 0.85rem;
 }
 
 .ks-ad-ticker-text {
   font-size: 0.88rem;
-  font-weight: 600;
-  color: #ffffff;
+  font-weight: 700;
+  color: #0f172a;
   letter-spacing: -0.01em;
 }
 
+.ks-ad-ticker-sub {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+/* CTA Pill (Rounded Rectangle, NO CIRCLE/PILL) */
 .ks-ad-ticker-cta {
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 700;
-  color: #fde047;
-  background: rgba(253, 224, 71, 0.12);
-  padding: 2px 8px;
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.07);
+  padding: 3px 8px;
   border-radius: 6px;
-  border: 1px solid rgba(253, 224, 71, 0.25);
+  border: 1px solid rgba(220, 38, 38, 0.22);
 }

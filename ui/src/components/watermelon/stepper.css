@@ -1,0 +1,160 @@
+/* Watermelon Animated Numeric Stepper */
+
+.wm-stepper-container {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.wm-stepper-track {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  position: relative;
+}
+
+/* Compact size for expanded-card-actions */
+.wm-stepper-compact .wm-stepper-track {
+  padding: 3px 6px;
+  gap: 6px;
+}
+
+.wm-stepper-compact .wm-stepper-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.wm-stepper-compact .wm-stepper-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: #ffffff;
+  transform: scale(1.06);
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.35);
+}
+
+.wm-stepper-compact .wm-stepper-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.wm-stepper-compact .wm-stepper-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.wm-stepper-compact .wm-stepper-display {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  perspective: 600px;
+  transform-style: preserve-3d;
+}
+
+.wm-stepper-compact .wm-stepper-digit-slot {
+  position: relative;
+  width: 11px;
+  height: 28px;
+  perspective: 600px;
+  transform-style: preserve-3d;
+}
+
+.wm-stepper-compact .wm-stepper-digit {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono, monospace);
+  font-size: 17px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Normal standalone size */
+.wm-stepper-normal .wm-stepper-track {
+  padding: 4px 6px;
+  gap: 8px;
+}
+
+.wm-stepper-normal .wm-stepper-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.wm-stepper-normal .wm-stepper-btn:hover:not(:disabled) {
+  background: #dc2626;
+  color: #ffffff;
+  border-color: #dc2626;
+}
+
+.wm-stepper-normal .wm-stepper-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.wm-stepper-normal .wm-stepper-display {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 36px;
+  height: 36px;
+  perspective: 600px;
+  transform-style: preserve-3d;
+}
+
+.wm-stepper-normal .wm-stepper-digit-slot {
+  position: relative;
+  width: 14px;
+  height: 36px;
+  perspective: 600px;
+  transform-style: preserve-3d;
+}
+
+.wm-stepper-normal .wm-stepper-digit {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono, monospace);
+  font-size: 22px;
+  font-weight: 700;
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+}

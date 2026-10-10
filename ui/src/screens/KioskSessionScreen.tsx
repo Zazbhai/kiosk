@@ -876,6 +876,20 @@ export default function KioskSessionScreen() {
                   bgColor="#ffffff"
                 />
               </div>
+
+              {/* Direct PIN Keypad Switch */}
+              <button
+                type="button"
+                className="ks-pin-switch-btn"
+                onClick={() => navigate('/pin')}
+                id="kiosk-switch-to-pin"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+                <span>Already Have a PIN? Enter on Keypad</span>
+              </button>
             </div>
           </div>
         )}

@@ -136,46 +136,42 @@ export default function KioskAdBackground({ kioskId: propKioskId }: KioskAdBackg
     return null
   }
 
-  const tickerText = `${currentAd.headline || currentAd.title} — ${currentAd.tagline || ''}`
-
   return (
     <>
-      {/* ── Background Moving Advertisement Image ── */}
+      {/* ── Background Moving Advertisement Image (Covered with White) ── */}
       <div className="kiosk-ad-bg-canvas" aria-hidden="true">
         <div
           className="kiosk-ad-layer kiosk-ad-motion-drift"
           style={{
             backgroundImage: `url(${currentAd.mediaUrl})`,
-            opacity: fadeOpacity * 0.75,
+            opacity: fadeOpacity * 0.08,
           }}
         />
         <div className="kiosk-ad-vignette" />
       </div>
 
-      {/* ── Bottom Marquee Ticker: Text Moving From Left to Right (Little Transparency Only) ── */}
-      <div className="ks-ad-bottom-ticker" role="marquee" aria-label="Campus Announcement">
-        <div className="ks-ad-ticker-badge">
-          <span className="ks-ad-ticker-dot" />
-          <span>{currentAd.badgeText || 'SPONSOR'}</span>
-        </div>
-
+      {/* ── Bottom Text: Current Advertisement Details Only, Transparent Background (Moving Left to Right) ── */}
+      <div className="ks-ad-bottom-bar" role="marquee" aria-label="Campus Announcement">
         <div className="ks-ad-ticker-viewport">
           <div className="ks-ad-ticker-track-ltr">
-            {/* Repeated 6 times to guarantee seamless infinite loop from left to right */}
-            {[0, 1, 2, 3, 4, 5].map((idx) => (
-              <div key={idx} className="ks-ad-ticker-segment">
-                <span className="ks-ad-ticker-advertiser">{currentAd.advertiser}</span>
-                <span className="ks-ad-ticker-divider">•</span>
-                <span className="ks-ad-ticker-text">{tickerText}</span>
-                {currentAd.callToAction && (
-                  <>
-                    <span className="ks-ad-ticker-divider">•</span>
-                    <span className="ks-ad-ticker-cta">{currentAd.callToAction}</span>
-                  </>
-                )}
-                <span className="ks-ad-ticker-divider">★</span>
-              </div>
-            ))}
+            <div className="ks-ad-ticker-segment">
+              <span className="ks-ad-ticker-badge">{currentAd.badgeText || 'SPONSOR'}</span>
+              <span className="ks-ad-ticker-advertiser">{currentAd.advertiser}</span>
+              <span className="ks-ad-ticker-divider">•</span>
+              <span className="ks-ad-ticker-text">{currentAd.headline || currentAd.title}</span>
+              {currentAd.tagline && (
+                <>
+                  <span className="ks-ad-ticker-divider">—</span>
+                  <span className="ks-ad-ticker-sub">{currentAd.tagline}</span>
+                </>
+              )}
+              {currentAd.callToAction && (
+                <>
+                  <span className="ks-ad-ticker-divider">•</span>
+                  <span className="ks-ad-ticker-cta">{currentAd.callToAction}</span>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -109,7 +109,7 @@ body {
 .statusbar__dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: 2px;
   background: var(--clr-accent);
   box-shadow: 0 0 6px rgba(220, 38, 38, 0.6);
 }

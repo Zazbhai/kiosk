@@ -64,7 +64,7 @@
 .kiosk-top-bar__dot {
   width: 10px;
   height: 10px;
-  border-radius: 50%;
+  border-radius: 2px;
   background: #10b981;
   box-shadow: 0 0 10px rgba(16, 185, 129, 0.7);
   animation: kioskDotPulse 2s ease-in-out infinite;
@@ -265,7 +265,7 @@
   display: inline-block;
   width: calc(var(--s) * 1);
   height: calc(var(--s) * 1);
-  border-radius: 50%;
+  border-radius: 2px;
   background: #dc2626;
   margin-right: calc(var(--s) * 0.9);
   vertical-align: 0.5px;
@@ -293,7 +293,7 @@
   display: block;
   width: calc(var(--s) * 0.85);
   height: calc(var(--s) * 0.85);
-  border-radius: 50%;
+  border-radius: 2px;
   text-decoration: none;
 }
 
@@ -405,7 +405,7 @@
   width: calc(var(--s) * 4.4);
   height: calc(var(--s) * 4.4);
   margin-top: calc(var(--s) * -0.4);
-  border-radius: 50%;
+  border-radius: 8px;
   border: 0;
   padding: 0;
   cursor: pointer;
@@ -588,7 +588,7 @@
 .mono-status-dot {
   width: 9px;
   height: 9px;
-  border-radius: 50%;
+  border-radius: 2px;
   background: #ef4444;
   box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
   animation: monoStatusPulse 1.2s ease-in-out infinite alternate;

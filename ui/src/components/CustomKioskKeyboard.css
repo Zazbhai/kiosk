@@ -23,7 +23,7 @@
   gap: 6px;
   background: rgba(255, 255, 255, 0.04);
   padding: 4px;
-  border-radius: 999px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -32,7 +32,7 @@
   align-items: center;
   gap: 8px;
   padding: 6px 16px;
-  border-radius: 999px;
+  border-radius: 6px;
   border: none;
   background: transparent;
   color: var(--clr-text-3, #71717a);
