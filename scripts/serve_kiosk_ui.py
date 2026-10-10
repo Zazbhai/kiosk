@@ -96,6 +96,33 @@ import urllib.parse
 import json
 import threading
 
+def _parse_page_range_helper(range_str, total_pages):
+    val = (range_str or "").strip().lower()
+    if val in ("", "all", "*"):
+        return list(range(1, max(1, total_pages) + 1))
+    selected = set()
+    for part in val.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            pieces = part.split("-", 1)
+            try:
+                s, e = int(pieces[0]), int(pieces[1])
+                for x in range(s, e + 1):
+                    if total_pages <= 0 or (1 <= x <= total_pages):
+                        selected.add(x)
+            except ValueError:
+                pass
+        else:
+            try:
+                x = int(part)
+                if total_pages <= 0 or (1 <= x <= total_pages):
+                    selected.add(x)
+            except ValueError:
+                pass
+    return sorted(selected) if selected else list(range(1, max(1, total_pages) + 1))
+
 def print_staged_order_in_background(order: dict):
     """Executes physical print via CUPS immediately on the Pi without needing remote API roundtrip."""
     try:
@@ -319,6 +346,19 @@ class KioskHTTPHandler(SimpleHTTPRequestHandler):
                 print(f"[Kiosk Server] 🟢 LOCAL MATCH CONFIRMED for PIN '{pin}' -> Order {order_id} ({matched.get('fileName')})")
                 if remove_staged_order:
                     remove_staged_order(pin, order_id)
+
+                # Ensure user specified pages are explicitly calculated and returned to Kiosk UI
+                p_range = str(matched.get("pageRange") or matched.get("pages") or (matched.get("printSettings") or {}).get("pageRange") or "ALL").strip()
+                doc_pages = int(matched.get("totalDocPages") or matched.get("docPageCount") or matched.get("pageCount") or 1)
+                user_pages = matched.get("selectedPages")
+                if not user_pages or not isinstance(user_pages, list):
+                    user_pages = _parse_page_range_helper(p_range, doc_pages)
+                matched["selectedPages"] = user_pages
+                matched["pageCount"] = len(user_pages)
+                matched["totalDocPages"] = doc_pages
+                matched["docPageCount"] = doc_pages
+                matched["pageRange"] = p_range
+                matched["pages"] = p_range
 
                 # Immediately launch physical printing in background thread
                 threading.Thread(target=print_staged_order_in_background, args=(matched,), daemon=True).start()

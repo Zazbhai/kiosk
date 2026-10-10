@@ -4,6 +4,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { QrCode, Printer } from '@phosphor-icons/react'
 import ParticleBackground from '../components/ParticleBackground'
 import { useKioskSiteUrl } from '../utils/siteConfig'
+import { parsePageRange } from '../utils/pageRange'
 import './PinReleaseScreen.css'
 
 // Isolated clock component: re-renders only itself every second without causing keypad re-renders
@@ -197,14 +198,69 @@ export default function PinReleaseScreen() {
           const ord = data.order || data.data || data
           const orderNum = ord?.orderNumber || ord?.orderId || 'PB-' + Math.floor(100000 + Math.random() * 900000)
           const fileNm = ord?.fileName || 'Document.pdf'
-          const pCount = Math.max(1, Number(ord?.pageCount || ord?.totalPages || ord?.pages || ord?.totalSheets || 1))
-          const cMode = ord?.colourMode || ord?.colour || 'BW'
+          const cMode = ord?.colourMode || ord?.colour || ord?.printSettings?.colourMode || 'BW'
+
+          // Extract user specified page range and calculate exact user specified prints
+          const rawRange =
+            ord?.pageRange ||
+            ord?.pages ||
+            ord?.printSettings?.pageRange ||
+            ord?.printSettings?.pages ||
+            'ALL'
+
+          const rawDocPages = Math.max(
+            1,
+            Number(
+              ord?.totalDocPages ||
+              ord?.docPageCount ||
+              ord?.documentPages ||
+              ord?.pageCount ||
+              ord?.totalPages ||
+              1
+            )
+          )
+
+          let userPages: number[] = []
+          if (Array.isArray(ord?.selectedPages) && ord.selectedPages.length > 0) {
+            userPages = ord.selectedPages.map(Number).filter((n: number) => !isNaN(n) && n >= 1)
+          } else if (typeof ord?.selectedPages === 'string') {
+            try {
+              const parsed = JSON.parse(ord.selectedPages)
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                userPages = parsed.map(Number).filter((n: number) => !isNaN(n) && n >= 1)
+              }
+            } catch {}
+          }
+
+          if (userPages.length === 0) {
+            userPages = parsePageRange(rawRange, rawDocPages)
+          }
+
+          const copies = Math.max(1, Number(ord?.copies || ord?.printSettings?.copies || 1))
+          const pCount = userPages.length
 
           sessionStorage.setItem('pb_order_id', orderNum)
           sessionStorage.setItem('pb_file_name', fileNm)
           sessionStorage.setItem('pb_page_count', String(pCount))
+          sessionStorage.setItem('pb_doc_page_count', String(rawDocPages))
+          sessionStorage.setItem('pb_selected_pages', JSON.stringify(userPages))
+          sessionStorage.setItem('pb_page_range', String(rawRange))
+          sessionStorage.setItem('pb_copies', String(copies))
           sessionStorage.setItem('pb_colour_mode', cMode)
           sessionStorage.setItem('pb_release_pin', codeToVerify)
+          if (ord?.pageColours || ord?.printSettings?.pageColours) {
+            const pc = ord.pageColours || ord.printSettings?.pageColours
+            sessionStorage.setItem('pb_page_colours', typeof pc === 'string' ? pc : JSON.stringify(pc))
+          } else {
+            sessionStorage.removeItem('pb_page_colours')
+          }
+          if (ord?.pageCopies || ord?.printSettings?.pageCopies) {
+            const pcp = ord.pageCopies || ord.printSettings?.pageCopies
+            sessionStorage.setItem('pb_page_copies', typeof pcp === 'string' ? pcp : JSON.stringify(pcp))
+          } else {
+            sessionStorage.removeItem('pb_page_copies')
+          }
+          sessionStorage.setItem('pb_order_data', JSON.stringify(ord))
 
           setVerifiedInfo({
             orderNumber: orderNum,
@@ -441,7 +497,7 @@ export default function PinReleaseScreen() {
         <h2>Verified</h2>
         <span>
           {verifiedInfo?.orderNumber
-            ? `Releasing Order ${verifiedInfo.orderNumber} • Dispensing to printer…`
+            ? `Releasing Order ${verifiedInfo.orderNumber} • Dispensing ${verifiedInfo.pageCount} ${verifiedInfo.pageCount === 1 ? 'page' : 'pages'} to printer…`
             : 'Starting hardware print… Please collect your pages!'}
         </span>
       </section>

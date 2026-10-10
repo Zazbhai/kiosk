@@ -342,6 +342,22 @@ class KioskWsClient:
                     file_name = payload.get("fileName") or "document.pdf"
                     print(f"[WSS Kiosk Client] 📥 Staged print job received: Order {order_id} ({order_number}) | Release PIN / OTP: {release_pin} | File: {file_name}")
 
+                    # Ensure user specified prints are explicitly resolved
+                    p_range = str(payload.get("pageRange") or payload.get("pages") or (payload.get("printSettings") or {}).get("pageRange") or "ALL").strip()
+                    doc_pages = int(payload.get("totalDocPages") or payload.get("docPageCount") or payload.get("pageCount") or 1)
+                    if not payload.get("selectedPages") or not isinstance(payload.get("selectedPages"), list):
+                        try:
+                            from cups_controller import CupsController
+                            payload["selectedPages"] = CupsController._parse_page_range(p_range, doc_pages)
+                        except Exception:
+                            pass
+                    if payload.get("selectedPages"):
+                        payload["pageCount"] = len(payload["selectedPages"])
+                        payload["totalDocPages"] = doc_pages
+                        payload["docPageCount"] = doc_pages
+                        payload["pageRange"] = p_range
+                        payload["pages"] = p_range
+
                     # Index in memory for instant local and network verification
                     if order_id:
                         self.staged_jobs[order_id] = payload

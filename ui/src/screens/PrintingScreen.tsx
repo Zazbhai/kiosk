@@ -1,13 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight } from '@phosphor-icons/react'
+import { parsePageRange, resolveUserSpecifiedSheets, type PrintSheet } from '../utils/pageRange'
 import './PrintingScreen.css'
-
-interface PrintSheet {
-  fileName: string
-  pageIndex: number
-  mode: 'mono' | 'color'
-}
 
 const R = (a: number, b: number) => a + Math.random() * (b - a)
 
@@ -73,8 +68,6 @@ export default function PrintingScreen() {
   // Order Details from Session Storage
   const orderId = sessionStorage.getItem('pb_order_id') || 'PB-' + Math.floor(100000 + Math.random() * 900000)
   const fileName = sessionStorage.getItem('pb_file_name') || 'document.pdf'
-  const rawPageCount = Number(sessionStorage.getItem('pb_page_count') || 1)
-  const pageCount = Math.max(1, isNaN(rawPageCount) ? 1 : rawPageCount)
   const rawColour = sessionStorage.getItem('pb_colour_mode') || 'BW'
   const primaryMode: 'mono' | 'color' =
     rawColour.toUpperCase() === 'COLOUR' || rawColour.toUpperCase() === 'COLOR'
@@ -84,17 +77,78 @@ export default function PrintingScreen() {
   const kioskId = import.meta.env.VITE_KIOSK_ID || sessionStorage.getItem('pb_kiosk_id') || 'PB-001'
   const kioskName = import.meta.env.VITE_KIOSK_NAME || sessionStorage.getItem('pb_kiosk_name') || 'PrintBooth — Station 1'
 
-  // Construct sheet queue
+  // Construct sheet queue strictly for user specified prints
   const [sheetsQueue] = useState<PrintSheet[]>(() => {
-    const list: PrintSheet[] = []
-    for (let p = 1; p <= pageCount; p++) {
-      list.push({
-        fileName,
-        pageIndex: p,
-        mode: primaryMode,
-      })
+    let userPages: number[] = []
+    const rawSelected = sessionStorage.getItem('pb_selected_pages')
+    if (rawSelected) {
+      try {
+        const parsed = JSON.parse(rawSelected)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          userPages = parsed.map(Number).filter(n => !isNaN(n) && n >= 1)
+        }
+      } catch {}
     }
-    return list
+
+    const rawDocPages = Math.max(
+      1,
+      Number(sessionStorage.getItem('pb_doc_page_count') || sessionStorage.getItem('pb_page_count') || 1)
+    )
+    const rawRange = sessionStorage.getItem('pb_page_range') || 'ALL'
+
+    if (userPages.length === 0 && rawRange && rawRange.toUpperCase() !== 'ALL') {
+      userPages = parsePageRange(rawRange, rawDocPages)
+    }
+
+    if (userPages.length === 0) {
+      const rawOrder = sessionStorage.getItem('pb_order_data')
+      if (rawOrder) {
+        try {
+          const ord = JSON.parse(rawOrder)
+          if (Array.isArray(ord.selectedPages) && ord.selectedPages.length > 0) {
+            userPages = ord.selectedPages.map(Number).filter((n: number) => !isNaN(n) && n >= 1)
+          } else {
+            const rangeStr = ord.pageRange || ord.pages || ord.printSettings?.pageRange || ord.printSettings?.pages
+            if (rangeStr && rangeStr.toUpperCase() !== 'ALL') {
+              const docLimit = Math.max(1, Number(ord.totalDocPages || ord.pageCount || rawDocPages))
+              userPages = parsePageRange(rangeStr, docLimit)
+            }
+          }
+        } catch {}
+      }
+    }
+
+    // Fallback if ALL or no range: use raw page count from session
+    if (userPages.length === 0) {
+      const rawCount = Number(sessionStorage.getItem('pb_page_count') || 1)
+      const count = Math.max(1, isNaN(rawCount) ? 1 : rawCount)
+      userPages = Array.from({ length: count }, (_, i) => i + 1)
+    }
+
+    const globalCopies = Math.max(1, Number(sessionStorage.getItem('pb_copies') || 1))
+
+    let pageColours: Record<string, string> = {}
+    try {
+      const rawPc = sessionStorage.getItem('pb_page_colours')
+      if (rawPc) pageColours = JSON.parse(rawPc)
+    } catch {}
+
+    let pageCopies: Record<string, number> = {}
+    try {
+      const rawPcp = sessionStorage.getItem('pb_page_copies')
+      if (rawPcp) pageCopies = JSON.parse(rawPcp)
+    } catch {}
+
+    return resolveUserSpecifiedSheets({
+      fileName,
+      primaryMode,
+      selectedPages: userPages,
+      pageRange: rawRange,
+      totalDocPages: rawDocPages,
+      copies: globalCopies,
+      pageColours,
+      pageCopies,
+    })
   })
 
   // State
@@ -135,7 +189,7 @@ export default function PrintingScreen() {
       const p = document.createElement('div')
       p.className = 'mono-paper'
       p.dataset.m = sheet.mode
-      p.innerHTML = generateFallbackArt(sheetNumber, sheet.mode) + '<div class="mono-cover"></div>'
+      p.innerHTML = generateFallbackArt(sheet.pageIndex, sheet.mode) + '<div class="mono-cover"></div>'
 
       plane.appendChild(p)
 
@@ -318,7 +372,7 @@ export default function PrintingScreen() {
           <span>
             {isCompleted
               ? `Printed ${sheetsQueue.length} ${sheetsQueue.length === 1 ? 'Page' : 'Pages'} · Ready in Tray Below ↓`
-              : `Printing Page ${currentSheetIndex} of ${sheetsQueue.length} · ${fileName} · ${primaryMode === 'color' ? 'Color' : 'B&W'}`}
+              : `Printing Page ${currentSheetIndex} of ${sheetsQueue.length}${sheetsQueue[currentSheetIndex - 1] && sheetsQueue[currentSheetIndex - 1].pageIndex !== currentSheetIndex ? ` (Doc Page ${sheetsQueue[currentSheetIndex - 1].pageIndex})` : ''} · ${fileName} · ${sheetsQueue[currentSheetIndex - 1]?.mode === 'color' ? 'Color' : 'B&W'}`}
           </span>
         </div>
 
