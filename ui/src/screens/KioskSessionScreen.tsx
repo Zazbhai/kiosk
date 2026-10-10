@@ -193,8 +193,6 @@ export default function KioskSessionScreen() {
 
   const [timeLeft, setTimeLeft] = useState(300)
   const [stateChanged, setStateChanged] = useState(false)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const [isEncryptedSession, setIsEncryptedSession] = useState(false)
   const [isActionPending, setIsActionPending] = useState(false)
 
   // Interactive UI Selection States on Touchscreen
@@ -215,7 +213,6 @@ export default function KioskSessionScreen() {
 
   const createSession = useCallback(async () => {
     if (!mountedRef.current) return
-    setIsRefreshing(true)
 
     if (retryTimerRef.current) {
       clearTimeout(retryTimerRef.current)
@@ -255,7 +252,6 @@ export default function KioskSessionScreen() {
             expiresAt: data.expiresAt || (Date.now() + 300000),
             createdAt: Date.now(),
           })
-          setIsEncryptedSession(true)
           const remaining = Math.max(10, Math.floor(((data.expiresAt || (Date.now() + 300000)) - Date.now()) / 1000))
           setTimeLeft(remaining)
           setActivePageIdx(0)
@@ -276,8 +272,6 @@ export default function KioskSessionScreen() {
       if (mountedRef.current) {
         retryTimerRef.current = setTimeout(createSession, 4000)
       }
-    } finally {
-      if (mountedRef.current) setIsRefreshing(false)
     }
   }, [apiUrl, kioskId, siteUrl])
 
@@ -495,9 +489,6 @@ export default function KioskSessionScreen() {
   const isPrinting = state === 'PRINTING'
   const isDone = state === 'DONE'
 
-  const minutes = Math.floor(timeLeft / 60).toString().padStart(2, '0')
-  const seconds = (timeLeft % 60).toString().padStart(2, '0')
-
   const qrDisplayValue = session?.qrUrl || getKioskQrUrl(kioskId, siteUrl)
 
   // Current document and previews
@@ -524,73 +515,35 @@ export default function KioskSessionScreen() {
           <span className="ks-topbar-dot" />
           <span>{kioskId} • {kioskName}</span>
         </div>
-        <div className="ks-topbar-pill ks-topbar-right">
-          <span className="ks-topbar-state-dot" style={{ background: phase.color }} />
-          <span style={{ color: phase.color, fontWeight: 700 }}>{phase.label}</span>
-        </div>
+        {!isWaiting && (
+          <div className="ks-topbar-pill ks-topbar-right">
+            <span className="ks-topbar-state-dot" style={{ background: phase.color }} />
+            <span style={{ color: phase.color, fontWeight: 700 }}>{phase.label}</span>
+          </div>
+        )}
       </header>
 
       {/* Main Container */}
       <main className={`ks-main ${stateChanged ? 'ks-transition' : ''}`}>
 
-        {/* ── STEP 0: IDLE QR Code Display (Instant Frame 0) ── */}
+        {/* ── STEP 0: IDLE QR Code Display (Clean, minimal, no clutter) ── */}
         {isWaiting && (
           <div className="ks-qr-panel">
             <div className="ks-qr-header">
-              <div className="ks-phase-badge">
-                <span className="ks-phase-icon">⬡</span>
-                <span className="ks-phase-badge-text">
-                  {isEncryptedSession ? 'SECURE SESSION ACTIVE' : 'STATION QR ACTIVE'}
-                </span>
-              </div>
               <h1 className="ks-title">Print from Your Phone</h1>
-              <p className="ks-subtitle">Scan the QR code with your camera to upload documents to this station</p>
+              <p className="ks-subtitle">Scan the QR code with your camera to upload documents</p>
             </div>
 
-            {/* QR Code Frame with Red Corner Brackets */}
-            <div className="ks-qr-frame">
-              <div className="ks-qr-corner ks-qr-corner--tl" />
-              <div className="ks-qr-corner ks-qr-corner--tr" />
-              <div className="ks-qr-corner ks-qr-corner--bl" />
-              <div className="ks-qr-corner ks-qr-corner--br" />
-              <div className="ks-qr-inner">
-                <QRCodeSVG
-                  value={qrDisplayValue}
-                  size={216}
-                  level="H"
-                  includeMargin={false}
-                  fgColor="#09090b"
-                  bgColor="#ffffff"
-                />
-              </div>
-              <div className="ks-qr-sweep" />
-            </div>
-
-            {/* Session Security Pill */}
-            <div className="ks-security-badge">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-              </svg>
-              <span>Single-use encrypted session · Valid for {minutes}:{seconds}</span>
-            </div>
-
-            {/* Actions Row */}
-            <div className="ks-qr-actions-row">
-              <div className="ks-await-pill">
-                <span className="ks-await-dot" />
-                <span>Waiting for phone scan…</span>
-              </div>
-
-              <button
-                type="button"
-                className="ks-refresh-btn"
-                onClick={() => createSession()}
-                title="Refresh QR Code"
-                disabled={isRefreshing}
-              >
-                <span className={`ks-refresh-icon ${isRefreshing ? 'ks-spinning' : ''}`}>↻</span>
-                <span>Refresh QR</span>
-              </button>
+            {/* Clean Static QR Code Card */}
+            <div className="ks-qr-card">
+              <QRCodeSVG
+                value={qrDisplayValue}
+                size={240}
+                level="M"
+                includeMargin={false}
+                fgColor="#09090b"
+                bgColor="#ffffff"
+              />
             </div>
 
             {/* Direct PIN Keypad Switch */}
@@ -600,7 +553,7 @@ export default function KioskSessionScreen() {
               onClick={() => navigate('/pin')}
               id="kiosk-switch-to-pin"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
@@ -1102,14 +1055,16 @@ export default function KioskSessionScreen() {
 
       </main>
 
-      {/* Footer */}
-      <footer className="ks-footer">
-        <span>Hardware Engine: <strong>Brother DCP-T420W</strong></span>
-        <span>•</span>
-        <span>Telemetry: <code>ONLINE</code></span>
-        <span>•</span>
-        <span>Paper: <code>A4 75GSM</code></span>
-      </footer>
+      {/* Footer — hidden during scan page to eliminate unnecessary technical details */}
+      {!isWaiting && (
+        <footer className="ks-footer">
+          <span>Hardware Engine: <strong>Brother DCP-T420W</strong></span>
+          <span>•</span>
+          <span>Telemetry: <code>ONLINE</code></span>
+          <span>•</span>
+          <span>Paper: <code>A4 75GSM</code></span>
+        </footer>
+      )}
     </div>
   )
 }

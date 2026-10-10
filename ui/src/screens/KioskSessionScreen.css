@@ -95,25 +95,20 @@
   height: 9px;
   border-radius: 50%;
   background: var(--ks-red);
-  box-shadow: 0 0 8px rgba(220, 38, 38, 0.6);
-  animation: ks-pulse-dot 2s ease-in-out infinite;
+  box-shadow: 0 0 6px rgba(220, 38, 38, 0.5);
 }
 
 .ks-topbar-state-dot {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  box-shadow: 0 0 8px currentColor;
-  animation: ks-pulse-dot 1.5s ease-in-out infinite;
-}
-
-@keyframes ks-pulse-dot {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.45; transform: scale(0.85); }
+  box-shadow: 0 0 6px currentColor;
 }
 
 /* ── Main Content Area ─────────────────────────────────────────────────────── */
 .ks-main {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -122,16 +117,10 @@
   max-width: 660px;
   padding: 48px 24px 54px;
   gap: 14px;
-  animation: ks-fade-in 0.35s var(--ks-ease) both;
 }
 
 .ks-transition {
   animation: ks-state-shift 0.45s var(--ks-ease) both;
-}
-
-@keyframes ks-fade-in {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes ks-state-shift {
@@ -140,14 +129,13 @@
   100% { opacity: 1; transform: scale(1); }
 }
 
-/* ── QR Panel (Idle State) ─────────────────────────────────────────────────── */
+/* ── QR Panel (Idle Scan State - Minimal, Fast, Zero Lag) ──────────────────── */
 .ks-qr-panel {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 22px;
   text-align: center;
-  animation: ks-fade-in 0.35s var(--ks-ease) both;
   width: 100%;
 }
 
@@ -159,203 +147,35 @@
 }
 
 .ks-title {
-  font-size: 2.15rem;
+  font-size: 2.35rem;
   font-weight: 800;
   letter-spacing: -0.035em;
   color: var(--ks-text-1);
-  line-height: 1.1;
+  line-height: 1.15;
   margin: 0;
 }
 
 .ks-subtitle {
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   color: var(--ks-text-2);
   line-height: 1.45;
-  max-width: 40ch;
+  max-width: 44ch;
   margin: 0;
 }
 
-.ks-phase-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 16px;
-  border-radius: 999px;
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  font-family: var(--ks-mono);
-  background: rgba(220, 38, 38, 0.08);
-  border: 1px solid rgba(220, 38, 38, 0.25);
-  color: var(--ks-red);
-}
-
-.ks-phase-icon {
-  font-size: 0.9rem;
-}
-
-.ks-phase-badge-text {
-  color: inherit;
-}
-
-/* ── QR Frame with Laser Red Corner Targets ─────────────────────────────────── */
-.ks-qr-frame {
-  position: relative;
-  padding: 16px;
-  background: #ffffff;
-  border-radius: 24px;
-  border: 1px solid rgba(220, 38, 38, 0.18);
-  box-shadow:
-    0 0 0 1px rgba(220, 38, 38, 0.18),
-    0 16px 48px rgba(220, 38, 38, 0.14),
-    0 4px 16px rgba(0, 0, 0, 0.04);
-  animation: ks-qr-breathe 4s ease-in-out infinite;
-}
-
-@keyframes ks-qr-breathe {
-  0%, 100% {
-    box-shadow:
-      0 0 0 1px rgba(220, 38, 38, 0.18),
-      0 16px 48px rgba(220, 38, 38, 0.14),
-      0 4px 16px rgba(0, 0, 0, 0.04);
-  }
-  50% {
-    box-shadow:
-      0 0 0 2px rgba(220, 38, 38, 0.35),
-      0 20px 60px rgba(220, 38, 38, 0.22),
-      0 6px 20px rgba(0, 0, 0, 0.06);
-  }
-}
-
-.ks-qr-corner {
-  position: absolute;
-  width: 22px;
-  height: 22px;
-  border-color: var(--ks-red);
-  border-style: solid;
-}
-
-.ks-qr-corner--tl { top: -7px; left: -7px; border-width: 4px 0 0 4px; border-radius: 6px 0 0 0; }
-.ks-qr-corner--tr { top: -7px; right: -7px; border-width: 4px 4px 0 0; border-radius: 0 6px 0 0; }
-.ks-qr-corner--bl { bottom: -7px; left: -7px; border-width: 0 0 4px 4px; border-radius: 0 0 0 6px; }
-.ks-qr-corner--br { bottom: -7px; right: -7px; border-width: 0 4px 4px 0; border-radius: 0 0 6px 0; }
-
-.ks-qr-inner {
-  display: block;
-  background: #ffffff;
-  border-radius: 12px;
-  overflow: hidden;
-  line-height: 0;
-}
-
-/* Laser sweep animation in Laser Red */
-.ks-qr-sweep {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  top: 12px;
-  height: 2.5px;
-  background: linear-gradient(90deg, transparent, var(--ks-red), transparent);
-  box-shadow: 0 0 8px var(--ks-red);
-  border-radius: 2px;
-  animation: ks-sweep 2.6s ease-in-out infinite;
-  pointer-events: none;
-}
-
-@keyframes ks-sweep {
-  0% { top: 12px; opacity: 0; }
-  10% { opacity: 0.85; }
-  90% { opacity: 0.85; }
-  100% { top: calc(100% - 12px); opacity: 0; }
-}
-
-/* Security badge */
-.ks-security-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 16px;
-  background: rgba(220, 38, 38, 0.06);
-  border: 1px solid rgba(220, 38, 38, 0.2);
-  border-radius: 999px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--ks-red);
-  font-family: var(--ks-mono);
-}
-
-/* Quick actions row */
-.ks-qr-actions-row {
+/* Crisp, High-Contrast QR Code Card with ZERO Animations */
+.ks-qr-card {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-/* Waiting pill */
-.ks-await-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 20px;
+  padding: 22px;
   background: #ffffff;
-  border: 1px solid var(--ks-border);
-  box-shadow: 0 2px 10px rgba(220, 38, 38, 0.06);
-  border-radius: 999px;
-  font-size: 0.88rem;
-  font-weight: 500;
-  color: #334155;
+  border-radius: 24px;
+  border: 1.5px solid rgba(220, 38, 38, 0.22);
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.06),
+    0 2px 8px rgba(220, 38, 38, 0.05);
 }
-
-.ks-await-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--ks-red);
-  box-shadow: 0 0 6px rgba(220, 38, 38, 0.6);
-  animation: ks-pulse-dot 1.4s ease-in-out infinite;
-  flex-shrink: 0;
-}
-
-/* Refresh QR button */
-.ks-refresh-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background: #ffffff;
-  border: 1px solid var(--ks-border);
-  border-radius: 999px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--ks-red);
-  font-family: var(--ks-mono);
-  cursor: pointer;
-  transition: all 0.2s var(--ks-ease);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
-}
-
-.ks-refresh-btn:hover {
-  background: #fef2f2;
-  border-color: var(--ks-red);
-}
-
-.ks-refresh-btn:active {
-  transform: scale(0.97);
-}
-
-.ks-refresh-icon {
-  font-size: 1.05rem;
-  line-height: 1;
-  display: inline-block;
-}
-
-.ks-spinning {
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Switch to PIN Keypad button */
 .ks-pin-switch-btn {
@@ -364,25 +184,24 @@
   justify-content: center;
   gap: 10px;
   width: 100%;
-  max-width: 400px;
-  padding: 11px 22px;
-  margin-top: 2px;
+  max-width: 380px;
+  padding: 13px 24px;
+  margin-top: 4px;
   background: #ffffff;
   border: 1.5px solid var(--ks-red);
   border-radius: 14px;
   color: var(--ks-red);
   font-family: var(--ks-font);
-  font-size: 0.88rem;
+  font-size: 0.92rem;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 4px 16px rgba(220, 38, 38, 0.08);
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.08);
   transition: all 0.2s var(--ks-ease);
 }
 
 .ks-pin-switch-btn:hover {
-  background: var(--ks-red);
-  color: #ffffff;
-  box-shadow: 0 6px 24px rgba(220, 38, 38, 0.35);
+  background: #fef2f2;
+  box-shadow: 0 6px 20px rgba(220, 38, 38, 0.18);
   transform: translateY(-1px);
 }
 
@@ -1219,4 +1038,21 @@
   text-align: center;
   box-shadow: 0 6px 20px rgba(220, 38, 38, 0.08);
 }
+
+/* ── Diagnostic Footer (Hidden on scan page) ── */
+.ks-footer {
+  position: fixed;
+  bottom: 14px;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #64748b;
+  font-family: var(--ks-mono);
+  pointer-events: none;
+}
+
 
