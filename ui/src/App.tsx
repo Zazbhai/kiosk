@@ -14,6 +14,7 @@ import ErrorScreen from './screens/ErrorScreen'
 import PrinterOfflineScreen from './screens/PrinterOfflineScreen'
 import KioskSessionScreen from './screens/KioskSessionScreen'
 import PrinterErrorOverlay from './components/PrinterErrorOverlay'
+import KioskAdBackground from './components/KioskAdBackground'
 import { usePrinterStatus } from './hooks/usePrinterStatus'
 
 export default function App() {
@@ -51,6 +52,7 @@ export default function App() {
 
   return (
     <>
+      <KioskAdBackground kioskId={kioskId} />
       <Routes>
         <Route path="/" element={<KioskSessionScreen />} />
         <Route path="/session" element={<KioskSessionScreen />} />

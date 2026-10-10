@@ -1,0 +1,203 @@
+/* ─── Hardware-Accelerated Kiosk Moving Advertisement Background ─── */
+
+.kiosk-ad-bg-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background: #fdfdfd;
+  contain: strict;
+}
+
+/* Individual Moving Ad Layer */
+.kiosk-ad-layer {
+  position: absolute;
+  inset: -60px; /* Bleed for motion translation without edge seams */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
+  transition: opacity 1.8s cubic-bezier(0.16, 1, 0.3, 1);
+  filter: saturate(1.1);
+}
+
+/* Vignette Contrast Overlay (Keeps Touchscreen Foreground Buttons 100% Readable) */
+.kiosk-ad-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 80% 65% at 50% 35%,
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(255, 255, 255, 0.88) 75%,
+    rgba(255, 255, 255, 0.96) 100%
+  );
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ──────── GPU Hardware-Accelerated CSS Motion Styles ──────── */
+
+/* 1. Drift: Gentle Ken Burns diagonal pan & slow zoom */
+.kiosk-ad-motion-drift.kiosk-ad-speed-slow {
+  animation: adDriftMotion 32s ease-in-out infinite alternate;
+}
+.kiosk-ad-motion-drift.kiosk-ad-speed-normal {
+  animation: adDriftMotion 22s ease-in-out infinite alternate;
+}
+.kiosk-ad-motion-drift.kiosk-ad-speed-fast {
+  animation: adDriftMotion 14s ease-in-out infinite alternate;
+}
+
+@keyframes adDriftMotion {
+  0% {
+    transform: translate3d(-30px, -20px, 0) scale(1.04);
+  }
+  50% {
+    transform: translate3d(15px, 10px, 0) scale(1.08);
+  }
+  100% {
+    transform: translate3d(35px, 25px, 0) scale(1.12);
+  }
+}
+
+/* 2. Float: Vertical ambient levitation */
+.kiosk-ad-motion-float.kiosk-ad-speed-slow {
+  animation: adFloatMotion 26s ease-in-out infinite alternate;
+}
+.kiosk-ad-motion-float.kiosk-ad-speed-normal {
+  animation: adFloatMotion 18s ease-in-out infinite alternate;
+}
+.kiosk-ad-motion-float.kiosk-ad-speed-fast {
+  animation: adFloatMotion 10s ease-in-out infinite alternate;
+}
+
+@keyframes adFloatMotion {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1.03);
+  }
+  50% {
+    transform: translate3d(0, -32px, 0) scale(1.07);
+  }
+  100% {
+    transform: translate3d(0, 18px, 0) scale(1.04);
+  }
+}
+
+/* 3. Ken Burns: Deep cinematic diagonal zoom */
+.kiosk-ad-motion-ken_burns.kiosk-ad-speed-slow {
+  animation: adKenBurnsMotion 38s ease-in-out infinite alternate;
+}
+.kiosk-ad-motion-ken_burns.kiosk-ad-speed-normal {
+  animation: adKenBurnsMotion 24s ease-in-out infinite alternate;
+}
+.kiosk-ad-motion-ken_burns.kiosk-ad-speed-fast {
+  animation: adKenBurnsMotion 15s ease-in-out infinite alternate;
+}
+
+@keyframes adKenBurnsMotion {
+  0% {
+    transform: translate3d(-40px, 20px, 0) scale(1.02);
+  }
+  50% {
+    transform: translate3d(0, -15px, 0) scale(1.10);
+  }
+  100% {
+    transform: translate3d(45px, -30px, 0) scale(1.16);
+  }
+}
+
+/* 4. Pulse / Atmospheric breathing */
+.kiosk-ad-motion-pulse.kiosk-ad-speed-slow {
+  animation: adPulseMotion 20s ease-in-out infinite alternate;
+}
+.kiosk-ad-motion-pulse.kiosk-ad-speed-normal {
+  animation: adPulseMotion 14s ease-in-out infinite alternate;
+}
+.kiosk-ad-motion-pulse.kiosk-ad-speed-fast {
+  animation: adPulseMotion 8s ease-in-out infinite alternate;
+}
+
+@keyframes adPulseMotion {
+  0% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1.09);
+  }
+}
+
+/* 5. Marquee: Slow horizontal landscape pan */
+.kiosk-ad-motion-marquee.kiosk-ad-speed-slow {
+  animation: adMarqueeMotion 40s linear infinite alternate;
+}
+.kiosk-ad-motion-marquee.kiosk-ad-speed-normal {
+  animation: adMarqueeMotion 26s linear infinite alternate;
+}
+.kiosk-ad-motion-marquee.kiosk-ad-speed-fast {
+  animation: adMarqueeMotion 16s linear infinite alternate;
+}
+
+@keyframes adMarqueeMotion {
+  0% {
+    transform: translate3d(-50px, 0, 0) scale(1.05);
+  }
+  100% {
+    transform: translate3d(50px, 0, 0) scale(1.05);
+  }
+}
+
+/* ──────── Non-Intrusive Ambient Sponsor Pill (Bottom Left/Right) ──────── */
+.kiosk-ad-sponsor-pill {
+  position: fixed;
+  bottom: 14px;
+  right: 18px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 6px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(220, 38, 38, 0.18);
+  border-radius: 999px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  font-size: 11px;
+  color: #0f172a;
+  pointer-events: auto;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  max-width: 420px;
+}
+
+.kiosk-ad-sponsor-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+
+.kiosk-ad-sponsor-badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #ffffff;
+  text-transform: uppercase;
+}
+
+.kiosk-ad-sponsor-title {
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kiosk-ad-sponsor-cta {
+  font-weight: 600;
+  color: #dc2626;
+  white-space: nowrap;
+}
