@@ -5,10 +5,10 @@ import './CollectionScreen.css'
 export default function CollectionScreen() {
   const navigate = useNavigate()
 
-  // Return back to OTP section after 3 seconds with zero delay
+  // Return back to session QR display after 3 seconds
   useEffect(() => {
     const timer = setTimeout(() => {
-      navigate('/', { replace: true })
+      navigate('/session', { replace: true })
     }, 3000)
     return () => clearTimeout(timer)
   }, [navigate])
