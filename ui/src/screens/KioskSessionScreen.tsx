@@ -211,7 +211,7 @@ export default function KioskSessionScreen() {
 
   // ── Session Creation & Upgrade ────────────────────────────────────────────
 
-  const createSession = useCallback(async () => {
+  const createSession = useCallback(async (force = false) => {
     if (!mountedRef.current) return
 
     if (retryTimerRef.current) {
@@ -225,7 +225,7 @@ export default function KioskSessionScreen() {
         res = await fetch(`${apiUrl}/api/kiosk-sessions/create`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ kioskId, webBaseUrl: siteUrl }),
+          body: JSON.stringify({ kioskId, webBaseUrl: siteUrl, force }),
         })
       } catch {
         if (typeof window !== 'undefined' && window.location.origin !== apiUrl) {
@@ -233,7 +233,7 @@ export default function KioskSessionScreen() {
             res = await fetch('/api/kiosk-sessions/create', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ kioskId, webBaseUrl: siteUrl }),
+              body: JSON.stringify({ kioskId, webBaseUrl: siteUrl, force }),
             })
           } catch {}
         }
@@ -242,24 +242,37 @@ export default function KioskSessionScreen() {
       if (res && res.ok) {
         const data = await res.json()
         if (data.success && mountedRef.current) {
+          const s = data.session || data
           setSession({
-            sessionId: data.sessionId,
-            token: data.token,
-            qrUrl: data.qrUrl || getKioskQrUrl(kioskId, siteUrl),
-            state: 'QR_READY',
-            phase: 'Scan QR to start uploading',
-            phaseStep: 0,
-            expiresAt: data.expiresAt || (Date.now() + 300000),
-            createdAt: Date.now(),
+            sessionId: s.sessionId || data.sessionId,
+            token: s.token || data.token,
+            qrUrl: s.qrUrl || data.qrUrl || getKioskQrUrl(kioskId, siteUrl),
+            state: s.state || data.state || 'QR_READY',
+            phase: s.phase || 'Scan QR to start uploading',
+            phaseStep: s.phaseStep || 0,
+            expiresAt: s.expiresAt || data.expiresAt || (Date.now() + 300000),
+            createdAt: s.createdAt || Date.now(),
+            document: s.document,
+            settings: s.settings,
+            fileName: s.fileName,
+            totalPages: s.totalPages,
+            copies: s.copies,
+            colourMode: s.colourMode,
+            amount: s.amount,
+            orderId: s.orderId,
+            otp: s.otp,
+            progressData: s.progressData,
           })
           const remaining = Math.max(10, Math.floor(((data.expiresAt || (Date.now() + 300000)) - Date.now()) / 1000))
           setTimeLeft(remaining)
-          setActivePageIdx(0)
-          setSelectedCopies(1)
-          setSelectedColour('BW')
-          setSelectedDuplex('SINGLE')
-          setSelectedPageRange('ALL')
-          setPrintingProgress(0)
+          if (!s.document) {
+            setActivePageIdx(0)
+            setSelectedCopies(1)
+            setSelectedColour('BW')
+            setSelectedDuplex('SINGLE')
+            setSelectedPageRange('ALL')
+            setPrintingProgress(0)
+          }
           return
         }
       }
@@ -474,6 +487,46 @@ export default function KioskSessionScreen() {
       setIsActionPending(false)
     }
   }
+
+  const handleCancelAndNewUpload = useCallback(async () => {
+    setIsActionPending(true)
+    // Instantly reset UI state so screen switches immediately without waiting for network lag
+    setSession(prev => prev ? {
+      ...prev,
+      state: 'QR_READY',
+      document: undefined,
+      fileName: undefined,
+      totalPages: undefined,
+      settings: undefined,
+    } : null)
+    setActivePageIdx(0)
+    setSelectedCopies(1)
+    setSelectedColour('BW')
+    setSelectedDuplex('SINGLE')
+    setSelectedPageRange('ALL')
+    setPrintingProgress(0)
+
+    try {
+      if (session?.sessionId && !session.sessionId.startsWith('init-')) {
+        try {
+          await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/cancel`, {
+            method: 'POST',
+          })
+        } catch {
+          if (typeof window !== 'undefined' && window.location.origin !== apiUrl) {
+            try {
+              await fetch(`/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/cancel`, {
+                method: 'POST',
+              })
+            } catch {}
+          }
+        }
+      }
+      await createSession(true)
+    } finally {
+      setIsActionPending(false)
+    }
+  }, [session?.sessionId, apiUrl, createSession])
 
   // ── Derived State ────────────────────────────────────────────────────────
 
@@ -706,7 +759,9 @@ export default function KioskSessionScreen() {
                   <button
                     type="button"
                     className="ks-btn-secondary"
-                    onClick={() => createSession()}
+                    onClick={handleCancelAndNewUpload}
+                    disabled={isActionPending}
+                    id="ks-cancel-new-upload-btn"
                   >
                     Cancel / New Upload
                   </button>
@@ -867,6 +922,17 @@ export default function KioskSessionScreen() {
                   >
                     ← Back to Preview
                   </button>
+
+                  <button
+                    type="button"
+                    className="ks-btn-secondary"
+                    onClick={handleCancelAndNewUpload}
+                    disabled={isActionPending}
+                    style={{ color: '#dc2626' }}
+                    id="ks-cancel-from-settings"
+                  >
+                    Cancel / New Upload
+                  </button>
                 </div>
               </div>
             </div>
@@ -939,6 +1005,17 @@ export default function KioskSessionScreen() {
                     onClick={handleBackToSettings}
                   >
                     ← Back to Settings
+                  </button>
+
+                  <button
+                    type="button"
+                    className="ks-btn-secondary"
+                    onClick={handleCancelAndNewUpload}
+                    disabled={isActionPending}
+                    style={{ color: '#dc2626' }}
+                    id="ks-cancel-from-pay"
+                  >
+                    Cancel / New Upload
                   </button>
                 </div>
               </div>
