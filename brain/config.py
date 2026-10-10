@@ -18,7 +18,9 @@ for env_path in [current_dir / ".env", current_dir.parent / ".env", current_dir.
 KIOSK_ID = os.environ.get("KIOSK_ID", "PB-001").strip().upper()
 KIOSK_NAME = os.environ.get("KIOSK_NAME", "PrintBooth — Test Station")
 KIOSK_SECRET = os.environ.get("KIOSK_SECRET", "").strip()
-API_URL = os.environ.get("PRINTBOOTH_API_URL", "http://localhost:5000/api").rstrip("/")
+raw_api = os.environ.get("PRINTBOOTH_API_URL", "http://localhost:5000/api").strip().rstrip("/")
+import re
+API_URL = re.sub(r'^(https?|wss?):/+', r'\1://', raw_api, flags=re.IGNORECASE)
 PRINTER_NAME = os.environ.get("PRINTER_NAME", "auto")
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "3"))
 HEARTBEAT_INTERVAL_SECONDS = int(os.environ.get("HEARTBEAT_INTERVAL_SECONDS", "10"))
