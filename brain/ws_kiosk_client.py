@@ -13,7 +13,6 @@ import os
 import re
 import sys
 import time
-from urllib.parse import urlparse, urlencode
 import urllib.request
 from pathlib import Path
 from typing import Optional, Callable
@@ -37,77 +36,18 @@ from order_tracker import (
 )
 
 
-def sanitize_kiosk_ws_url(raw_url: str, kiosk_id: str, kiosk_secret: str) -> str:
-    """
-    Robustly derives and sanitizes the WebSocket Relay URL from any format of API URL or WS URL.
-    Self-heals common misconfigurations:
-      - Extra slashes (e.g. wss:/// or https:/// -> wss://)
-      - Protocol-relative URLs (e.g. //api.printbooth.co.in)
-      - Missing scheme (e.g. api.printbooth.co.in)
-      - Trailing /api or /ws segments
-    """
-    url_str = str(raw_url or "").strip().rstrip("/")
-    if not url_str:
-        url_str = "http://localhost:5000"
-
-    # Normalize multiple slashes after scheme: e.g. https:/// -> https://, wss:/// -> wss://
-    url_str = re.sub(r'^(https?|wss?):/+', r'\1://', url_str, flags=re.IGNORECASE)
-
-    # Strip accidental leading slashes if no scheme yet
-    if url_str.startswith("//"):
-        url_str = url_str[2:]
-    elif url_str.startswith("/") and not (url_str.startswith("/ws") or url_str.startswith("/api")):
-        url_str = url_str.lstrip("/")
-
-    # Detect or supply scheme if missing
-    if not re.match(r'^(https?|wss?)://', url_str, flags=re.IGNORECASE):
-        is_local = "localhost" in url_str.lower() or "127.0.0.1" in url_str or ":5000" in url_str
-        scheme = "ws" if is_local else "wss"
-        url_str = f"{scheme}://{url_str}"
-
-    parsed = urlparse(url_str)
-    scheme = parsed.scheme.lower()
-    ws_scheme = "wss" if scheme in ("https", "wss") else "ws"
-
-    netloc = parsed.netloc
-    path = parsed.path or ""
-
-    # Self-heal if netloc was empty and host got parsed into path (e.g. /api.printbooth.co.in)
-    if not netloc and path:
-        clean_path = path.lstrip("/")
-        parts = clean_path.split("/", 1)
-        netloc = parts[0]
-        path = "/" + parts[1] if len(parts) > 1 else ""
-
-    # Strip /api or /ws from base path
-    if path.endswith("/api"):
-        path = path[:-4]
-    if path.endswith("/ws"):
-        path = path[:-3]
-
-    clean_path = f"{path.rstrip('/')}/ws" if path else "/ws"
-    if clean_path.startswith("//"):
-        clean_path = "/" + clean_path.lstrip("/")
-
-    # Build clean query parameters
-    query_params = {
-        "role": "kiosk",
-        "kioskId": kiosk_id.upper(),
-    }
-    if kiosk_secret:
-        query_params["secret"] = kiosk_secret
-
-    return f"{ws_scheme}://{netloc}{clean_path}?{urlencode(query_params)}"
-
-
 class KioskWsClient:
     def __init__(self, kiosk_id: str = KIOSK_ID, api_url: str = API_URL):
         self.kiosk_id = kiosk_id.upper()
         self.kiosk_secret = KIOSK_SECRET
-        self.api_url = str(api_url or "").strip().rstrip("/")
+        self.api_url = api_url.rstrip("/")
         
-        # Derive robust WS URL with automatic self-healing against malformed slashes or schemes
-        self.ws_url = sanitize_kiosk_ws_url(self.api_url, self.kiosk_id, self.kiosk_secret)
+        # Derive WS URL from HTTP API URL with cryptographic device authentication
+        # e.g. http://localhost:5000/api -> ws://localhost:5000/ws
+        base_host = self.api_url.replace("http://", "ws://").replace("https://", "wss://")
+        if base_host.endswith("/api"):
+            base_host = base_host[:-4]
+        self.ws_url = f"{base_host}/ws?role=kiosk&kioskId={self.kiosk_id}&secret={self.kiosk_secret}"
         
         self.cups = CupsController()
         self.monitor = HardwareMonitor(self.cups)

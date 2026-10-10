@@ -112,8 +112,6 @@ fi
 if [ -n "$PRINTBOOTH_API_URL" ]; then
     TARGET_API="$PRINTBOOTH_API_URL"
 fi
-# Normalize multiple slashes after scheme, e.g. https:/// -> https://
-TARGET_API=$(echo "$TARGET_API" | sed -E 's|^(https?|wss?):/+|\1://|' | sed 's|/api$||')
 if [ -n "$KIOSK_ID" ]; then
     STATION_ID="$KIOSK_ID"
 fi
