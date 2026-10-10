@@ -244,6 +244,48 @@ sudo bash scripts/setup_autorecover.sh
 
 ---
 
+## 🔄 Autonomous Zero-Touch GitHub Auto-Updater ("No Hands Needed")
+
+PrintBooth incorporates a fully autonomous, continuous auto-update pipeline for unattended kiosks in the field. When updates are pushed to GitHub, the Raspberry Pi pulls, compiles, updates dependencies, and **automatically restarts the kiosk itself with zero manual intervention**:
+
+### Update Trigger Options:
+1. **GitHub Push Webhook Trigger (Real-Time Zero Hands Needed)**:
+   - Configure GitHub Repository Settings ➔ Webhooks:
+     - **Payload URL**: `https://your-api-domain.com/api/webhooks/github` (or `/api/kiosks/webhook/github`)
+     - **Content Type**: `application/json`
+     - **Events**: `Pushes` (`main` branch)
+   - When a commit is pushed to GitHub, the backend receives the event and instantly broadcasts `TRIGGER_UPDATE` to all connected Raspberry Pis via WebSocket in <100ms.
+2. **Local Git Hook (`.git/hooks/post-merge`)**:
+   - Install with: `bash scripts/git_trigger_update.sh --install`
+   - Whenever `git pull` is run on the Pi, it automatically recompiles and restarts the kiosk.
+3. **Manual CLI Trigger on Pi**:
+   ```bash
+   # Pull latest commits, rebuild UI & restart the kiosk immediately:
+   bash scripts/git_trigger_update.sh
+   # Or with force rebuild:
+   bash scripts/git_trigger_update.sh --force
+   ```
+4. **Periodic Systemd Timer (`printbooth-autoupdate.timer`)**:
+   - Polling fallback every 5 minutes in case network was down during a push.
+5. **Central Admin API Trigger**:
+   - `POST /api/kiosks/:id/trigger-update` or `POST /api/kiosks/git-update-trigger`
+
+### Autonomous Self-Restart Guarantees:
+* **Active Print Protection**: Queries CUPS spooler (`lpstat -o`). If a customer is printing or a session is active, the update waits safely until idle.
+* **Atomic Build & Rollback**: Preserves `.env` and `config.json`. If UI build fails, it rolls back to `dist.bak` so the screen never breaks.
+* **Autonomous Kiosk Self-Restart**:
+  - Restarts `printbooth-display.service` and `printbooth-brain.service` via systemd.
+  - Or in standalone watchdog mode (`start_kiosk.sh`), terminates Chromium so the supervisor immediately respawns a fresh, GPU-accelerated window in 1 second!
+  - Dispatches `xdotool` reload to active display.
+
+### Monitoring Logs on Pi:
+```bash
+tail -f /var/log/printbooth-autoupdate.log
+```
+
+
+---
+
 ## 💡 Troubleshooting & FAQ
 
 | Issue | Solution |

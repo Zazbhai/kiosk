@@ -78,6 +78,12 @@ ALL ALL=(ALL) NOPASSWD: /usr/sbin/cupsenable, /usr/sbin/cupsaccept, /usr/sbin/lp
 EOF
 sudo chmod 0440 /etc/sudoers.d/printbooth-cups
 
+# Grant passwordless sudo for autonomous updater to restart services
+sudo tee /etc/sudoers.d/printbooth-autoupdate > /dev/null << 'EOF'
+ALL ALL=(ALL) NOPASSWD: /bin/systemctl restart printbooth-brain, /bin/systemctl restart printbooth-display, /bin/systemctl daemon-reload, /bin/systemctl restart printbooth-autoupdate.timer, /bin/systemctl status printbooth-autoupdate
+EOF
+sudo chmod 0440 /etc/sudoers.d/printbooth-autoupdate
+
 # 4. Setup Python Virtual Environment
 echo -e "\n[4/7] Setting up Python virtual environment for Kiosk Brain..."
 cd "$BRAIN_DIR"
@@ -96,7 +102,7 @@ if [ ! -f "$KIOSK_ROOT/.env" ]; then
 fi
 
 # 6. Install systemd services with dynamic paths and user
-echo -e "\n[6/7] Installing and registering PrintBooth systemd services..."
+echo -e "\n[6/7] Installing and registering PrintBooth systemd services & auto-updater..."
 if [ -f "$SCRIPT_DIR/printbooth-brain.service" ]; then
     sed -e "s|User=pi|User=$ACTUAL_USER|g" \
         -e "s|/home/pi/printer_automation/kiosk|$KIOSK_ROOT|g" \
@@ -104,6 +110,25 @@ if [ -f "$SCRIPT_DIR/printbooth-brain.service" ]; then
     sudo systemctl daemon-reload
     sudo systemctl enable printbooth-brain.service
     echo "✓ Enabled printbooth-brain.service"
+fi
+
+# Install autonomous GitHub Auto-Updater service and 5-minute timer
+if [ -f "$SCRIPT_DIR/printbooth-autoupdate.service" ] && [ -f "$SCRIPT_DIR/printbooth-autoupdate.timer" ]; then
+    sed -e "s|User=pi|User=$ACTUAL_USER|g" \
+        -e "s|/home/pi/printer_automation/kiosk|$KIOSK_ROOT|g" \
+        "$SCRIPT_DIR/printbooth-autoupdate.service" | sudo tee /etc/systemd/system/printbooth-autoupdate.service > /dev/null
+    sudo cp "$SCRIPT_DIR/printbooth-autoupdate.timer" /etc/systemd/system/printbooth-autoupdate.timer
+    sudo systemctl daemon-reload
+    sudo systemctl enable printbooth-autoupdate.timer
+    sudo systemctl start printbooth-autoupdate.timer
+    echo "✓ Enabled and started printbooth-autoupdate.timer (Autonomous GitHub updates every 5 min)"
+fi
+
+# Create convenient command: kiosk-update
+if [ -f "$SCRIPT_DIR/kiosk_autoupdate.sh" ]; then
+    sudo ln -sf "$SCRIPT_DIR/kiosk_autoupdate.sh" /usr/local/bin/kiosk-update
+    sudo chmod +x /usr/local/bin/kiosk-update
+    echo "✓ Registered 'kiosk-update' CLI command"
 fi
 
 # 7. Configure printer queue, drivers & self-healing watchdog

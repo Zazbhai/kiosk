@@ -491,3 +491,36 @@
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01s !important; }
 }
+
+.kiosk-pin-exit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 22px;
+  min-height: 44px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1.5px solid var(--red);
+  color: var(--red);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.12);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.kiosk-pin-exit-btn:hover {
+  background: #fef2f2;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(220, 38, 38, 0.2);
+}
+
+.kiosk-pin-exit-btn:active {
+  transform: scale(0.97);
+  background: #fee2e2;
+}
+

@@ -174,6 +174,7 @@ class KioskBrainDaemon:
             "paperLevel": hw["paperLevel"],
             "tonerLevel": hw["tonerLevel"],
             "diagnostics": hw["diagnostics"],
+            "gitVersion": hw.get("gitVersion"),
         }
 
         try:

@@ -1,0 +1,18 @@
+[Unit]
+Description=PrintBooth Autonomous GitHub Auto-Updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+Nice=19
+IOSchedulingClass=idle
+Environment=DISPLAY=:0
+WorkingDirectory=/home/pi/printer_automation/kiosk/scripts
+ExecStart=/bin/bash /home/pi/printer_automation/kiosk/scripts/kiosk_autoupdate.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

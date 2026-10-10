@@ -333,7 +333,9 @@ class KioskWsClient:
                     }
                     if self.ws:
                         await self.ws.send(json.dumps(resp))
-                    asyncio.create_task(self._send_heartbeat())
+                elif msg_type in ("TRIGGER_UPDATE", "CHECK_UPDATE", "AUTO_UPDATE"):
+                    print(f"[WSS Kiosk Client] 🚀 Immediate GitHub auto-update requested over WebSocket")
+                    asyncio.create_task(self._run_auto_update(payload))
 
                 elif msg_type == "PRINT_JOB_STAGED":
                     # Order paid & staged with release PIN / OTP
@@ -724,6 +726,75 @@ class KioskWsClient:
                     pass
         except Exception as del_err:
             print(f"[WSS Kiosk Client] Warning deleting local document {local_target}: {del_err}")
+
+    async def _run_auto_update(self, payload: Optional[dict] = None):
+        """Executes the kiosk_autoupdate.sh script asynchronously and streams real-time telemetry."""
+        try:
+            script_path = Path(__file__).resolve().parent.parent / "scripts" / "kiosk_autoupdate.sh"
+            if not script_path.exists():
+                print(f"[WSS Kiosk Client] ⚠️ Auto-update script not found at {script_path}")
+                return
+
+            print(f"[WSS Kiosk Client] 🚀 Initiating autonomous GitHub pull via {script_path}...")
+            if self.ws:
+                try:
+                    await self.ws.send(json.dumps({
+                        "type": "UPDATE_STATUS",
+                        "kioskId": self.kiosk_id,
+                        "payload": {
+                            "status": "RUNNING",
+                            "message": "GitHub auto-update started on Raspberry Pi...",
+                            "startedAt": int(time.time() * 1000),
+                        },
+                        "timestamp": int(time.time() * 1000)
+                    }))
+                except Exception:
+                    pass
+
+            loop = asyncio.get_event_loop()
+            import subprocess
+
+            force = bool((payload or {}).get("force", False))
+            branch = str((payload or {}).get("branch") or "").strip()
+
+            def _execute():
+                cmd = ["bash", str(script_path), "--restart"]
+                if force:
+                    cmd.append("--force")
+                if branch:
+                    cmd.extend(["--branch", branch])
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+                return res.returncode, res.stdout, res.stderr
+
+            code, stdout, stderr = await loop.run_in_executor(None, _execute)
+
+            git_ver = self.monitor.get_git_version()
+            success = (code == 0)
+
+            print(f"[WSS Kiosk Client] ✓ Auto-update finished (exit code {code}). Active Git Hash: {git_ver.get('shortHash')}")
+
+            if self.ws:
+                try:
+                    await self.ws.send(json.dumps({
+                        "type": "UPDATE_STATUS",
+                        "kioskId": self.kiosk_id,
+                        "payload": {
+                            "status": "SUCCESS" if success else "FAILED",
+                            "returnCode": code,
+                            "gitVersion": git_ver,
+                            "stdoutTail": stdout.strip().splitlines()[-10:] if stdout else [],
+                            "stderr": stderr.strip() if not success else None,
+                            "completedAt": int(time.time() * 1000),
+                        },
+                        "timestamp": int(time.time() * 1000)
+                    }))
+                except Exception:
+                    pass
+
+            # Broadcast updated hardware & version heartbeat immediately
+            await self._send_heartbeat()
+        except Exception as e:
+            print(f"[WSS Kiosk Client] Error executing auto-update: {e}")
 
 
 

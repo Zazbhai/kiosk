@@ -414,6 +414,7 @@ class HardwareMonitor:
         net_telemetry = self.get_network_telemetry()
         current_hostname = net_telemetry.get("hostname") or "kiosk"
         current_wifi_ssid = net_telemetry.get("wifi", {}).get("ssid") or "Offline"
+        git_version = self.get_git_version()
 
         return {
             "isOnline": is_online,
@@ -438,4 +439,55 @@ class HardwareMonitor:
             "tonerLevel": self.estimated_toner,
             "diagnostics": self.get_system_telemetry(),
             "network": net_telemetry,
+            "gitVersion": git_version,
         }
+
+    def get_git_version(self) -> Dict[str, Any]:
+        """Reads current local git commit hash, branch, and autoupdate status."""
+        version_data = {
+            "commitHash": "unknown",
+            "shortHash": "unknown",
+            "branch": "main",
+            "autoUpdateEnabled": True,
+            "lastChecked": None,
+        }
+
+        # Check cached / written version file first
+        from pathlib import Path
+        import json
+        version_file = Path(__file__).resolve().parent.parent / ".git_version.json"
+        if not version_file.exists():
+            version_file = Path("/etc/printbooth/version.json")
+
+        if version_file.exists():
+            try:
+                with open(version_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    version_data.update(data)
+                    return version_data
+            except Exception:
+                pass
+
+        # Fallback to direct git command if available
+        try:
+            repo_dir = Path(__file__).resolve().parent.parent
+            res = subprocess.run(
+                ["git", "-C", str(repo_dir), "rev-parse", "HEAD"],
+                capture_output=True, text=True, timeout=2
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                h = res.stdout.strip()
+                version_data["commitHash"] = h
+                version_data["shortHash"] = h[:7]
+
+            b_res = subprocess.run(
+                ["git", "-C", str(repo_dir), "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True, text=True, timeout=2
+            )
+            if b_res.returncode == 0 and b_res.stdout.strip():
+                version_data["branch"] = b_res.stdout.strip()
+        except Exception:
+            pass
+
+        return version_data
+

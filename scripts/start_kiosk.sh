@@ -48,6 +48,12 @@ if command -v cupsenable > /dev/null 2>&1; then
     cupsaccept -a 2>/dev/null || true
 fi
 
+# 0b. Launch background GitHub auto-updater check on boot (non-blocking)
+if [ -f "$SCRIPT_DIR/kiosk_autoupdate.sh" ]; then
+    echo "[Start Kiosk] Triggering background GitHub auto-update check..."
+    bash "$SCRIPT_DIR/kiosk_autoupdate.sh" >> /tmp/printbooth_boot_update.log 2>&1 &
+fi
+
 # 1. Enforce pure white background immediately (Zero desktop exposure)
 if command -v xsetroot > /dev/null 2>&1; then
     xsetroot -solid "#ffffff" 2>/dev/null || true

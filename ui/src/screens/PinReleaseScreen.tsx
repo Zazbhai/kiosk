@@ -97,18 +97,55 @@ export default function PinReleaseScreen() {
       .catch(() => {})
   }, [paramApi, paramId])
 
-  // Auto reset idle timer
-  const idleRef = useRef(0)
+  // ── 20-Second Inactivity Auto-Back Timer (Return to Print from Phone) ──────
+  const [pinIdleSeconds, setPinIdleSeconds] = useState(20)
+  const lastActivityRef = useRef(Date.now())
+
+  const resetPinActivity = useCallback(() => {
+    lastActivityRef.current = Date.now()
+    setPinIdleSeconds(20)
+  }, [])
+
   useEffect(() => {
+    lastActivityRef.current = Date.now()
+
+    const handleActivity = () => {
+      lastActivityRef.current = Date.now()
+      setPinIdleSeconds(20)
+    }
+
+    window.addEventListener('touchstart', handleActivity, { passive: true })
+    window.addEventListener('touchmove', handleActivity, { passive: true })
+    window.addEventListener('mousedown', handleActivity, { passive: true })
+    window.addEventListener('click', handleActivity, { passive: true })
+    window.addEventListener('keydown', handleActivity, { passive: true })
+
     const timer = setInterval(() => {
-      idleRef.current += 1
-      if (idleRef.current >= 45 && pin && !busy) {
-        setPin('')
-        setMsg({ text: 'Enter the 4-digit code sent to your phone', isErr: false })
+      if (busy || showDone) {
+        lastActivityRef.current = Date.now()
+        setPinIdleSeconds(20)
+        return
       }
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [pin, busy])
+
+      const elapsed = Math.floor((Date.now() - lastActivityRef.current) / 1000)
+      const remaining = Math.max(0, 20 - elapsed)
+      setPinIdleSeconds(remaining)
+
+      if (remaining <= 0) {
+        clearInterval(timer)
+        navigate('/')
+      }
+    }, 500)
+
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('touchstart', handleActivity)
+      window.removeEventListener('touchmove', handleActivity)
+      window.removeEventListener('mousedown', handleActivity)
+      window.removeEventListener('click', handleActivity)
+      window.removeEventListener('keydown', handleActivity)
+    }
+  }, [busy, showDone, navigate])
 
   const buzz = (pattern: number | number[]) => {
     try {
@@ -306,7 +343,7 @@ export default function PinReleaseScreen() {
   const handlePress = useCallback(
     (k: string, _btn?: HTMLElement) => {
       if (busy || showDone) return
-      idleRef.current = 0
+      resetPinActivity()
       buzz(12)
       setMsg({ text: 'Enter the 4-digit code sent to your phone', isErr: false })
 
@@ -413,11 +450,11 @@ export default function PinReleaseScreen() {
           <button
             type="button"
             className="kiosk-otp-qr-action-btn"
-            onClick={() => setShowQrModal(true)}
-            title="Scan QR to upload file from mobile phone"
+            onClick={() => navigate('/')}
+            title="Return to Print from Phone"
           >
             <QrCode size={18} weight="bold" color="var(--red)" />
-            <span>Scan QR to Upload</span>
+            <span>Back to Print from Phone ({pinIdleSeconds}s)</span>
           </button>
 
           <div className="kiosk-otp-topbar-pill">
@@ -483,6 +520,20 @@ export default function PinReleaseScreen() {
               <span className="t">{k === 'clear' ? 'Clear' : k}</span>
             </button>
           ))}
+        </div>
+
+        {/* Auto-return to Print from Phone countdown & direct button */}
+        <div style={{ marginTop: 18, display: 'flex', justifyContent: 'center' }}>
+          <button
+            type="button"
+            className="kiosk-pin-exit-btn"
+            onClick={() => navigate('/')}
+            title="Return to Print from Phone"
+            id="kiosk-pin-back-btn"
+          >
+            <span>← Return to Print from Phone</span>
+            <span style={{ opacity: 0.8, fontSize: '0.8rem', fontFamily: 'monospace' }}>({pinIdleSeconds}s)</span>
+          </button>
         </div>
       </main>
 

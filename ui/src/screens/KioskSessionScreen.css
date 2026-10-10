@@ -114,8 +114,8 @@
   align-items: center;
   justify-content: center;
   width: 100%;
-  max-width: 660px;
-  padding: 48px 24px 54px;
+  max-width: 1080px;
+  padding: 36px 24px 72px;
   gap: 14px;
 }
 
@@ -129,14 +129,40 @@
   100% { opacity: 1; transform: scale(1); }
 }
 
-/* ── QR Panel (Idle Scan State - Minimal, Fast, Zero Lag) ──────────────────── */
+/* ── QR Panel (Idle Scan State - Minimal, Fast, Centered, No Buttons) ──────── */
 .ks-qr-panel {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 22px;
+  justify-content: center;
   text-align: center;
   width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.ks-qr-panel--centered {
+  margin: auto auto;
+}
+
+.ks-qr-center-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  width: 100%;
+  max-width: 520px;
+  padding: 36px 42px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1.5px solid rgba(220, 38, 38, 0.24);
+  border-radius: 32px;
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.16),
+    0 4px 20px rgba(220, 38, 38, 0.08);
+  animation: ks-fade-in 0.4s var(--ks-ease) both;
 }
 
 .ks-qr-header {
@@ -170,43 +196,11 @@
   justify-content: center;
   padding: 22px;
   background: #ffffff;
-  border-radius: 24px;
-  border: 1.5px solid rgba(220, 38, 38, 0.22);
+  border-radius: 22px;
+  border: 1.5px solid rgba(220, 38, 38, 0.2);
   box-shadow:
-    0 12px 36px rgba(0, 0, 0, 0.06),
-    0 2px 8px rgba(220, 38, 38, 0.05);
-}
-
-/* Switch to PIN Keypad button */
-.ks-pin-switch-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  width: 100%;
-  max-width: 380px;
-  padding: 13px 24px;
-  margin-top: 4px;
-  background: #ffffff;
-  border: 1.5px solid var(--ks-red);
-  border-radius: 14px;
-  color: var(--ks-red);
-  font-family: var(--ks-font);
-  font-size: 0.92rem;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.08);
-  transition: all 0.2s var(--ks-ease);
-}
-
-.ks-pin-switch-btn:hover {
-  background: #fef2f2;
-  box-shadow: 0 6px 20px rgba(220, 38, 38, 0.18);
-  transform: translateY(-1px);
-}
-
-.ks-pin-switch-btn:active {
-  transform: scale(0.98);
+    0 8px 24px rgba(0, 0, 0, 0.06),
+    0 2px 8px rgba(220, 38, 38, 0.04);
 }
 
 /* ── Active Flow Panel ─────────────────────────────────────────────────────── */
@@ -1054,5 +1048,751 @@
   font-family: var(--ks-mono);
   pointer-events: none;
 }
+
+/* ─── Advanced Per-Page & Enhanced Print Settings Styles ─── */
+
+.ks-settings-mode-bar {
+  display: flex;
+  background: #f1f5f9;
+  border-radius: 12px;
+  padding: 4px;
+  gap: 6px;
+  margin-bottom: 14px;
+  border: 1px solid #e2e8f0;
+}
+
+.ks-mode-pill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: var(--ks-text-2);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ks-mode-pill--active {
+  background: #ffffff;
+  color: var(--ks-red);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* Bulk action toolbar */
+.ks-bulk-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 12px;
+}
+
+.ks-bulk-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ks-text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ks-bulk-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ks-bulk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ks-text-1);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ks-bulk-btn:hover {
+  background: #f1f5f9;
+  border-color: var(--ks-red);
+}
+
+/* Per-Page Interactive Matrix */
+.ks-page-matrix {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+  max-height: 250px;
+  overflow-y: auto;
+  padding: 4px 2px;
+  margin-bottom: 14px;
+}
+
+.ks-page-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 8px;
+  gap: 6px;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ks-page-card--colour {
+  border-color: rgba(236, 72, 153, 0.4);
+  background: linear-gradient(180deg, #ffffff 60%, rgba(236, 72, 153, 0.05) 100%);
+  box-shadow: 0 2px 10px rgba(236, 72, 153, 0.12);
+}
+
+.ks-page-card--bw {
+  border-color: #cbd5e1;
+  background: #ffffff;
+}
+
+.ks-page-card--skipped {
+  opacity: 0.45;
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  border-style: dashed;
+}
+
+.ks-page-card-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ks-page-num {
+  font-size: 11px;
+  font-weight: 800;
+  font-family: var(--ks-mono);
+  color: var(--ks-text-1);
+}
+
+.ks-page-skip-toggle {
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+}
+
+.ks-page-mini-sheet {
+  width: 58px;
+  height: 74px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.ks-page-mini-sheet.colour-glow {
+  border-color: #ec4899;
+  box-shadow: 0 0 10px rgba(236, 72, 153, 0.25);
+}
+
+/* Color toggle button per page */
+.ks-page-color-toggle {
+  width: 100%;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.ks-badge-cmyk {
+  background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 50%, #3b82f6 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(139, 92, 246, 0.3);
+}
+
+.ks-badge-bw {
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+}
+
+/* Layout N-Up Grid */
+.ks-nup-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.ks-nup-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1.5px solid #e2e8f0;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  text-align: center;
+}
+
+.ks-nup-card--active {
+  border-color: var(--ks-red);
+  background: rgba(220, 38, 38, 0.04);
+  box-shadow: 0 0 12px rgba(220, 38, 38, 0.12);
+}
+
+.ks-nup-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ks-text-1);
+}
+
+.ks-nup-card--active .ks-nup-title {
+  color: var(--ks-red);
+}
+
+.ks-nup-sub {
+  font-size: 10px;
+  color: var(--ks-text-3);
+}
+
+/* Itemized Cost Breakdown Pills */
+.ks-breakdown-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  padding: 4px 0;
+  color: var(--ks-text-2);
+}
+
+.ks-breakdown-row strong {
+  color: var(--ks-text-1);
+  font-family: var(--ks-mono);
+}
+
+.ks-savings-tag {
+  background: #ecfdf5;
+  color: #059669;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(5, 150, 105, 0.2);
+}
+
+/* Copies quick presets */
+.ks-copies-presets {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ks-copy-preset-btn {
+  flex: 1;
+  padding: 6px 0;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ks-text-2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ks-copy-preset-btn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.ks-copy-preset-btn--active {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: var(--ks-red);
+  color: var(--ks-red);
+  font-weight: 800;
+}
+
+/* Binding Sub-Options */
+.ks-binding-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ks-binding-opt {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ks-text-2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ks-binding-opt--active {
+  background: #ffffff;
+  border-color: var(--ks-red);
+  color: var(--ks-red);
+  box-shadow: 0 1px 4px rgba(220, 38, 38, 0.12);
+}
+
+/* DPI and Paper Quality */
+.ks-quality-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.ks-quality-card {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1.5px solid #e2e8f0;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.ks-quality-card--active {
+  border-color: var(--ks-red);
+  background: rgba(220, 38, 38, 0.04);
+}
+
+.ks-quality-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ks-text-1);
+}
+
+.ks-quality-card--active .ks-quality-title {
+  color: var(--ks-red);
+}
+
+.ks-quality-sub {
+  font-size: 10px;
+  color: var(--ks-text-3);
+  margin-top: 2px;
+}
+
+/* Animated CMYK and micro effects */
+@keyframes cmykGlowPulse {
+  0% { box-shadow: 0 0 6px rgba(236, 72, 153, 0.35); }
+  50% { box-shadow: 0 0 14px rgba(139, 92, 246, 0.55); }
+  100% { box-shadow: 0 0 6px rgba(236, 72, 153, 0.35); }
+}
+
+@keyframes cmykGradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.ks-badge-cmyk {
+  background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 50%, #3b82f6 100%);
+  background-size: 200% 200%;
+  animation: cmykGradientShift 4s ease infinite, cmykGlowPulse 2.5s ease-in-out infinite;
+  color: #ffffff;
+}
+
+.ks-page-mini-sheet.colour-glow {
+  border-color: #ec4899;
+  animation: cmykGlowPulse 2.5s ease-in-out infinite;
+}
+
+.ks-sheet-landscape {
+  width: 74px !important;
+  height: 54px !important;
+}
+
+.ks-sheet-micro-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 80%;
+  opacity: 0.6;
+}
+
+.ks-sheet-micro-line {
+  height: 2px;
+  border-radius: 1px;
+  background: #cbd5e1;
+  width: 100%;
+}
+
+.ks-sheet-micro-line--short {
+  width: 60%;
+}
+
+.ks-sheet-micro-line--colour {
+  background: linear-gradient(90deg, #ec4899, #8b5cf6);
+}
+
+.ks-page-orient-btn {
+  background: transparent;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #64748b;
+  cursor: pointer;
+  margin-top: 2px;
+}
+
+.ks-page-orient-btn:hover {
+  background: #f1f5f9;
+  color: var(--ks-text-1);
+}
+
+/* Touch active tactile feedback */
+.ks-opt-card:active,
+.ks-nup-card:active,
+.ks-page-card:active,
+.ks-btn-primary:active,
+.ks-btn-secondary:active,
+.ks-copy-preset-btn:active {
+  transform: scale(0.97);
+}
+
+/* Custom sleek scrollbar for page matrix */
+.ks-page-matrix::-webkit-scrollbar {
+  width: 6px;
+}
+
+.ks-page-matrix::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.ks-page-matrix::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.ks-page-matrix::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ALWAYS-VISIBLE CANCEL BUTTON & INACTIVITY SYSTEM
+   ═══════════════════════════════════════════════════════════════════ */
+
+.ks-topbar-right-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  pointer-events: auto;
+}
+
+.ks-always-cancel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  min-height: 42px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1.5px solid #dc2626;
+  color: #dc2626;
+  font-family: var(--ks-font);
+  font-size: 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.12);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ks-always-cancel-btn:hover {
+  background: #fef2f2;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(220, 38, 38, 0.22);
+}
+
+.ks-always-cancel-btn:active {
+  transform: scale(0.96);
+  background: #fee2e2;
+}
+
+.ks-inline-cancel-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 20px;
+  min-height: 46px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1.5px solid #dc2626;
+  color: #dc2626;
+  font-family: var(--ks-font);
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ks-inline-cancel-btn:hover {
+  background: #fef2f2;
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
+
+.ks-inline-cancel-btn:active {
+  transform: scale(0.97);
+  background: #fee2e2;
+}
+
+/* Inactivity Modal Backdrop */
+.ks-inactivity-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: ks-fade-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ks-inactivity-modal-card {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  background: #ffffff;
+  border: 2px solid rgba(220, 38, 38, 0.35);
+  border-radius: 28px;
+  padding: 36px 30px 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.28),
+    0 4px 20px rgba(220, 38, 38, 0.15);
+  animation: ks-modal-zoom 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+  touch-action: manipulation;
+}
+
+@keyframes ks-modal-zoom {
+  0% { transform: scale(0.92); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.ks-inactivity-icon-wrap {
+  position: relative;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: rgba(220, 38, 38, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ks-inactivity-pulse-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid rgba(220, 38, 38, 0.4);
+  animation: ks-pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+@keyframes ks-pulse-ring {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.15); opacity: 0.3; }
+  100% { transform: scale(0.95); opacity: 0.8; }
+}
+
+.ks-inactivity-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.ks-inactivity-countdown-badge {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: #fee2e2;
+  border: 3px solid #dc2626;
+  box-shadow: 0 4px 20px rgba(220, 38, 38, 0.25);
+  animation: ks-pulse-scale 1s ease-in-out infinite;
+}
+
+@keyframes ks-pulse-scale {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.ks-inactivity-countdown-num {
+  font-size: 2.2rem;
+  font-weight: 900;
+  color: #dc2626;
+  font-family: var(--ks-mono);
+  line-height: 1;
+}
+
+.ks-inactivity-countdown-unit {
+  font-size: 9px;
+  font-weight: 800;
+  color: #991b1b;
+  letter-spacing: 0.08em;
+  margin-top: 2px;
+}
+
+.ks-inactivity-title {
+  margin: 0;
+  font-size: 1.55rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+}
+
+.ks-inactivity-desc {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #475569;
+  line-height: 1.5;
+  max-width: 38ch;
+}
+
+.ks-inactivity-desc strong {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+.ks-inactivity-actions {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.ks-inactivity-btn-keep {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 54px;
+  background: #dc2626;
+  color: #ffffff;
+  border: none;
+  border-radius: 14px;
+  font-family: var(--ks-font);
+  font-size: 1.05rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(220, 38, 38, 0.35);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ks-inactivity-btn-keep:hover {
+  background: #b91c1c;
+  transform: translateY(-1px);
+}
+
+.ks-inactivity-btn-keep:active {
+  transform: scale(0.97);
+}
+
+.ks-inactivity-btn-cancel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 48px;
+  background: #ffffff;
+  color: #64748b;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 14px;
+  font-family: var(--ks-font);
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ks-inactivity-btn-cancel:hover {
+  background: #f8fafc;
+  color: #dc2626;
+  border-color: #dc2626;
+}
+
+.ks-inactivity-btn-cancel:active {
+  transform: scale(0.97);
+}
+
+.ks-inactivity-subhint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+
+
 
 

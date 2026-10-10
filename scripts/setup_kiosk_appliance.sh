@@ -44,6 +44,23 @@ if [ -f "$SCRIPT_DIR/printbooth-display.service" ]; then
     echo "  ✓ Registered printbooth-display.service"
 fi
 
+if [ -f "$SCRIPT_DIR/printbooth-autoupdate.service" ] && [ -f "$SCRIPT_DIR/printbooth-autoupdate.timer" ]; then
+    sudo sed -e "s|User=pi|User=$ACTUAL_USER|g" \
+             -e "s|/home/pi/printer_automation/kiosk|$KIOSK_ROOT|g" \
+             -e "s|/home/pi|$HOME|g" \
+             "$SCRIPT_DIR/printbooth-autoupdate.service" | sudo tee /etc/systemd/system/printbooth-autoupdate.service > /dev/null
+    sudo cp "$SCRIPT_DIR/printbooth-autoupdate.timer" /etc/systemd/system/printbooth-autoupdate.timer
+    sudo systemctl daemon-reload
+    sudo systemctl enable printbooth-autoupdate.timer
+    sudo systemctl start printbooth-autoupdate.timer
+    echo "  ✓ Registered & started printbooth-autoupdate.timer (Autonomous GitHub updates every 5 min)"
+fi
+
+if [ -f "$SCRIPT_DIR/kiosk_autoupdate.sh" ]; then
+    sudo ln -sf "$SCRIPT_DIR/kiosk_autoupdate.sh" /usr/local/bin/kiosk-update
+    sudo chmod +x /usr/local/bin/kiosk-update
+fi
+
 # Ensure CUPS preserves zero jobs on reboot
 if command -v cupsctl > /dev/null 2>&1; then
     sudo cupsctl PreserveJobHistory=No PreserveJobFiles=No 2>/dev/null || true

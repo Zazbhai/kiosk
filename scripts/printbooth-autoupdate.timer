@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic Check for GitHub Updates for PrintBooth Kiosk
+Requires=printbooth-autoupdate.service
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
