@@ -1,0 +1,564 @@
+/* KioskWebPrintSettings.css — Pi-Optimized Web Print Settings for PrintBooth Kiosk
+   Engineered for 60fps hardware-accelerated touchscreens on Raspberry Pi 4 / 5 */
+
+.kwps-root {
+  width: 100%;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  box-sizing: border-box;
+  font-family: var(--ks-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  color: #0f172a;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+/* ── Top Bar ── */
+.kwps-topbar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: #ffffff;
+  border-bottom: 1.5px solid #f1f5f9;
+  box-sizing: border-box;
+  z-index: 10;
+}
+
+.kwps-topbar__left {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.kwps-topbar__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #dc2626;
+  box-shadow: 0 0 8px rgba(220, 38, 38, 0.5);
+}
+
+.kwps-topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.kwps-btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: #f8fafc;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.kwps-btn-back:active {
+  transform: scale(0.97);
+  background: #f1f5f9;
+}
+
+.kwps-btn-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: #fff;
+  border: 1.5px solid #fecaca;
+  border-radius: 10px;
+  color: #dc2626;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.kwps-btn-cancel:active {
+  transform: scale(0.97);
+  background: #fef2f2;
+}
+
+/* ── Widescreen Responsive Layout Grid ── */
+.kwps-layout-container {
+  width: 100%;
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 16px 24px 40px;
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 24px;
+  align-items: start;
+  box-sizing: border-box;
+}
+
+@media (max-width: 900px) {
+  .kwps-layout-container {
+    grid-template-columns: 1fr;
+    padding: 12px 16px 120px;
+    gap: 16px;
+  }
+}
+
+/* ── Left Column: Doc Header & Cards ── */
+.kwps-cards-column {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+}
+
+.kwps-doc-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kwps-doc-title {
+  font-size: 26px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.03em;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.kwps-doc-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.kwps-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  padding: 4px 10px;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.kwps-meta-pill--loc {
+  color: #dc2626;
+}
+
+.kwps-doc-filename {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.kwps-meta-icon {
+  color: #dc2626;
+  opacity: 0.85;
+}
+
+.kwps-meta-sep {
+  color: #cbd5e1;
+  font-size: 11px;
+}
+
+/* ── Carousel Stage for Kiosk ── */
+.kwps-carousel-stage {
+  width: 100%;
+  position: relative;
+}
+
+/* Override wrapper for kiosk wide column */
+.kwps-carousel-stage .carousel-wrapper {
+  max-width: 100% !important;
+}
+
+/* ── Hardware Accelerated & Pi Optimized Cards Overrides ── */
+.kwps-carousel-stage .expanded-card {
+  background: #ffffff !important;
+  border: 1.5px solid rgba(220, 38, 38, 0.2) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 10px 25px -4px rgba(220, 38, 38, 0.08), 0 2px 8px rgba(0, 0, 0, 0.03) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  will-change: transform !important;
+  transform: translateZ(0) !important;
+}
+
+.kwps-carousel-stage .secondary-card {
+  background: #ffffff !important;
+  border: 1.5px solid #e2e8f0 !important;
+  border-radius: 16px !important;
+  min-height: 84px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  cursor: pointer !important;
+  touch-action: manipulation !important;
+  transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  will-change: transform !important;
+}
+
+.kwps-carousel-stage .secondary-card:active {
+  transform: scale(0.97) !important;
+  border-color: #dc2626 !important;
+}
+
+.kwps-carousel-stage .card-theme-pages {
+  border-color: rgba(220, 38, 38, 0.25) !important;
+}
+
+.kwps-carousel-stage .card-theme-copies {
+  border-color: rgba(16, 185, 129, 0.25) !important;
+}
+
+.kwps-carousel-stage .card-theme-sides {
+  border-color: rgba(245, 158, 11, 0.25) !important;
+}
+
+.kwps-carousel-stage .card-theme-colour {
+  border-color: rgba(236, 72, 153, 0.25) !important;
+}
+
+/* ── Right Column: Order Summary (Widescreen Kiosk Ergonomics) ── */
+.kwps-summary-column {
+  width: 100%;
+  position: sticky;
+  top: 16px;
+}
+
+.kwps-summary-card {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 20px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
+}
+
+.kwps-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1.5px solid #f1f5f9;
+}
+
+.kwps-summary-badge-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kwps-summary-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.kwps-live-quote-tag {
+  font-size: 11px;
+  font-weight: 700;
+  color: #dc2626;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  letter-spacing: 0.02em;
+}
+
+/* Spec breakdown table */
+.kwps-summary-table {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13.5px;
+}
+
+.kwps-table-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kwps-row-label {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.kwps-row-val {
+  color: #1e293b;
+  font-weight: 700;
+  text-align: right;
+}
+
+.kwps-row-val--truncate {
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kwps-table-row--sheets {
+  padding-top: 6px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.kwps-table-row--sheets .kwps-row-val {
+  color: #dc2626;
+  font-size: 14.5px;
+}
+
+/* Eco Savings Badge */
+.kwps-eco-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f0fdf4;
+  border: 1.5px solid #bbf7d0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #15803d;
+}
+
+/* Total Price Banner */
+.kwps-total-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #fef2f2 0%, #fff1f2 100%);
+  border: 1.5px solid rgba(220, 38, 38, 0.22);
+  border-radius: 14px;
+  padding: 12px 16px;
+}
+
+.kwps-total-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.kwps-total-label {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #64748b;
+}
+
+.kwps-total-sub {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.kwps-total-price {
+  display: flex;
+  align-items: baseline;
+  color: #dc2626;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.kwps-currency {
+  font-size: 18px;
+  margin-right: 2px;
+}
+
+.kwps-amount {
+  font-size: 32px;
+  letter-spacing: -0.04em;
+}
+
+.kwps-cents {
+  font-size: 16px;
+  opacity: 0.85;
+}
+
+/* Primary CTA Button (Tactile 54px touch target) */
+.kwps-primary-cta {
+  width: 100%;
+  height: 54px;
+  border-radius: 14px;
+  border: none;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(220, 38, 38, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  touch-action: manipulation;
+}
+
+.kwps-primary-cta:active {
+  transform: scale(0.98);
+  background: #b91c1c;
+  box-shadow: 0 2px 10px rgba(220, 38, 38, 0.25);
+}
+
+.kwps-primary-cta:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Secondary Actions */
+.kwps-summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.kwps-sec-btn {
+  flex: 1;
+  height: 42px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  touch-action: manipulation;
+}
+
+.kwps-sec-btn:active {
+  background: #e2e8f0;
+  transform: scale(0.97);
+}
+
+.kwps-sec-btn--cancel {
+  color: #dc2626;
+  border-color: #fecaca;
+  background: #fff;
+}
+
+.kwps-sec-btn--cancel:active {
+  background: #fef2f2;
+}
+
+/* ── Compact Floating Action Bar (Mobile / Narrow Screens Only) ── */
+.kwps-compact-action-bar {
+  display: none;
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  right: 16px;
+  background: #ffffff;
+  border: 1.5px solid rgba(220, 38, 38, 0.25);
+  border-radius: 18px;
+  padding: 10px 14px;
+  box-shadow: 0 10px 30px rgba(220, 38, 38, 0.18), 0 2px 8px rgba(0, 0, 0, 0.05);
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  z-index: 50;
+  box-sizing: border-box;
+}
+
+@media (max-width: 900px) {
+  .kwps-compact-action-bar {
+    display: flex;
+  }
+  .kwps-summary-column {
+    display: none;
+  }
+}
+
+.kwps-compact-price-pill {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.kwps-compact-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kwps-compact-label {
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.kwps-compact-breakdown {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #dc2626;
+  background: #fef2f2;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.kwps-compact-amount {
+  font-size: 20px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.03em;
+}
+
+.kwps-compact-btn {
+  height: 46px;
+  padding: 0 20px;
+  border-radius: 12px;
+  background: #dc2626;
+  border: none;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.3);
+  touch-action: manipulation;
+}
+
+.kwps-compact-btn:active {
+  transform: scale(0.97);
+  background: #b91c1c;
+}
