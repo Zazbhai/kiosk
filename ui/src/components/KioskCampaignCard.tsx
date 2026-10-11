@@ -26,7 +26,7 @@ const FALLBACK_CAMPUS_ADS: KioskAdItem[] = [
     headline: 'Fuel Your Late Night Study Sessions',
     tagline: 'Get 20% off on Red Bull with Student ID at Campus Cafeteria',
     callToAction: 'Scan for Offer',
-    qrCodeUrl: 'https://printbooth.in/offers/redbull',
+    qrCodeUrl: 'https://printbooth.co.in/offers/redbull',
     badgeText: 'CAMPUS SPONSOR',
     accentColor: '#dc2626',
   },
@@ -181,7 +181,7 @@ export default function KioskCampaignCard({ kioskId: propKioskId }: KioskCampaig
   if (!currentAd) return null
 
   const targetQrUrl =
-    currentAd.qrCodeUrl || `https://printbooth.in/offers/${currentAd.campaignId.toLowerCase()}`
+    currentAd.qrCodeUrl || `https://printbooth.co.in/offers/${currentAd.campaignId.toLowerCase()}`
 
   return (
     <>
