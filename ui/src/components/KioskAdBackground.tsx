@@ -154,32 +154,6 @@ export default function KioskAdBackground({ kioskId: propKioskId }: KioskAdBackg
         />
         <div className="kiosk-ad-vignette" />
       </div>
-
-      {/* ── Bottom Text: Current Advertisement Details Only, Transparent Background (Moving Left to Right) ── */}
-      <div className="ks-ad-bottom-bar" role="marquee" aria-label="Campus Announcement">
-        <div className="ks-ad-ticker-viewport">
-          <div className="ks-ad-ticker-track-ltr">
-            <div className="ks-ad-ticker-segment">
-              <span className="ks-ad-ticker-badge">{currentAd.badgeText || 'SPONSOR'}</span>
-              <span className="ks-ad-ticker-advertiser">{currentAd.advertiser}</span>
-              <span className="ks-ad-ticker-divider">•</span>
-              <span className="ks-ad-ticker-text">{currentAd.headline || currentAd.title}</span>
-              {currentAd.tagline && (
-                <>
-                  <span className="ks-ad-ticker-divider">—</span>
-                  <span className="ks-ad-ticker-sub">{currentAd.tagline}</span>
-                </>
-              )}
-              {currentAd.callToAction && (
-                <>
-                  <span className="ks-ad-ticker-divider">•</span>
-                  <span className="ks-ad-ticker-cta">{currentAd.callToAction}</span>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
     </>
   )
 }
