@@ -24,6 +24,10 @@ import {
   getKioskQrUrl,
   loadKioskRuntimeConfig,
 } from '../utils/siteConfig'
+import {
+  getKioskPricing,
+  parsePageRange,
+} from '../utils/printSettingsUtils'
 import './KioskSessionScreen.css'
 
 // ─── Inactivity Constants (Auto-Return to Print from Phone) ─────────────────
@@ -216,6 +220,9 @@ export default function KioskSessionScreen() {
   const [selectedDuplex, setSelectedDuplex] = useState<'SINGLE' | 'DOUBLE'>('SINGLE')
   const [selectedCopies, setSelectedCopies] = useState(1)
   const [selectedPageRange, setSelectedPageRange] = useState('ALL')
+  const [pageSelectionType, setPageSelectionType] = useState<'ALL' | 'FIRST' | 'ODD' | 'EVEN' | 'CUSTOM'>('ALL')
+  const [customStartPage, setCustomStartPage] = useState(1)
+  const [customEndPage, setCustomEndPage] = useState(5)
   const [printingProgress, setPrintingProgress] = useState(0)
 
   // Enhanced & Per-Page Customization State
@@ -447,25 +454,34 @@ export default function KioskSessionScreen() {
   const pageCount = session?.document?.pageCount || session?.totalPages || 5
 
   const pageDetails = useMemo(() => {
+    const pricing = getKioskPricing()
     let bwCount = 0
     let colourCount = 0
     let skippedCount = 0
 
-    for (let i = 0; i < pageCount; i++) {
-      const custom = pageCustomizations[i]
-      const isSkipped = settingsMode === 'PER_PAGE' && Boolean(custom?.skipped)
-      if (isSkipped) {
-        skippedCount++
-        continue
+    if (settingsMode === 'PER_PAGE') {
+      for (let i = 0; i < pageCount; i++) {
+        const custom = pageCustomizations[i]
+        const isSkipped = Boolean(custom?.skipped)
+        if (isSkipped) {
+          skippedCount++
+          continue
+        }
+        const pageColour = custom?.colour || selectedColour
+        if (pageColour === 'COLOUR') {
+          colourCount++
+        } else {
+          bwCount++
+        }
       }
-      const pageColour = settingsMode === 'PER_PAGE' && custom?.colour
-        ? custom.colour
-        : selectedColour
-
-      if (pageColour === 'COLOUR') {
-        colourCount++
+    } else {
+      // GLOBAL uniform mode with selected page range
+      const activePages = parsePageRange(selectedPageRange, pageCount)
+      skippedCount = Math.max(0, pageCount - activePages.length)
+      if (selectedColour === 'COLOUR') {
+        colourCount = activePages.length
       } else {
-        bwCount++
+        bwCount = activePages.length
       }
     }
 
@@ -474,9 +490,10 @@ export default function KioskSessionScreen() {
     const sheetsPerCopy = Math.max(1, Math.ceil(includedPages / pagesPerSheet))
     const totalSheets = sheetsPerCopy * selectedCopies
 
-    // Rates (Duplex offers discount per page: ₹1.50 vs ₹2.00 for B&W, ₹6.00 vs ₹8.00 for Colour)
-    const bwRate = selectedDuplex === 'DOUBLE' ? 1.5 : 2.0
-    const colourRate = selectedDuplex === 'DOUBLE' ? 6.0 : 8.0
+    // Rates dynamically derived from live station pricing
+    const isDouble = selectedDuplex === 'DOUBLE'
+    const bwRate = isDouble ? (pricing.bwDouble / 2) : pricing.bwSingle
+    const colourRate = isDouble ? (pricing.colorDouble / 2) : pricing.colorSingle
 
     // Multipliers
     const dpiMultiplier = printDpi === '1200' ? 1.2 : 1.0
@@ -505,8 +522,9 @@ export default function KioskSessionScreen() {
       savedPercentage,
       bwRate,
       colourRate,
+      pricing,
     }
-  }, [pageCount, pageCustomizations, settingsMode, selectedColour, selectedDuplex, nUpLayout, selectedCopies, printDpi, paperWeight])
+  }, [pageCount, pageCustomizations, settingsMode, selectedColour, selectedDuplex, nUpLayout, selectedCopies, printDpi, paperWeight, selectedPageRange])
 
   const totalAmount = pageDetails.calculatedTotal
   const calculatedSheets = pageDetails.sheetsPerCopy
@@ -764,7 +782,10 @@ export default function KioskSessionScreen() {
 
   // ── Derived State ────────────────────────────────────────────────────────
 
-  const rawState = session?.state || 'QR_READY'
+  const searchParamState = typeof window !== 'undefined'
+    ? (new URLSearchParams(window.location.search).get('devState') || new URLSearchParams(window.location.search).get('state')) as SessionState | null
+    : null
+  const rawState = searchParamState || session?.state || 'QR_READY'
   // If document was uploaded, but backend state is still transitioning, show CONFIRMING
   const state: SessionState = (rawState === 'CLAIMED' || rawState === 'UPLOADING') && session?.document
     ? 'CONFIRMING'
@@ -845,6 +866,13 @@ export default function KioskSessionScreen() {
     // 3. While initializing, return empty string so loading state renders instead of a constant sessionless QR
     return ''
   }, [session?.qrUrl, session?.token, siteUrl, kioskId])
+
+  const localTestUrl = useMemo(() => {
+    if (session?.token && session.token !== 'init') {
+      return `http://localhost:5200/print?id=${encodeURIComponent(kioskId)}&session=${encodeURIComponent(session.token)}`
+    }
+    return ''
+  }, [kioskId, session?.token])
 
   // Current document and previews
   const doc = session?.document
@@ -953,84 +981,109 @@ export default function KioskSessionScreen() {
                 <div
                   style={{
                     display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
+                    flexDirection: 'column',
+                    gap: 6,
                     background: '#f8fafc',
                     border: '1px solid #e2e8f0',
                     borderRadius: 12,
                     padding: '8px 12px',
                     width: '100%',
-                    maxWidth: '420px',
+                    maxWidth: '440px',
                     boxSizing: 'border-box',
                     fontSize: 12,
                     color: '#475569',
                     marginTop: 4,
                   }}
                 >
-                  <span style={{ fontWeight: 800, color: '#dc2626', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0 }}>
-                    Test URL:
-                  </span>
-                  <a
-                    href={qrDisplayValue}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{
-                      fontFamily: 'monospace',
-                      fontSize: 11,
-                      color: '#0284c7',
-                      textDecoration: 'underline',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      flex: 1,
-                      textAlign: 'left',
-                    }}
-                    title={qrDisplayValue}
-                  >
-                    {qrDisplayValue}
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (navigator.clipboard) {
-                        navigator.clipboard.writeText(qrDisplayValue)
-                        setCopiedUrl(true)
-                        setTimeout(() => setCopiedUrl(false), 2000)
-                      }
-                    }}
-                    style={{
-                      border: '1px solid #cbd5e1',
-                      background: copiedUrl ? '#16a34a' : '#ffffff',
-                      color: copiedUrl ? '#ffffff' : '#334155',
-                      borderRadius: 6,
-                      padding: '4px 10px',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      flexShrink: 0,
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    {copiedUrl ? 'Copied!' : 'Copy'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => window.open(qrDisplayValue, '_blank')}
-                    style={{
-                      border: '1px solid #dc2626',
-                      background: '#dc2626',
-                      color: '#ffffff',
-                      borderRadius: 6,
-                      padding: '4px 10px',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      flexShrink: 0,
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    Open ↗
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+                    <span style={{ fontWeight: 800, color: '#dc2626', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0 }}>
+                      Session URL:
+                    </span>
+                    <a
+                      href={localTestUrl || qrDisplayValue}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                        color: '#0284c7',
+                        textDecoration: 'underline',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        flex: 1,
+                        textAlign: 'left',
+                      }}
+                      title={localTestUrl || qrDisplayValue}
+                    >
+                      {localTestUrl || qrDisplayValue}
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (navigator.clipboard) {
+                          navigator.clipboard.writeText(localTestUrl || qrDisplayValue)
+                          setCopiedUrl(true)
+                          setTimeout(() => setCopiedUrl(false), 2000)
+                        }
+                      }}
+                      style={{
+                        border: '1px solid #cbd5e1',
+                        background: copiedUrl ? '#16a34a' : '#ffffff',
+                        color: copiedUrl ? '#ffffff' : '#334155',
+                        borderRadius: 6,
+                        padding: '4px 10px',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {copiedUrl ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', width: '100%' }}>
+                    {localTestUrl && (
+                      <button
+                        type="button"
+                        onClick={() => window.open(localTestUrl, '_blank')}
+                        style={{
+                          border: '1px solid #16a34a',
+                          background: '#16a34a',
+                          color: '#ffffff',
+                          borderRadius: 6,
+                          padding: '4px 10px',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                        title="Open in local dev web app (http://localhost:5200)"
+                      >
+                        Open Local (Port 5200) ↗
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => window.open(qrDisplayValue, '_blank')}
+                      style={{
+                        border: '1px solid #dc2626',
+                        background: '#dc2626',
+                        color: '#ffffff',
+                        borderRadius: 6,
+                        padding: '4px 10px',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      title="Open in production domain (printbooth.co.in)"
+                    >
+                      Open Prod Domain ↗
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -1190,7 +1243,7 @@ export default function KioskSessionScreen() {
                     </div>
                     <div className="ks-summary-row">
                       <span>Base Rate</span>
-                      <strong>₹2.00 / page (B&amp;W)</strong>
+                      <strong>₹{pageDetails.pricing.bwSingle.toFixed(2)} / page (B&amp;W)</strong>
                     </div>
                   </div>
                 </div>
@@ -1267,10 +1320,160 @@ export default function KioskSessionScreen() {
                   </button>
                 </div>
 
-                {/* 1. Global Colour Mode (When GLOBAL) */}
+                {/* 1. Page Selection (When GLOBAL Mode) */}
                 {settingsMode === 'GLOBAL' && (
                   <div className="ks-settings-group">
-                    <span className="ks-settings-label">1. Colour Mode</span>
+                    <div className="ks-settings-header-row">
+                      <span className="ks-settings-label">1. Page Selection</span>
+                      <span className="ks-settings-badge-sub">
+                        {pageDetails.includedPages} of {pageCount} pages selected
+                      </span>
+                    </div>
+
+                    <div className="ks-page-select-grid">
+                      <button
+                        type="button"
+                        className={`ks-select-chip ${pageSelectionType === 'ALL' ? 'ks-select-chip--active' : ''}`}
+                        onClick={() => {
+                          setPageSelectionType('ALL')
+                          setSelectedPageRange('ALL')
+                        }}
+                        id="ks-pages-all"
+                      >
+                        <span className="ks-chip-main">All Pages</span>
+                        <span className="ks-chip-sub">1 to {pageCount}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`ks-select-chip ${pageSelectionType === 'FIRST' ? 'ks-select-chip--active' : ''}`}
+                        onClick={() => {
+                          setPageSelectionType('FIRST')
+                          setSelectedPageRange('1')
+                        }}
+                        id="ks-pages-first"
+                      >
+                        <span className="ks-chip-main">First Page</span>
+                        <span className="ks-chip-sub">Cover only</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`ks-select-chip ${pageSelectionType === 'ODD' ? 'ks-select-chip--active' : ''}`}
+                        onClick={() => {
+                          setPageSelectionType('ODD')
+                          const oddPages = Array.from({ length: pageCount }, (_, i) => i + 1).filter(p => p % 2 !== 0).join(', ')
+                          setSelectedPageRange(oddPages || '1')
+                        }}
+                        id="ks-pages-odd"
+                      >
+                        <span className="ks-chip-main">Odd Pages</span>
+                        <span className="ks-chip-sub">1, 3, 5…</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`ks-select-chip ${pageSelectionType === 'EVEN' ? 'ks-select-chip--active' : ''}`}
+                        onClick={() => {
+                          setPageSelectionType('EVEN')
+                          const evenPages = Array.from({ length: pageCount }, (_, i) => i + 1).filter(p => p % 2 === 0).join(', ')
+                          setSelectedPageRange(evenPages || (pageCount >= 2 ? '2' : '1'))
+                        }}
+                        id="ks-pages-even"
+                      >
+                        <span className="ks-chip-main">Even Pages</span>
+                        <span className="ks-chip-sub">2, 4, 6…</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`ks-select-chip ${pageSelectionType === 'CUSTOM' ? 'ks-select-chip--active' : ''}`}
+                        onClick={() => {
+                          setPageSelectionType('CUSTOM')
+                          setSelectedPageRange(`${customStartPage}-${customEndPage}`)
+                        }}
+                        id="ks-pages-custom"
+                      >
+                        <span className="ks-chip-main">Custom Range</span>
+                        <span className="ks-chip-sub">{customStartPage}–{customEndPage}</span>
+                      </button>
+                    </div>
+
+                    {/* Steppers when Custom Range is active */}
+                    {pageSelectionType === 'CUSTOM' && (
+                      <div className="ks-custom-range-box">
+                        <div className="ks-range-stepper-wrap">
+                          <span className="ks-range-label">From:</span>
+                          <div className="ks-mini-stepper">
+                            <button
+                              type="button"
+                              className="ks-mini-stepper-btn"
+                              onClick={() => {
+                                const next = Math.max(1, customStartPage - 1)
+                                setCustomStartPage(next)
+                                setSelectedPageRange(`${next}-${customEndPage}`)
+                              }}
+                              disabled={customStartPage <= 1}
+                            >
+                              −
+                            </button>
+                            <span className="ks-mini-stepper-val">{customStartPage}</span>
+                            <button
+                              type="button"
+                              className="ks-mini-stepper-btn"
+                              onClick={() => {
+                                const next = Math.min(customEndPage, customStartPage + 1)
+                                setCustomStartPage(next)
+                                setSelectedPageRange(`${next}-${customEndPage}`)
+                              }}
+                              disabled={customStartPage >= customEndPage}
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+
+                        <span className="ks-range-sep">to</span>
+
+                        <div className="ks-range-stepper-wrap">
+                          <span className="ks-range-label">To:</span>
+                          <div className="ks-mini-stepper">
+                            <button
+                              type="button"
+                              className="ks-mini-stepper-btn"
+                              onClick={() => {
+                                const next = Math.max(customStartPage, customEndPage - 1)
+                                setCustomEndPage(next)
+                                setSelectedPageRange(`${customStartPage}-${next}`)
+                              }}
+                              disabled={customEndPage <= customStartPage}
+                            >
+                              −
+                            </button>
+                            <span className="ks-mini-stepper-val">{customEndPage}</span>
+                            <button
+                              type="button"
+                              className="ks-mini-stepper-btn"
+                              onClick={() => {
+                                const next = Math.min(pageCount, customEndPage + 1)
+                                setCustomEndPage(next)
+                                setSelectedPageRange(`${customStartPage}-${next}`)
+                              }}
+                              disabled={customEndPage >= pageCount}
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 2. Global Colour Mode (When GLOBAL) */}
+                {settingsMode === 'GLOBAL' && (
+                  <div className="ks-settings-group">
+                    <span className="ks-settings-label">2. Colour Mode</span>
                     <div className="ks-opt-row">
                       <button
                         type="button"
@@ -1278,30 +1481,41 @@ export default function KioskSessionScreen() {
                         onClick={() => setSelectedColour('BW')}
                         id="ks-opt-bw"
                       >
-                        <span className="ks-opt-title">Black &amp; White</span>
-                        <span className="ks-opt-sub">₹2.00 per sheet • Crisp laser text</span>
+                        <div className="ks-opt-card-top">
+                          <span className="ks-opt-title">Black &amp; White</span>
+                          {selectedColour === 'BW' && <span className="ks-active-check">✓</span>}
+                        </div>
+                        <span className="ks-opt-sub">
+                          ₹{pageDetails.pricing.bwSingle.toFixed(2)} per sheet • Crisp laser text
+                        </span>
                       </button>
+
                       <button
                         type="button"
                         className={`ks-opt-card ${selectedColour === 'COLOUR' ? 'ks-opt-card--active' : ''}`}
                         onClick={() => setSelectedColour('COLOUR')}
                         id="ks-opt-colour"
                       >
-                        <span className="ks-opt-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                          <span>Full Colour</span>
-                          <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'linear-gradient(135deg, #ec4899, #8b5cf6)', color: '#fff' }}>Vivid</span>
+                        <div className="ks-opt-card-top">
+                          <span className="ks-opt-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <span>Full Colour</span>
+                            <span className="ks-vivid-pill">Vivid</span>
+                          </span>
+                          {selectedColour === 'COLOUR' && <span className="ks-active-check">✓</span>}
+                        </div>
+                        <span className="ks-opt-sub">
+                          ₹{pageDetails.pricing.colorSingle.toFixed(2)} per sheet • CMYK photo ink
                         </span>
-                        <span className="ks-opt-sub">₹8.00 per sheet • CMYK photo ink</span>
                       </button>
                     </div>
                   </div>
                 )}
 
-                {/* 1b. Per-Page Interactive Matrix (When PER_PAGE) */}
+                {/* Per-Page Interactive Matrix (When PER_PAGE) */}
                 {settingsMode === 'PER_PAGE' && (
                   <div className="ks-settings-group">
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <span className="ks-settings-label">1. Page-by-Page Customisation</span>
+                      <span className="ks-settings-label">Page-by-Page Customisation</span>
                       <span style={{ fontSize: 11, color: '#64748b', fontFamily: 'var(--ks-mono)' }}>
                         {pageDetails.includedPages} of {pageCount} pages included
                       </span>
@@ -1416,9 +1630,62 @@ export default function KioskSessionScreen() {
                   </div>
                 )}
 
-                {/* 2. Layout N-Up (Multi-Page per Sheet) */}
+                {/* 3. Sides & Duplex Binding */}
                 <div className="ks-settings-group">
-                  <span className="ks-settings-label">2. Page Layout (N-Up Multi-Sheet)</span>
+                  <span className="ks-settings-label">3. Print Sides &amp; Binding</span>
+                  <div className="ks-opt-row">
+                    <button
+                      type="button"
+                      className={`ks-opt-card ${selectedDuplex === 'SINGLE' ? 'ks-opt-card--active' : ''}`}
+                      onClick={() => setSelectedDuplex('SINGLE')}
+                      id="ks-opt-single"
+                    >
+                      <div className="ks-opt-card-top">
+                        <span className="ks-opt-title">Single-Sided</span>
+                        {selectedDuplex === 'SINGLE' && <span className="ks-active-check">✓</span>}
+                      </div>
+                      <span className="ks-opt-sub">Front side only • 1 page per sheet</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`ks-opt-card ${selectedDuplex === 'DOUBLE' ? 'ks-opt-card--active' : ''}`}
+                      onClick={() => setSelectedDuplex('DOUBLE')}
+                      id="ks-opt-double"
+                    >
+                      <div className="ks-opt-card-top">
+                        <span className="ks-opt-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <span>Double-Sided</span>
+                          <span className="ks-eco-pill">🌿 Eco Saver</span>
+                        </span>
+                        {selectedDuplex === 'DOUBLE' && <span className="ks-active-check">✓</span>}
+                      </div>
+                      <span className="ks-opt-sub">2 sides per sheet • 50% paper savings</span>
+                    </button>
+                  </div>
+
+                  {selectedDuplex === 'DOUBLE' && (
+                    <div className="ks-binding-row">
+                      <button
+                        type="button"
+                        className={`ks-binding-opt ${duplexBinding === 'LONG_EDGE' ? 'ks-binding-opt--active' : ''}`}
+                        onClick={() => setDuplexBinding('LONG_EDGE')}
+                      >
+                        <span>📖 Long-Edge Flip (Booklet)</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`ks-binding-opt ${duplexBinding === 'SHORT_EDGE' ? 'ks-binding-opt--active' : ''}`}
+                        onClick={() => setDuplexBinding('SHORT_EDGE')}
+                      >
+                        <span>🗓️ Short-Edge Flip (Calendar)</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. Layout N-Up (Multi-Page per Sheet) */}
+                <div className="ks-settings-group">
+                  <span className="ks-settings-label">4. Page Layout (N-Up Multi-Sheet)</span>
                   <div className="ks-nup-grid">
                     <button
                       type="button"
@@ -1450,53 +1717,9 @@ export default function KioskSessionScreen() {
                   </div>
                 </div>
 
-                {/* 3. Sides & Duplex Binding */}
+                {/* 5. Quality DPI & Paper Selection */}
                 <div className="ks-settings-group">
-                  <span className="ks-settings-label">3. Print Sides &amp; Binding</span>
-                  <div className="ks-opt-row">
-                    <button
-                      type="button"
-                      className={`ks-opt-card ${selectedDuplex === 'SINGLE' ? 'ks-opt-card--active' : ''}`}
-                      onClick={() => setSelectedDuplex('SINGLE')}
-                      id="ks-opt-single"
-                    >
-                      <span className="ks-opt-title">Single-Sided</span>
-                      <span className="ks-opt-sub">Front side only</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={`ks-opt-card ${selectedDuplex === 'DOUBLE' ? 'ks-opt-card--active' : ''}`}
-                      onClick={() => setSelectedDuplex('DOUBLE')}
-                      id="ks-opt-double"
-                    >
-                      <span className="ks-opt-title">Double-Sided</span>
-                      <span className="ks-opt-sub">2 sides per sheet (25% off)</span>
-                    </button>
-                  </div>
-
-                  {selectedDuplex === 'DOUBLE' && (
-                    <div className="ks-binding-row">
-                      <button
-                        type="button"
-                        className={`ks-binding-opt ${duplexBinding === 'LONG_EDGE' ? 'ks-binding-opt--active' : ''}`}
-                        onClick={() => setDuplexBinding('LONG_EDGE')}
-                      >
-                        <span>📖 Long-Edge Flip (Booklet)</span>
-                      </button>
-                      <button
-                        type="button"
-                        className={`ks-binding-opt ${duplexBinding === 'SHORT_EDGE' ? 'ks-binding-opt--active' : ''}`}
-                        onClick={() => setDuplexBinding('SHORT_EDGE')}
-                      >
-                        <span>🗓️ Short-Edge Flip (Calendar)</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* 4. Quality DPI & Paper Selection */}
-                <div className="ks-settings-group">
-                  <span className="ks-settings-label">4. Quality &amp; Paper Type</span>
+                  <span className="ks-settings-label">5. Quality &amp; Paper Type</span>
                   <div className="ks-quality-grid">
                     <button
                       type="button"
@@ -1519,10 +1742,10 @@ export default function KioskSessionScreen() {
                   </div>
                 </div>
 
-                {/* 5. Copies Stepper & Quick Presets */}
+                {/* 6. Copies Stepper & Quick Presets */}
                 <div className="ks-settings-group">
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span className="ks-settings-label">5. Number of Copies</span>
+                    <span className="ks-settings-label">6. Number of Copies</span>
                     <div className="ks-counter">
                       <button
                         type="button"
@@ -1569,12 +1792,19 @@ export default function KioskSessionScreen() {
                       <strong style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{docFileName}</strong>
                     </div>
 
+                    <div className="ks-summary-row">
+                      <span>Pages Selected</span>
+                      <strong>
+                        {pageDetails.includedPages} of {pageCount} pages
+                        {pageDetails.skippedCount > 0 ? ` (${pageDetails.skippedCount} skipped)` : ''}
+                      </strong>
+                    </div>
+
                     {settingsMode === 'PER_PAGE' ? (
                       <div className="ks-summary-row">
                         <span>Page Mix</span>
                         <strong>
                           {pageDetails.bwCount} B&W • {pageDetails.colourCount} Colour
-                          {pageDetails.skippedCount > 0 ? ` (${pageDetails.skippedCount} skipped)` : ''}
                         </strong>
                       </div>
                     ) : (
@@ -1603,7 +1833,7 @@ export default function KioskSessionScreen() {
 
                     <div className="ks-summary-row">
                       <span>Paper Sheets</span>
-                      <strong>{pageDetails.totalSheets} sheets</strong>
+                      <strong>{pageDetails.totalSheets} sheets (A4 75GSM)</strong>
                     </div>
                   </div>
 
