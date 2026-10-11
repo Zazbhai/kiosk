@@ -637,7 +637,6 @@ export default function KioskSessionScreen() {
 
   const phase = PHASES[state || 'QR_READY'] || PHASES.QR_READY
   const isWaiting = state === 'QR_READY'
-  const isOtpReady = state === 'OTP_READY'
   const isPrinting = state === 'PRINTING'
   const isDone = state === 'DONE'
 
@@ -1244,33 +1243,6 @@ export default function KioskSessionScreen() {
           </div>
         )}
 
-        {/* ── OTP DISPLAY FALLBACK (When OTP Ready code entered) ── */}
-        {isOtpReady && session?.otp && (
-          <div className="ks-otp-panel">
-            <div className="ks-otp-badge">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                <polyline points="22,4 12,14.01 9,11.01" />
-              </svg>
-              <span>Payment Verified — Enter This Code on the Keypad</span>
-            </div>
-
-            <h1 className="ks-otp-headline">Your Print Code</h1>
-
-            <div className="ks-otp-digits">
-              {session.otp.split('').map((digit, i) => (
-                <div key={i} className="ks-otp-digit">
-                  {digit}
-                </div>
-              ))}
-            </div>
-
-            <div className="ks-companion-status-pill" style={{ marginTop: 14 }}>
-              <span className="ks-companion-dot" />
-              <span>Zero Touch • Release code active</span>
-            </div>
-          </div>
-        )}
 
       </main>
     </div>

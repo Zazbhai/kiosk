@@ -1,0 +1,526 @@
+/* ─── PrintBooth Kiosk Ultra-Fast Neomorphic OTP Styles (Pi Optimized) ─── */
+:root {
+  --tx: #1e293b;
+  --mu: #64748b;
+  --red: #dc2626;
+  --redg: rgba(220, 38, 38, 0.2);
+  --sh: rgba(148, 163, 184, 0.35);
+  --wh: #ffffff;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  /* High-performance 2-shadow neomorphic elevation (minimal GPU fill overhead) */
+  --raise: 5px 5px 10px rgba(160, 172, 192, 0.35), -5px -5px 10px #ffffff;
+  --inset: inset 4px 4px 8px rgba(160, 172, 192, 0.38), inset -4px -4px 8px #ffffff;
+}
+
+.kiosk-otp-root {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);
+  background-color: #ffffff;
+  background-image:
+    radial-gradient(ellipse 70% 50% at 50% 16%, rgba(220, 38, 38, 0.07) 0%, transparent 65%),
+    radial-gradient(ellipse 60% 45% at 85% 85%, rgba(220, 38, 38, 0.05) 0%, transparent 60%);
+  color: var(--tx);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Floating Station Top Bar ── */
+.kiosk-otp-topbar {
+  position: fixed;
+  top: 16px;
+  left: 24px;
+  right: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.kiosk-otp-topbar-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 18px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 3px 4px 10px rgba(160, 172, 192, 0.2), -2px -2px 6px #ffffff;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.kiosk-otp-topbar-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: #16a34a;
+  box-shadow: 0 0 6px rgba(22, 163, 74, 0.5);
+}
+
+.kiosk-otp-qr-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-radius: 8px;
+  background: linear-gradient(145deg, #ffffff, #edf0f7);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 3px 4px 10px rgba(160, 172, 192, 0.2), -2px -2px 6px #ffffff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--tx);
+  cursor: pointer;
+  transition: transform 0.08s var(--ease);
+}
+
+.kiosk-otp-qr-action-btn:active {
+  transform: scale(0.96);
+  box-shadow: var(--inset);
+}
+
+/* ── Main Neomorphic Card ── */
+.kiosk-card {
+  z-index: 1;
+  width: min(420px, 94vw);
+  padding: clamp(18px, 3.5vh, 30px) clamp(18px, 4vw, 30px);
+  border-radius: 34px;
+  text-align: center;
+  position: relative;
+  background: linear-gradient(145deg, #ffffff, #f1f3f8);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 12px 14px 28px rgba(160, 172, 192, 0.3),
+              -10px -10px 24px #ffffff;
+  transition: transform 0.3s var(--ease), opacity 0.25s var(--ease);
+}
+
+.kiosk-card.leave {
+  transform: translateX(-40px) scale(0.96);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Red Padlock Icon */
+.lock {
+  width: 54px;
+  height: 54px;
+  margin: 0 auto 10px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  box-shadow: var(--raise);
+  background: linear-gradient(145deg, #ffffff, #e9ecf4);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  color: var(--red);
+}
+
+.kiosk-card h1 {
+  font-size: 1.45rem;
+  margin: 0 0 4px;
+  font-weight: 700;
+  color: var(--tx);
+  letter-spacing: -0.02em;
+}
+
+.kiosk-card p {
+  margin: 0 0 16px;
+  color: var(--mu);
+  font-size: 0.92rem;
+}
+
+/* ── 4-Digit OTP Display Slots ── */
+.otp {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.box {
+  width: 68px;
+  height: 76px;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #e4e7f0, #f8f9fc);
+  box-shadow: var(--inset);
+  border: 1px solid rgba(160, 172, 192, 0.25);
+  display: grid;
+  place-items: center;
+  position: relative;
+  transition: border-color 0.1s var(--ease);
+}
+
+.box.filled {
+  border-color: rgba(160, 172, 192, 0.4);
+}
+
+.box.active {
+  box-shadow: var(--inset), 0 0 0 2px rgba(220, 38, 38, 0.35);
+  border-color: var(--red);
+}
+
+.box.active:not(.filled)::after {
+  content: "";
+  width: 2px;
+  height: 28px;
+  background: var(--red);
+  border-radius: 2px;
+  animation: blink 1s steps(2) infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+.d {
+  font-size: 2.6rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1;
+}
+
+/* Shake Animation on Error */
+.otp.shake {
+  animation: shake 0.35s var(--ease);
+}
+
+.otp.shake .d {
+  color: var(--red);
+}
+
+.otp.shake .box {
+  box-shadow: var(--inset), 0 0 0 2px var(--red);
+}
+
+@keyframes shake {
+  25%, 75% { transform: translateX(-6px); }
+  50% { transform: translateX(6px); }
+}
+
+/* Success State */
+.otp.ok .box {
+  background: linear-gradient(145deg, #dcfce7, #ffffff);
+  border-color: #16a34a;
+  box-shadow: var(--inset), 0 0 0 2px rgba(22, 163, 74, 0.4);
+}
+
+.otp.ok .d {
+  color: #15803d;
+}
+
+/* Status Message Line */
+.msg {
+  height: 20px;
+  line-height: 20px;
+  font-size: 0.86rem;
+  color: var(--mu);
+  margin-bottom: 12px;
+  font-weight: 500;
+}
+
+.msg.err {
+  color: var(--red);
+  font-weight: 600;
+}
+
+/* ── 3x4 Tactile Neomorphic Keypad ── */
+.pad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  padding: 4px;
+}
+
+.k {
+  height: 64px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  background: linear-gradient(180deg, #ffffff 0%, #f7f9fd 55%, #e9edf6 100%);
+  color: var(--tx);
+  font: 700 1.65rem -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 4px 5px 12px rgba(150, 162, 185, 0.28),
+              -4px -4px 10px #ffffff,
+              inset 0 1.5px 1px #ffffff,
+              inset 0 -1.5px 1px rgba(150, 162, 185, 0.15);
+  transition: transform 0.14s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.14s cubic-bezier(0.16, 1, 0.3, 1),
+              background 0.14s ease,
+              color 0.14s ease,
+              text-shadow 0.14s ease;
+  will-change: transform;
+}
+
+/* Molded top specular highlight curve */
+.k::before {
+  content: "";
+  position: absolute;
+  inset: 1px 8px auto 8px;
+  height: 38%;
+  border-radius: 18px 18px 50% 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%);
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+/* Tactile laser-red ambient bloom on press */
+.k::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at center, rgba(220, 38, 38, 0.25) 0%, rgba(220, 38, 38, 0) 70%);
+  opacity: 0;
+  transform: scale(0.65);
+  pointer-events: none;
+  transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Active mechanical depress */
+.k:active,
+.k.p {
+  transform: translateY(3px) scale(0.965);
+  box-shadow: inset 3px 4px 8px rgba(135, 148, 172, 0.45),
+              inset -2px -2px 6px #ffffff,
+              0 1px 1px rgba(0, 0, 0, 0.04);
+  background: linear-gradient(180deg, #e4e9f4 0%, #edf1f8 100%);
+  color: var(--red);
+  text-shadow: 0 0 10px rgba(220, 38, 38, 0.3);
+}
+
+.k:active::before,
+.k.p::before {
+  opacity: 0;
+}
+
+.k:active::after,
+.k.p::after {
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+.k span.t {
+  display: block;
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+  transition: transform 0.14s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.k:active span.t,
+.k.p span.t {
+  transform: translateY(0.5px);
+}
+
+.k.fn {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--mu);
+}
+
+.k.fn:active,
+.k.fn.p {
+  color: var(--red);
+}
+
+/* ── Success "Verified" Screen ── */
+.done {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(30px) scale(0.97);
+  transition: transform 0.4s var(--ease), opacity 0.3s var(--ease), visibility 0s 0.4s;
+}
+
+.done.show {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition: transform 0.4s var(--ease), opacity 0.3s var(--ease), visibility 0s 0s;
+}
+
+.badge {
+  width: 130px;
+  height: 130px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  position: relative;
+  margin-bottom: 10px;
+  background: linear-gradient(145deg, #ffffff, #edf0f7);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 8px 10px 20px var(--sh), -6px -6px 16px var(--wh);
+}
+
+.badge::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  border: 2px solid #16a34a;
+  opacity: 0;
+}
+
+.done.show .badge::after {
+  animation: pulse-badge 1.8s 0.5s var(--ease) infinite;
+}
+
+@keyframes pulse-badge {
+  0% { opacity: 0.8; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.35); }
+}
+
+.done h2 {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--tx);
+  letter-spacing: -0.02em;
+}
+
+.done span {
+  color: var(--mu);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.done svg {
+  width: 80px;
+  height: 80px;
+}
+
+.done circle {
+  fill: none;
+  stroke: #16a34a;
+  stroke-width: 5;
+  stroke-dasharray: 302;
+  stroke-dashoffset: 302;
+}
+
+.done path {
+  fill: none;
+  stroke: #16a34a;
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 70;
+  stroke-dashoffset: 70;
+}
+
+.done.show circle {
+  animation: draw 0.5s 0.2s var(--ease) forwards;
+}
+
+.done.show path {
+  animation: draw 0.35s 0.6s var(--ease) forwards;
+}
+
+@keyframes draw {
+  to { stroke-dashoffset: 0; }
+}
+
+/* ── Mobile QR Modal Overlay ── */
+.kiosk-qr-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(17, 24, 39, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.kiosk-qr-modal-card {
+  width: min(390px, 92vw);
+  background: #ffffff;
+  border-radius: 28px;
+  padding: 28px 22px;
+  text-align: center;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.15);
+  position: relative;
+}
+
+.kiosk-qr-close-btn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: none;
+  background: #f3f4f6;
+  color: var(--tx);
+  font-size: 1.1rem;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.kiosk-qr-close-btn:active {
+  transform: scale(0.92);
+}
+
+@media (max-height: 740px) {
+  .k { height: 52px; }
+  .box { height: 64px; }
+  .lock { display: none; }
+  .kiosk-card p { margin-bottom: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01s !important; }
+}
+
+.kiosk-pin-exit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 22px;
+  min-height: 44px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1.5px solid var(--red);
+  color: var(--red);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.12);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.kiosk-pin-exit-btn:hover {
+  background: #fef2f2;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(220, 38, 38, 0.2);
+}
+
+.kiosk-pin-exit-btn:active {
+  transform: scale(0.97);
+  background: #fee2e2;
+}
+

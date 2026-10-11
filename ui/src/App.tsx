@@ -9,7 +9,6 @@ import ReviewScreen from './screens/ReviewScreen'
 import PaymentScreen from './screens/PaymentScreen'
 import PrintingScreen from './screens/PrintingScreen'
 import CollectionScreen from './screens/CollectionScreen'
-import PinReleaseScreen from './screens/PinReleaseScreen'
 import ErrorScreen from './screens/ErrorScreen'
 import PrinterOfflineScreen from './screens/PrinterOfflineScreen'
 import KioskSessionScreen from './screens/KioskSessionScreen'
@@ -56,9 +55,9 @@ export default function App() {
       <Routes>
         <Route path="/" element={<KioskSessionScreen />} />
         <Route path="/session" element={<KioskSessionScreen />} />
-        <Route path="/pin" element={<PinReleaseScreen />} />
-        <Route path="/pickup" element={<PinReleaseScreen />} />
-        <Route path="/otp" element={<PinReleaseScreen />} />
+        <Route path="/pin" element={<Navigate to="/" replace />} />
+        <Route path="/pickup" element={<Navigate to="/" replace />} />
+        <Route path="/otp" element={<Navigate to="/" replace />} />
         <Route path="/welcome" element={<WelcomeScreen />} />
         <Route path="/upload" element={<UploadMethodScreen />} />
         <Route path="/upload/qr" element={<QRUploadScreen />} />
