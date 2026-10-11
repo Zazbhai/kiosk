@@ -129,18 +129,18 @@ const PHASES: Record<string, PhaseInfo> = {
     color: '#dc2626',
   },
   CLAIMED: {
-    label: 'Upload',
-    sublabel: 'User opened PrintBooth on their phone…',
+    label: 'Phone Connected',
+    sublabel: 'Smartphone connected to station • Choose files on phone',
     step: 1,
-    icon: '⟳',
-    color: '#dc2626',
+    icon: '📱',
+    color: '#16a34a',
   },
   UPLOADING: {
-    label: 'Upload',
-    sublabel: 'User is uploading document from mobile…',
+    label: 'Phone Connected',
+    sublabel: 'Selecting & uploading documents on mobile…',
     step: 1,
-    icon: '⬆',
-    color: '#dc2626',
+    icon: '📲',
+    color: '#16a34a',
   },
   CONFIRMING: {
     label: 'Confirm Doc',
@@ -247,6 +247,11 @@ export default function KioskSessionScreen() {
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const mountedRef = useRef(true)
+  const sessionRef = useRef<LiveSession | null>(session)
+
+  useEffect(() => {
+    sessionRef.current = session
+  }, [session])
 
   // ── Session Creation & Upgrade ────────────────────────────────────────────
 
@@ -442,11 +447,9 @@ export default function KioskSessionScreen() {
     }
   }, [createSession])
 
-  // ── Session Polling (every 1.5s) ─────────────────────────────────────────
+  // ── Session Polling (every 1.2s) ─────────────────────────────────────────
 
   useEffect(() => {
-    if (!session?.sessionId || session.sessionId.startsWith('init-')) return
-
     const poll = async () => {
       if (!mountedRef.current) return
       try {
@@ -460,7 +463,8 @@ export default function KioskSessionScreen() {
         if (!data.success || !data.session || !mountedRef.current) return
 
         const s = data.session as LiveSession
-        const effectiveToken = (s.token || session?.token || '').trim()
+        const currentSession = sessionRef.current
+        const effectiveToken = (s.token || currentSession?.token || '').trim()
         const effectiveBaseUrl = (siteUrl || getKioskSiteUrl()).replace(/\/+$/, '')
 
         let effectiveQrUrl = ''
@@ -503,11 +507,12 @@ export default function KioskSessionScreen() {
       } catch {}
     }
 
-    pollRef.current = setInterval(poll, 1500)
+    poll()
+    pollRef.current = setInterval(poll, 1200)
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)
     }
-  }, [session?.sessionId, session?.token, apiUrl, kioskId, siteUrl, createSession, handleCancelAndNewUpload])
+  }, [apiUrl, kioskId, siteUrl, createSession, handleCancelAndNewUpload])
 
   // ── Countdown Timer ───────────────────────────────────────────────────────
 
@@ -751,8 +756,9 @@ export default function KioskSessionScreen() {
   }, [state, effectiveOrderId, kioskId, apiUrl, handleExecutePrint, isActionPending])
 
   const renderStepTabs = (currentStep: 'upload' | 'confirm' | 'settings' | 'payment') => {
+    const isStep1Connected = state === 'CLAIMED' || state === 'UPLOADING'
     const steps = [
-      { id: 'upload', num: 1, label: 'Upload' },
+      { id: 'upload', num: 1, label: isStep1Connected ? 'Phone Connected' : 'Upload' },
       { id: 'confirm', num: 2, label: 'Confirm Doc' },
       { id: 'settings', num: 3, label: 'Settings' },
       { id: 'payment', num: 4, label: 'Payment' },
@@ -921,18 +927,90 @@ export default function KioskSessionScreen() {
           <div className="ks-flow-panel" style={{ width: '100%', maxWidth: '820px' }}>
             <div className="ks-interactive-panel" style={{ width: '100%' }}>
               {renderStepTabs('upload')}
-              <div style={{ padding: '36px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 16 }}>
-                <div className="ks-phase-icon-wrap" style={{ background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', width: 68, height: 68, borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <span style={{ fontSize: 36 }}>📲</span>
+              <div style={{ padding: '44px 28px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 20 }}>
+                {/* Connected Badge */}
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '6px 16px',
+                  borderRadius: 999,
+                  background: 'rgba(22, 163, 74, 0.1)',
+                  border: '1px solid rgba(22, 163, 74, 0.25)',
+                  color: '#16a34a',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#16a34a', boxShadow: '0 0 10px #16a34a' }} />
+                  <span>Phone Connected • Station {kioskId}</span>
                 </div>
+
+                {/* Animated Graphic */}
+                <div className="ks-phase-icon-wrap" style={{
+                  background: 'linear-gradient(135deg, rgba(22, 163, 74, 0.12), rgba(220, 38, 38, 0.08))',
+                  border: '1.5px solid rgba(22, 163, 74, 0.25)',
+                  color: '#16a34a',
+                  width: 80,
+                  height: 80,
+                  borderRadius: 22,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 8px 24px rgba(22, 163, 74, 0.12)',
+                }}>
+                  <span style={{ fontSize: 40 }}>📱</span>
+                </div>
+
                 <div>
-                  <h2 style={{ fontSize: 24, fontWeight: 800, color: '#dc2626', margin: '0 0 6px' }}>Upload Documents</h2>
-                  <p style={{ fontSize: 14, color: '#475569', margin: 0 }}>Please select and upload your document on your mobile screen.</p>
+                  <h2 style={{ fontSize: 28, fontWeight: 800, color: '#09090b', margin: '0 0 8px', letterSpacing: '-0.025em' }}>
+                    Phone Connected!
+                  </h2>
+                  <p style={{ fontSize: 15, color: '#475569', margin: 0, maxWidth: '44ch', lineHeight: 1.55 }}>
+                    Your mobile device is paired. Please select and upload your documents on your phone screen.
+                  </p>
                 </div>
-                <div className="ks-companion-status-pill" style={{ marginTop: 8 }}>
-                  <span className="ks-companion-dot" />
-                  <span>Zero Touch • Document will appear here once uploaded</span>
+
+                {/* Live Companion Mirror Card */}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 14,
+                  padding: '16px 20px',
+                  maxWidth: '460px',
+                  width: '100%',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#334155' }}>
+                    <span className="ks-companion-dot" style={{ background: '#16a34a', boxShadow: '0 0 6px #16a34a' }} />
+                    <span>Zero-Touch Companion Display Active</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.45 }}>
+                    Document previews and print settings will automatically appear on this display once selected on your phone.
+                  </div>
                 </div>
+
+                {/* Cancel / Start Over Button */}
+                <button
+                  type="button"
+                  onClick={handleCancelAndNewUpload}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 10,
+                    padding: '8px 18px',
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    color: '#64748b',
+                    cursor: 'pointer',
+                    marginTop: 4,
+                  }}
+                >
+                  Disconnect &amp; Scan Again
+                </button>
               </div>
             </div>
           </div>
