@@ -210,7 +210,7 @@ export const CustomPagesSlider: React.FC<CustomPagesSliderProps> = ({
           items={[
             {
               value: 'ALL',
-              label: `All (${maxPages} Pages)`,
+              label: 'All Pages',
               icon: <Check size={13} weight="bold" />,
             },
             {

@@ -145,8 +145,9 @@ export default function PrintSettingsScreen() {
         totalPages={realPageCount}
         initialSettings={initialSettings}
         onProceed={handleContinue}
+        onBack={() => navigate(-1)}
         onCancel={handleCancelOrder}
-        proceedLabel="Review Order →"
+        proceedLabel="Review →"
         kioskId={kioskId}
         kioskName={kioskName}
         showTopbar={true}
@@ -171,14 +172,14 @@ export default function PrintSettingsScreen() {
                 className="ks-inactivity-btn-keep"
                 onClick={resetInactivity}
               >
-                Keep Session & Continue
+                Keep Alive
               </button>
               <button
                 type="button"
                 className="ks-inactivity-btn-cancel"
                 onClick={handleCancelOrder}
               >
-                Cancel Order Now
+                Cancel Order
               </button>
             </div>
           </div>

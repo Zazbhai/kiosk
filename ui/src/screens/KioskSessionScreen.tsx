@@ -214,6 +214,7 @@ export default function KioskSessionScreen() {
   const [stateChanged, setStateChanged] = useState(false)
   const [isActionPending, setIsActionPending] = useState(false)
   const [copiedUrl, setCopiedUrl] = useState(false)
+  const [activeStateOverride, setActiveStateOverride] = useState<SessionState | null>(null)
 
   // Interactive UI Selection States on Touchscreen
   const [activePageIdx, setActivePageIdx] = useState(0)
@@ -527,12 +528,33 @@ export default function KioskSessionScreen() {
   const totalAmount = pageDetails.calculatedTotal
   const calculatedSheets = pageDetails.sheetsPerCopy
 
+  // ── Helper to Clear Query Params on Manual Touch Transition ─────────────
+  const clearUrlStateParam = useCallback(() => {
+    if (typeof window !== 'undefined' && window.location.search) {
+      const url = new URL(window.location.href)
+      if (url.searchParams.has('state') || url.searchParams.has('devState')) {
+        url.searchParams.delete('state')
+        url.searchParams.delete('devState')
+        window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''))
+      }
+    }
+  }, [])
+
   // ── Handlers for Customer Interactions on Kiosk Touchscreen ──────────────
 
   const handleContinueToSettings = async () => {
-    if (!session?.sessionId) return
+    clearUrlStateParam()
+    setActiveStateOverride('CONFIGURING')
+    setSession(prev => prev ? { ...prev, state: 'CONFIGURING', phase: 'Select print settings on touchscreen' } : null)
+    if (!session?.sessionId || session.sessionId.startsWith('init-')) return
     setIsActionPending(true)
     try {
+      await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/state`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: 'CONFIGURING' }),
+      }).catch(() => {})
+
       await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -551,21 +573,30 @@ export default function KioskSessionScreen() {
           paperWeight,
           pageCustomizations,
         }),
-      })
-      setSession(prev => prev ? { ...prev, state: 'CONFIGURING', phase: 'Select print settings on touchscreen' } : null)
+      }).catch(() => {})
     } finally {
       setIsActionPending(false)
     }
   }
 
   const handleProceedToPayment = async () => {
-    if (!session?.sessionId) return
+    clearUrlStateParam()
+    setActiveStateOverride('PAYING')
+    setSession(prev => prev ? { ...prev, state: 'PAYING' } : null)
+    if (!session?.sessionId || session.sessionId.startsWith('init-')) return
     setIsActionPending(true)
     try {
+      await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/state`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: 'PAYING' }),
+      }).catch(() => {})
+
       await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          nextState: 'PAYING',
           colour: selectedColour,
           duplex: selectedDuplex,
           copies: selectedCopies,
@@ -579,7 +610,7 @@ export default function KioskSessionScreen() {
           paperWeight,
           pageCustomizations,
         }),
-      })
+      }).catch(() => {})
 
       const res = await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/pay`, {
         method: 'POST',
@@ -600,13 +631,49 @@ export default function KioskSessionScreen() {
   }
 
   const handleBackToConfirm = async () => {
-    if (!session?.sessionId) return
-    setSession(prev => prev ? { ...prev, state: 'CONFIRMING' } : null)
+    clearUrlStateParam()
+    setActiveStateOverride('CONFIRMING')
+    setSession(prev => prev ? { ...prev, state: 'CONFIRMING', phase: 'Review Document' } : null)
+    if (!session?.sessionId || session.sessionId.startsWith('init-')) return
+    setIsActionPending(true)
+    try {
+      await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/state`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: 'CONFIRMING' }),
+      }).catch(() => {})
+
+      await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nextState: 'CONFIRMING' }),
+      }).catch(() => {})
+    } finally {
+      setIsActionPending(false)
+    }
   }
 
   const handleBackToSettings = async () => {
-    if (!session?.sessionId) return
-    setSession(prev => prev ? { ...prev, state: 'CONFIGURING' } : null)
+    clearUrlStateParam()
+    setActiveStateOverride('CONFIGURING')
+    setSession(prev => prev ? { ...prev, state: 'CONFIGURING', phase: 'Print Settings' } : null)
+    if (!session?.sessionId || session.sessionId.startsWith('init-')) return
+    setIsActionPending(true)
+    try {
+      await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/state`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: 'CONFIGURING' }),
+      }).catch(() => {})
+
+      await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nextState: 'CONFIGURING' }),
+      }).catch(() => {})
+    } finally {
+      setIsActionPending(false)
+    }
   }
 
   const handleExecutePrint = async () => {
@@ -639,6 +706,8 @@ export default function KioskSessionScreen() {
   }
 
   const handleCancelAndNewUpload = useCallback(async () => {
+    clearUrlStateParam()
+    setActiveStateOverride(null)
     setIsActionPending(true)
     // Instantly reset UI state so screen switches immediately without waiting for network lag
     setSession(prev => prev ? {
@@ -676,14 +745,14 @@ export default function KioskSessionScreen() {
     } finally {
       setIsActionPending(false)
     }
-  }, [session?.sessionId, apiUrl, createSession])
+  }, [session?.sessionId, apiUrl, createSession, clearUrlStateParam])
 
   // ── Derived State ────────────────────────────────────────────────────────
 
   const searchParamState = typeof window !== 'undefined'
     ? (new URLSearchParams(window.location.search).get('devState') || new URLSearchParams(window.location.search).get('state')) as SessionState | null
     : null
-  const rawState = searchParamState || session?.state || 'QR_READY'
+  const rawState = activeStateOverride || searchParamState || session?.state || 'QR_READY'
   // If document was uploaded, but backend state is still transitioning, show CONFIRMING
   const state: SessionState = (rawState === 'CLAIMED' || rawState === 'UPLOADING') && session?.document
     ? 'CONFIRMING'
@@ -960,7 +1029,7 @@ export default function KioskSessionScreen() {
                         }}
                         title="Open in local dev web app (http://localhost:5200)"
                       >
-                        Open Local (Port 5200) ↗
+                        Open Local ↗
                       </button>
                     )}
                     <button
@@ -979,7 +1048,7 @@ export default function KioskSessionScreen() {
                       }}
                       title="Open in production domain (printbooth.co.in)"
                     >
-                      Open Prod Domain ↗
+                      Open Prod ↗
                     </button>
                   </div>
                 </div>
@@ -996,7 +1065,7 @@ export default function KioskSessionScreen() {
                   <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                   <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                 </svg>
-                <span>Already Have a PIN? Enter on Keypad</span>
+                <span>Enter PIN</span>
               </button>
             </div>
           </div>
@@ -1028,7 +1097,7 @@ export default function KioskSessionScreen() {
                       <line x1="18" y1="6" x2="6" y2="18"></line>
                       <line x1="6" y1="6" x2="18" y2="18"></line>
                     </svg>
-                    <span>Cancel Connection &amp; Reset to Print from Phone</span>
+                    <span>Cancel Connection</span>
                   </button>
                 </div>
               </div>
@@ -1154,7 +1223,7 @@ export default function KioskSessionScreen() {
                     disabled={isActionPending}
                     id="ks-continue-to-settings"
                   >
-                    <span>Continue to Print Settings</span>
+                    <span>Print Settings</span>
                     <span>→</span>
                   </button>
 
@@ -1165,7 +1234,7 @@ export default function KioskSessionScreen() {
                     disabled={isActionPending}
                     id="ks-cancel-new-upload-btn"
                   >
-                    Cancel / New Upload
+                    Cancel Order
                   </button>
                 </div>
               </div>
@@ -1213,7 +1282,7 @@ export default function KioskSessionScreen() {
               onProceed={() => handleProceedToPayment()}
               onBack={handleBackToConfirm}
               onCancel={handleCancelAndNewUpload}
-              proceedLabel="Proceed to Payment →"
+              proceedLabel="Pay Now →"
               isActionPending={isActionPending}
               kioskId={kioskId}
               kioskName={kioskName}
@@ -1278,7 +1347,7 @@ export default function KioskSessionScreen() {
                     disabled={isActionPending}
                     id="ks-confirm-payment-print"
                   >
-                    <span>Confirm Payment &amp; Start Printing</span>
+                    <span>Confirm Print</span>
                     <span>🖨️</span>
                   </button>
 
@@ -1287,7 +1356,7 @@ export default function KioskSessionScreen() {
                     className="ks-btn-secondary"
                     onClick={handleBackToSettings}
                   >
-                    ← Back to Settings
+                    ← Back
                   </button>
 
                   <button
@@ -1298,7 +1367,7 @@ export default function KioskSessionScreen() {
                     style={{ color: '#dc2626' }}
                     id="ks-cancel-from-pay"
                   >
-                    Cancel / New Upload
+                    Cancel Order
                   </button>
                 </div>
               </div>
@@ -1408,12 +1477,38 @@ export default function KioskSessionScreen() {
                 <rect x="4" y="11" width="16" height="10" rx="3" />
                 <path d="M8 11V8a4 4 0 018 0v3" />
               </svg>
-              <span>Open Touch Keypad Now</span>
+              <span>Open Keypad</span>
             </button>
           </div>
         )}
 
       </main>
+
+      {/* ── Screen Back Button (Fixed at Left Bottom Side of Screen) ── */}
+      {(state === 'CONFIRMING' || state === 'CONFIGURING' || state === 'PAYING') && (
+        <button
+          type="button"
+          className="ks-screen-back-btn"
+          onClick={() => {
+            if (state === 'PAYING') {
+              handleBackToSettings()
+            } else if (state === 'CONFIGURING') {
+              handleBackToConfirm()
+            } else if (state === 'CONFIRMING') {
+              handleCancelAndNewUpload()
+            }
+          }}
+          disabled={isActionPending}
+          id="kiosk-bottom-left-back-btn"
+          title="Back to previous screen"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+          <span>Back</span>
+        </button>
+      )}
 
       {/* Footer — shown during DONE to avoid colliding with campaign bar */}
       {state === 'DONE' && (
@@ -1463,7 +1558,7 @@ export default function KioskSessionScreen() {
                 onClick={resetInactivityTimer}
                 id="ks-inactivity-keep-session"
               >
-                <span>✓ Keep Session &amp; Continue</span>
+                <span>✓ Keep Alive</span>
               </button>
 
               <button
@@ -1476,7 +1571,7 @@ export default function KioskSessionScreen() {
                 }}
                 id="ks-inactivity-cancel-now"
               >
-                <span>✕ Cancel Order Now</span>
+                <span>✕ Cancel Order</span>
               </button>
             </div>
 

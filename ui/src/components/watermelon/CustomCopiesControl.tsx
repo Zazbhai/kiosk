@@ -88,12 +88,12 @@ export const CustomCopiesControl: React.FC<CustomCopiesControlProps> = ({
             items={[
               {
                 value: 'uniform',
-                label: `Same for all pages (${globalCopies}x)`,
+                label: 'All Pages',
                 icon: <Copy size={14} weight="duotone" />,
               },
               {
                 value: 'perpage',
-                label: 'Specify per page',
+                label: 'Per Page',
                 icon: <Sparkle size={14} weight="duotone" />,
               },
             ]}

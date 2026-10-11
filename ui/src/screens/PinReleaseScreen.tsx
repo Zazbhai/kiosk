@@ -454,7 +454,7 @@ export default function PinReleaseScreen() {
             title="Return to Print from Phone"
           >
             <QrCode size={18} weight="bold" color="var(--red)" />
-            <span>Back to Print from Phone ({pinIdleSeconds}s)</span>
+            <span>Back ({pinIdleSeconds}s)</span>
           </button>
 
           <div className="kiosk-otp-topbar-pill">
@@ -531,7 +531,7 @@ export default function PinReleaseScreen() {
             title="Return to Print from Phone"
             id="kiosk-pin-back-btn"
           >
-            <span>← Return to Print from Phone</span>
+            <span>← Back</span>
             <span style={{ opacity: 0.8, fontSize: '0.8rem', fontFamily: 'monospace' }}>({pinIdleSeconds}s)</span>
           </button>
         </div>

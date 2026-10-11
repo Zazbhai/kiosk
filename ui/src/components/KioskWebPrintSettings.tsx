@@ -46,7 +46,7 @@ export default function KioskWebPrintSettings({
   onProceed,
   onBack,
   onCancel,
-  proceedLabel = 'Proceed to Payment →',
+  proceedLabel = 'Pay Now →',
   isActionPending = false,
   kioskId: propKioskId,
   kioskName: propKioskName,
@@ -294,7 +294,7 @@ export default function KioskWebPrintSettings({
                 id="kwps-back-btn"
               >
                 <ArrowLeft size={16} weight="bold" />
-                <span>Review Document</span>
+                <span>Back</span>
               </button>
             )}
 
@@ -452,7 +452,7 @@ export default function KioskWebPrintSettings({
                   disabled={isActionPending}
                 >
                   <ArrowLeft size={15} />
-                  <span>Review Preview</span>
+                  <span>Back</span>
                 </button>
               )}
 
@@ -470,6 +470,21 @@ export default function KioskWebPrintSettings({
           </div>
         </aside>
       </div>
+
+      {/* ── Screen Back Button at Left Bottom Side of Screen ── */}
+      {onBack && (
+        <button
+          type="button"
+          className="kwps-screen-back-btn"
+          onClick={onBack}
+          disabled={isActionPending}
+          id="kwps-screen-back-btn"
+          title="Back to previous screen"
+        >
+          <ArrowLeft size={18} weight="bold" />
+          <span>Back</span>
+        </button>
+      )}
 
       {/* ── Compact Floating Action Bar (Active on Mobile / Narrow Displays) ── */}
       <div className="kwps-compact-action-bar">

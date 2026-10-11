@@ -77,6 +77,12 @@
   user-select: none;
   pointer-events: none;
   box-sizing: border-box;
+  transition: left 0.3s ease;
+}
+
+body:has(.ks-screen-back-btn) .ks-ad-bottom-bar,
+body:has(.kwps-screen-back-btn) .ks-ad-bottom-bar {
+  left: 130px;
 }
 
 /* Marquee Viewport & Track */
