@@ -129,44 +129,44 @@ const PHASES: Record<string, PhaseInfo> = {
     color: '#dc2626',
   },
   CLAIMED: {
-    label: 'Session Connected',
+    label: 'Upload',
     sublabel: 'User opened PrintBooth on their phone…',
     step: 1,
     icon: '⟳',
     color: '#dc2626',
   },
   UPLOADING: {
-    label: 'Uploading Document',
-    sublabel: 'User is uploading their file from mobile…',
-    step: 2,
+    label: 'Upload',
+    sublabel: 'User is uploading document from mobile…',
+    step: 1,
     icon: '⬆',
     color: '#dc2626',
   },
   CONFIRMING: {
-    label: 'Review Document',
+    label: 'Confirm Doc',
     sublabel: 'Customer is reviewing document on mobile…',
     step: 2,
     icon: '📄',
     color: '#dc2626',
   },
   CONFIGURING: {
-    label: 'Print Settings',
+    label: 'Settings',
     sublabel: 'Customer is configuring options on mobile…',
     step: 3,
     icon: '⚙',
     color: '#dc2626',
   },
   REVIEWING: {
-    label: 'Reviewing Order',
+    label: 'Settings',
     sublabel: 'Customer is reviewing order on mobile…',
-    step: 4,
+    step: 3,
     icon: '📋',
     color: '#dc2626',
   },
   PAYING: {
-    label: 'Pay & Print',
+    label: 'Payment',
     sublabel: 'Scan the UPI QR code below to complete your order',
-    step: 5,
+    step: 4,
     icon: '₹',
     color: '#dc2626',
   },
@@ -751,13 +751,12 @@ export default function KioskSessionScreen() {
     }
   }, [state, effectiveOrderId, kioskId, apiUrl, handleExecutePrint, isActionPending])
 
-  const renderStepTabs = (currentStep: 'UPLOADING' | 'CONFIRMING' | 'CONFIGURING' | 'REVIEWING' | 'PAYING') => {
+  const renderStepTabs = (currentStep: 'upload' | 'confirm' | 'settings' | 'payment') => {
     const steps = [
-      { id: 'UPLOADING', num: 1, label: 'Upload' },
-      { id: 'CONFIRMING', num: 2, label: 'Review Document' },
-      { id: 'CONFIGURING', num: 3, label: 'Print Options' },
-      { id: 'REVIEWING', num: 4, label: 'Review Order' },
-      { id: 'PAYING', num: 5, label: 'Pay & Dispense' },
+      { id: 'upload', num: 1, label: 'Upload' },
+      { id: 'confirm', num: 2, label: 'Confirm Doc' },
+      { id: 'settings', num: 3, label: 'Settings' },
+      { id: 'payment', num: 4, label: 'Payment' },
     ]
     const currentIdx = steps.findIndex(s => s.id === currentStep)
 
@@ -922,13 +921,13 @@ export default function KioskSessionScreen() {
         {(state === 'CLAIMED' || state === 'UPLOADING') && !doc && (
           <div className="ks-flow-panel" style={{ width: '100%', maxWidth: '820px' }}>
             <div className="ks-interactive-panel" style={{ width: '100%' }}>
-              {renderStepTabs('UPLOADING')}
+              {renderStepTabs('upload')}
               <div style={{ padding: '36px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 16 }}>
                 <div className="ks-phase-icon-wrap" style={{ background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', width: 68, height: 68, borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <span style={{ fontSize: 36 }}>📲</span>
                 </div>
                 <div>
-                  <h2 style={{ fontSize: 24, fontWeight: 800, color: '#dc2626', margin: '0 0 6px' }}>Phone Connected</h2>
+                  <h2 style={{ fontSize: 24, fontWeight: 800, color: '#dc2626', margin: '0 0 6px' }}>Upload Documents</h2>
                   <p style={{ fontSize: 14, color: '#475569', margin: 0 }}>Please select and upload your document on your mobile screen.</p>
                 </div>
                 <div className="ks-companion-status-pill" style={{ marginTop: 8 }}>
@@ -940,10 +939,10 @@ export default function KioskSessionScreen() {
           </div>
         )}
 
-        {/* ── SECTION 1: Review Document (CONFIRMING) ── */}
+        {/* ── SECTION 2: Confirm Doc (CONFIRMING) ── */}
         {state === 'CONFIRMING' && (
           <div className="ks-interactive-panel">
-            {renderStepTabs('CONFIRMING')}
+            {renderStepTabs('confirm')}
             <div className="ks-flow-body">
               {/* Left Column: Real Page Preview & Gallery */}
               {renderDocumentPreviewBox()}
@@ -951,7 +950,7 @@ export default function KioskSessionScreen() {
               {/* Right Column: Specs & Zero-Touch Companion Card */}
               <div className="ks-flow-right" style={{ justifyContent: 'space-between', gap: 16 }}>
                 <div>
-                  <h3 className="ks-summary-title">Document Received</h3>
+                  <h3 className="ks-summary-title">Confirm Documents</h3>
                   <div className="ks-summary-table">
                     <div className="ks-summary-row">
                       <span>Document</span>
@@ -976,13 +975,13 @@ export default function KioskSessionScreen() {
                   <div className="ks-companion-card-header">
                     <div className="ks-companion-card-icon">📱</div>
                     <div>
-                      <div className="ks-companion-card-title">Reviewing Document on Mobile</div>
+                      <div className="ks-companion-card-title">Confirming Documents on Mobile</div>
                       <div className="ks-companion-card-sub">Please review and confirm pages on your phone screen. No touch required on this display.</div>
                     </div>
                   </div>
                   <div className="ks-companion-status-pill">
                     <span className="ks-companion-dot" />
-                    <span>Continue on phone to Print Options →</span>
+                    <span>Continue on phone to Settings →</span>
                   </div>
                 </div>
               </div>
@@ -990,10 +989,10 @@ export default function KioskSessionScreen() {
           </div>
         )}
 
-        {/* ── SECTION 2: Print Settings (CONFIGURING) ── */}
+        {/* ── SECTION 3: Settings (CONFIGURING) ── */}
         {state === 'CONFIGURING' && (
           <div className="ks-interactive-panel">
-            {renderStepTabs('CONFIGURING')}
+            {renderStepTabs('settings')}
             <div className="ks-flow-body">
               {/* Left Column: Real Page Preview & Gallery */}
               {renderDocumentPreviewBox()}
@@ -1001,7 +1000,7 @@ export default function KioskSessionScreen() {
               {/* Right Column: Mirrored Settings & Specs */}
               <div className="ks-flow-right" style={{ justifyContent: 'space-between', gap: 16 }}>
                 <div>
-                  <h3 className="ks-summary-title" style={{ marginBottom: 12 }}>Mirrored Print Options</h3>
+                  <h3 className="ks-summary-title" style={{ marginBottom: 12 }}>Print Settings</h3>
                   <div className="ks-mirrored-grid">
                     <div className="ks-mirror-card">
                       <span className="ks-mirror-label">Color Mode</span>
@@ -1039,7 +1038,7 @@ export default function KioskSessionScreen() {
                   <div className="ks-companion-card-header">
                     <div className="ks-companion-card-icon">⚙️</div>
                     <div>
-                      <div className="ks-companion-card-title">Configuring Options on Mobile</div>
+                      <div className="ks-companion-card-title">Configuring Settings on Mobile</div>
                       <div className="ks-companion-card-sub">Select copies, colours, and sides on your phone screen. Selections reflect here in real time.</div>
                     </div>
                   </div>
@@ -1053,10 +1052,10 @@ export default function KioskSessionScreen() {
           </div>
         )}
 
-        {/* ── SECTION 3: Review Order (REVIEWING) ── */}
+        {/* ── SECTION 3 (Sub): Review Order (REVIEWING) ── */}
         {state === 'REVIEWING' && (
           <div className="ks-interactive-panel">
-            {renderStepTabs('REVIEWING')}
+            {renderStepTabs('settings')}
             <div className="ks-flow-body">
               {/* Left Column: Real Page Preview & Gallery */}
               {renderDocumentPreviewBox()}
@@ -1064,7 +1063,7 @@ export default function KioskSessionScreen() {
               {/* Right Column: Order Breakdown & Next Step Callout */}
               <div className="ks-flow-right" style={{ justifyContent: 'space-between', gap: 16 }}>
                 <div>
-                  <h3 className="ks-summary-title">Order Breakdown</h3>
+                  <h3 className="ks-summary-title">Review Order</h3>
                   <div className="ks-summary-table">
                     <div className="ks-summary-row">
                       <span>Document</span>
@@ -1111,12 +1110,12 @@ export default function KioskSessionScreen() {
         {/* ── SECTION 4: Payment & UPI QR (PAYING) ── */}
         {state === 'PAYING' && (
           <div className="ks-interactive-panel">
-            {renderStepTabs('PAYING')}
+            {renderStepTabs('payment')}
             <div className="ks-flow-body">
               {/* Left Column: Order Breakdown & Hardware Dispense Notice */}
               <div className="ks-flow-left" style={{ justifyContent: 'space-between' }}>
                 <div>
-                  <h3 className="ks-summary-title">Payment Due</h3>
+                  <h3 className="ks-summary-title">Payment</h3>
                   <div className="ks-summary-table">
                     <div className="ks-summary-row">
                       <span>Order ID</span>
