@@ -944,6 +944,7 @@ export default function KioskSessionScreen() {
       {/* Top Status Bar */}
       <header className="ks-topbar">
         <div className="ks-topbar-pill">
+          <img src="/logo.png" alt="PrintBooth" style={{ width: 18, height: 18, objectFit: 'contain' }} />
           <span className="ks-topbar-dot" />
           <span>{kioskId} • {kioskName}</span>
         </div>

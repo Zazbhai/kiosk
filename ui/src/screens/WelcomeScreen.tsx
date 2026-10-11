@@ -28,6 +28,7 @@ export default function WelcomeScreen() {
       {/* Main content */}
       <div className="kiosk-welcome kiosk-enter">
         <div className="kiosk-welcome__text">
+          <img src="/logo.png" alt="PrintBooth" style={{ width: 64, height: 64, objectFit: 'contain', marginBottom: 8 }} />
           <h1 className="kiosk-title">
             Welcome to<br />
             <span style={{ color: 'var(--clr-accent-light)' }}>PrintBooth</span>
