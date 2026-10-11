@@ -2196,3 +2196,122 @@
     font-size: 13.5px;
   }
 }
+
+/* ── Zero-Touch Companion Screen Elements ─────────────────────────────────── */
+.ks-companion-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #f8fafc;
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  border-radius: 14px;
+  padding: 16px;
+  box-sizing: border-box;
+  margin-top: 14px;
+}
+
+.ks-companion-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ks-companion-card-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(220, 38, 38, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.ks-companion-card-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ks-red);
+}
+
+.ks-companion-card-sub {
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.45;
+  margin-top: 2px;
+}
+
+.ks-companion-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #334155;
+  width: fit-content;
+}
+
+.ks-companion-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ks-red);
+  box-shadow: 0 0 6px rgba(220, 38, 38, 0.6);
+  animation: ks-pulse-dot 1.8s ease-in-out infinite;
+}
+
+@keyframes ks-pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+.ks-mirrored-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  width: 100%;
+}
+
+.ks-mirror-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+}
+
+.ks-mirror-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  font-family: var(--ks-mono);
+}
+
+.ks-mirror-val {
+  font-size: 15px;
+  font-weight: 800;
+  color: #09090b;
+}
+
+.ks-mirror-sub {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.ks-auto-dispense-card {
+  background: #fef2f2;
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  border-radius: 14px;
+  padding: 14px;
+  margin-top: 14px;
+}
+

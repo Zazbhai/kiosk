@@ -28,12 +28,7 @@ import {
   getKioskPricing,
   parsePageRange,
 } from '../utils/printSettingsUtils'
-import KioskWebPrintSettings from '../components/KioskWebPrintSettings'
 import './KioskSessionScreen.css'
-
-// ─── Inactivity Constants (Auto-Return to Print from Phone) ─────────────────
-const INACTIVITY_TIMEOUT_MS = 90 * 1000 // 1 minute 30 seconds
-const INACTIVITY_WARNING_SECONDS = 15 // warning popup at 15s remaining (75s elapsed)
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -43,10 +38,13 @@ export type SessionState =
   | 'UPLOADING'
   | 'CONFIRMING'
   | 'CONFIGURING'
+  | 'REVIEWING'
   | 'PAYING'
   | 'OTP_READY'
   | 'PRINTING'
   | 'DONE'
+  | 'CANCELLED'
+  | 'EXPIRED'
   | null
 
 export interface DocumentPreviewPage {
@@ -147,21 +145,28 @@ const PHASES: Record<string, PhaseInfo> = {
   },
   CONFIRMING: {
     label: 'Review Document',
-    sublabel: 'Inspect your pages and continue to print settings',
-    step: 3,
+    sublabel: 'Customer is reviewing document on mobile…',
+    step: 2,
     icon: '📄',
     color: '#dc2626',
   },
   CONFIGURING: {
     label: 'Print Settings',
-    sublabel: 'Select colour, copies, and sides on touchscreen',
-    step: 4,
+    sublabel: 'Customer is configuring options on mobile…',
+    step: 3,
     icon: '⚙',
+    color: '#dc2626',
+  },
+  REVIEWING: {
+    label: 'Reviewing Order',
+    sublabel: 'Customer is reviewing order on mobile…',
+    step: 4,
+    icon: '📋',
     color: '#dc2626',
   },
   PAYING: {
     label: 'Pay & Print',
-    sublabel: 'Scan the UPI QR code to complete your order',
+    sublabel: 'Scan the UPI QR code below to complete your order',
     step: 5,
     icon: '₹',
     color: '#dc2626',
@@ -346,6 +351,87 @@ export default function KioskSessionScreen() {
     }
   }, [apiUrl, kioskId, siteUrl])
 
+  const clearUrlStateParam = useCallback(() => {
+    if (typeof window !== 'undefined' && window.location.search) {
+      const url = new URL(window.location.href)
+      if (url.searchParams.has('state') || url.searchParams.has('devState')) {
+        url.searchParams.delete('state')
+        url.searchParams.delete('devState')
+        window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''))
+      }
+    }
+  }, [])
+
+  const handleCancelAndNewUpload = useCallback(async () => {
+    clearUrlStateParam()
+    setActiveStateOverride(null)
+    setIsActionPending(true)
+    setSession(prev => prev ? {
+      ...prev,
+      state: 'QR_READY',
+      document: undefined,
+      fileName: undefined,
+      totalPages: undefined,
+      settings: undefined,
+    } : null)
+    setActivePageIdx(0)
+    setSelectedCopies(1)
+    setSelectedColour('BW')
+    setSelectedDuplex('SINGLE')
+    setSelectedPageRange('ALL')
+    setPrintingProgress(0)
+
+    try {
+      if (session?.sessionId && !session.sessionId.startsWith('init-')) {
+        try {
+          await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/cancel`, {
+            method: 'POST',
+          })
+        } catch {
+          if (typeof window !== 'undefined' && window.location.origin !== apiUrl) {
+            try {
+              await fetch(`/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/cancel`, {
+                method: 'POST',
+              })
+            } catch {}
+          }
+        }
+      }
+      await createSession(true)
+    } finally {
+      setIsActionPending(false)
+    }
+  }, [session?.sessionId, apiUrl, createSession, clearUrlStateParam])
+
+  const handleExecutePrint = useCallback(async () => {
+    if (!session?.sessionId) return
+    setIsActionPending(true)
+    try {
+      await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/execute-print`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      setSession(prev => prev ? { ...prev, state: 'PRINTING', phase: 'Printing document on Brother hardware…' } : null)
+
+      // Start live progress bar simulation
+      setPrintingProgress(5)
+      let cur = 5
+      if (progressTimerRef.current) clearInterval(progressTimerRef.current)
+      progressTimerRef.current = setInterval(() => {
+        cur += 15
+        if (cur >= 100) {
+          cur = 100
+          if (progressTimerRef.current) clearInterval(progressTimerRef.current)
+          fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/complete`, { method: 'POST' }).catch(() => {})
+          setSession(prev => prev ? { ...prev, state: 'DONE', phase: 'Print complete! Collect from tray.' } : null)
+        }
+        setPrintingProgress(cur)
+      }, 700)
+    } finally {
+      setIsActionPending(false)
+    }
+  }, [session?.sessionId, apiUrl])
+
   useEffect(() => {
     mountedRef.current = true
     loadKioskRuntimeConfig().catch(() => {})
@@ -411,6 +497,10 @@ export default function KioskSessionScreen() {
           }, 6000)
         }
 
+        if (s.state === 'CANCELLED') {
+          handleCancelAndNewUpload()
+        }
+
         if (data.isExpired && s.state === 'QR_READY') {
           createSession(true)
         }
@@ -421,7 +511,7 @@ export default function KioskSessionScreen() {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)
     }
-  }, [session?.sessionId, session?.token, apiUrl, kioskId, siteUrl, createSession])
+  }, [session?.sessionId, session?.token, apiUrl, kioskId, siteUrl, createSession, handleCancelAndNewUpload])
 
   // ── Countdown Timer ───────────────────────────────────────────────────────
 
@@ -538,230 +628,6 @@ export default function KioskSessionScreen() {
   const totalAmount = pageDetails.calculatedTotal
   const calculatedSheets = pageDetails.sheetsPerCopy
 
-  // ── Helper to Clear Query Params on Manual Touch Transition ─────────────
-  const clearUrlStateParam = useCallback(() => {
-    if (typeof window !== 'undefined' && window.location.search) {
-      const url = new URL(window.location.href)
-      if (url.searchParams.has('state') || url.searchParams.has('devState')) {
-        url.searchParams.delete('state')
-        url.searchParams.delete('devState')
-        window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''))
-      }
-    }
-  }, [])
-
-  // ── Handlers for Customer Interactions on Kiosk Touchscreen ──────────────
-
-  const handleContinueToSettings = async () => {
-    clearUrlStateParam()
-    setActiveStateOverride('CONFIGURING')
-    setSession(prev => prev ? { ...prev, state: 'CONFIGURING', phase: 'Select print settings on touchscreen' } : null)
-    if (!session?.sessionId || session.sessionId.startsWith('init-')) return
-    setIsActionPending(true)
-    try {
-      await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/state`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ state: 'CONFIGURING' }),
-      }).catch(() => {})
-
-      await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/settings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nextState: 'CONFIGURING',
-          colour: selectedColour,
-          duplex: selectedDuplex,
-          copies: selectedCopies,
-          pageRange: selectedPageRange,
-          pricePerPage: pageDetails.bwRate,
-          totalAmount,
-          settingsMode,
-          nUpLayout,
-          duplexBinding,
-          printDpi,
-          paperWeight,
-          pageCustomizations,
-        }),
-      }).catch(() => {})
-    } finally {
-      setIsActionPending(false)
-    }
-  }
-
-  const handleProceedToPayment = async () => {
-    clearUrlStateParam()
-    setActiveStateOverride('PAYING')
-    setSession(prev => prev ? { ...prev, state: 'PAYING' } : null)
-    if (!session?.sessionId || session.sessionId.startsWith('init-')) return
-    setIsActionPending(true)
-    try {
-      await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/state`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ state: 'PAYING' }),
-      }).catch(() => {})
-
-      await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/settings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nextState: 'PAYING',
-          colour: selectedColour,
-          duplex: selectedDuplex,
-          copies: selectedCopies,
-          pageRange: selectedPageRange,
-          pricePerPage: pageDetails.bwRate,
-          totalAmount,
-          settingsMode,
-          nUpLayout,
-          duplexBinding,
-          printDpi,
-          paperWeight,
-          pageCustomizations,
-        }),
-      }).catch(() => {})
-
-      const res = await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/pay`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: totalAmount }),
-      })
-      const data = await res.json()
-      setSession(prev => prev ? {
-        ...prev,
-        state: 'PAYING',
-        orderId: data.orderId || prev.orderId,
-        otp: data.otp || prev.otp,
-        amount: totalAmount,
-        upiQrValue: data.upiQrValue || data.session?.upiQrValue,
-        paymentUrl: data.paymentUrl || data.session?.paymentUrl,
-        upiIntentUrl: data.upiIntentUrl || data.session?.upiIntentUrl,
-        merchantUpiId: data.merchantUpiId || data.session?.merchantUpiId,
-        gateway: data.session?.gateway || 'upiexpress',
-      } : null)
-    } finally {
-      setIsActionPending(false)
-    }
-  }
-
-  const handleBackToConfirm = async () => {
-    clearUrlStateParam()
-    setActiveStateOverride('CONFIRMING')
-    setSession(prev => prev ? { ...prev, state: 'CONFIRMING', phase: 'Review Document' } : null)
-    if (!session?.sessionId || session.sessionId.startsWith('init-')) return
-    setIsActionPending(true)
-    try {
-      await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/state`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ state: 'CONFIRMING' }),
-      }).catch(() => {})
-
-      await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/settings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nextState: 'CONFIRMING' }),
-      }).catch(() => {})
-    } finally {
-      setIsActionPending(false)
-    }
-  }
-
-  const handleBackToSettings = async () => {
-    clearUrlStateParam()
-    setActiveStateOverride('CONFIGURING')
-    setSession(prev => prev ? { ...prev, state: 'CONFIGURING', phase: 'Print Settings' } : null)
-    if (!session?.sessionId || session.sessionId.startsWith('init-')) return
-    setIsActionPending(true)
-    try {
-      await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/state`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ state: 'CONFIGURING' }),
-      }).catch(() => {})
-
-      await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/settings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nextState: 'CONFIGURING' }),
-      }).catch(() => {})
-    } finally {
-      setIsActionPending(false)
-    }
-  }
-
-  const handleExecutePrint = async () => {
-    if (!session?.sessionId) return
-    setIsActionPending(true)
-    try {
-      await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/execute-print`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      })
-      setSession(prev => prev ? { ...prev, state: 'PRINTING', phase: 'Printing document on Brother hardware…' } : null)
-
-      // Start live progress bar simulation
-      setPrintingProgress(5)
-      let cur = 5
-      if (progressTimerRef.current) clearInterval(progressTimerRef.current)
-      progressTimerRef.current = setInterval(() => {
-        cur += 15
-        if (cur >= 100) {
-          cur = 100
-          if (progressTimerRef.current) clearInterval(progressTimerRef.current)
-          fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/complete`, { method: 'POST' }).catch(() => {})
-          setSession(prev => prev ? { ...prev, state: 'DONE', phase: 'Print complete! Collect from tray.' } : null)
-        }
-        setPrintingProgress(cur)
-      }, 700)
-    } finally {
-      setIsActionPending(false)
-    }
-  }
-
-  const handleCancelAndNewUpload = useCallback(async () => {
-    clearUrlStateParam()
-    setActiveStateOverride(null)
-    setIsActionPending(true)
-    // Instantly reset UI state so screen switches immediately without waiting for network lag
-    setSession(prev => prev ? {
-      ...prev,
-      state: 'QR_READY',
-      document: undefined,
-      fileName: undefined,
-      totalPages: undefined,
-      settings: undefined,
-    } : null)
-    setActivePageIdx(0)
-    setSelectedCopies(1)
-    setSelectedColour('BW')
-    setSelectedDuplex('SINGLE')
-    setSelectedPageRange('ALL')
-    setPrintingProgress(0)
-
-    try {
-      if (session?.sessionId && !session.sessionId.startsWith('init-')) {
-        try {
-          await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/cancel`, {
-            method: 'POST',
-          })
-        } catch {
-          if (typeof window !== 'undefined' && window.location.origin !== apiUrl) {
-            try {
-              await fetch(`/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/cancel`, {
-                method: 'POST',
-              })
-            } catch {}
-          }
-        }
-      }
-      await createSession(true)
-    } finally {
-      setIsActionPending(false)
-    }
-  }, [session?.sessionId, apiUrl, createSession, clearUrlStateParam])
-
   // ── Derived State ────────────────────────────────────────────────────────
 
   const searchParamState = typeof window !== 'undefined'
@@ -782,58 +648,6 @@ export default function KioskSessionScreen() {
   // User is in "connected phone or above step" (Phone Connected, Review Document, Print Settings, Payment)
   const isConnectedOrAbove = !isWaiting && !isPrinting && !isDone
 
-  // ── Inactivity Auto-Back Timer (90s total, warning at 15s) ───────────────────
-  const [inactivityRemaining, setInactivityRemaining] = useState<number | null>(null)
-  const lastInteractionTimeRef = useRef<number>(Date.now())
-
-  const resetInactivityTimer = useCallback(() => {
-    lastInteractionTimeRef.current = Date.now()
-    setInactivityRemaining(null)
-  }, [])
-
-  useEffect(() => {
-    if (!isConnectedOrAbove) {
-      setInactivityRemaining(null)
-      return
-    }
-
-    lastInteractionTimeRef.current = Date.now()
-
-    const handleUserActivity = () => {
-      lastInteractionTimeRef.current = Date.now()
-      setInactivityRemaining(prev => prev !== null ? null : prev)
-    }
-
-    window.addEventListener('touchstart', handleUserActivity, { passive: true })
-    window.addEventListener('touchmove', handleUserActivity, { passive: true })
-    window.addEventListener('mousedown', handleUserActivity, { passive: true })
-    window.addEventListener('click', handleUserActivity, { passive: true })
-    window.addEventListener('keydown', handleUserActivity, { passive: true })
-
-    const interval = setInterval(() => {
-      const elapsed = Date.now() - lastInteractionTimeRef.current
-      const remaining = Math.max(0, Math.ceil((INACTIVITY_TIMEOUT_MS - elapsed) / 1000))
-
-      if (remaining <= 0) {
-        clearInterval(interval)
-        setInactivityRemaining(null)
-        handleCancelAndNewUpload()
-      } else if (remaining <= INACTIVITY_WARNING_SECONDS) {
-        setInactivityRemaining(remaining)
-      } else {
-        setInactivityRemaining(null)
-      }
-    }, 500)
-
-    return () => {
-      clearInterval(interval)
-      window.removeEventListener('touchstart', handleUserActivity)
-      window.removeEventListener('touchmove', handleUserActivity)
-      window.removeEventListener('mousedown', handleUserActivity)
-      window.removeEventListener('click', handleUserActivity)
-      window.removeEventListener('keydown', handleUserActivity)
-    }
-  }, [isConnectedOrAbove, handleCancelAndNewUpload])
 
   const qrDisplayValue = useMemo(() => {
     // 1. Explicit unique session QR URL containing cryptographic session token
@@ -936,6 +750,35 @@ export default function KioskSessionScreen() {
     }
   }, [state, effectiveOrderId, kioskId, apiUrl, handleExecutePrint, isActionPending])
 
+  const renderStepTabs = (currentStep: 'UPLOADING' | 'CONFIRMING' | 'CONFIGURING' | 'REVIEWING' | 'PAYING') => {
+    const steps = [
+      { id: 'UPLOADING', num: 1, label: 'Upload' },
+      { id: 'CONFIRMING', num: 2, label: 'Review Document' },
+      { id: 'CONFIGURING', num: 3, label: 'Print Options' },
+      { id: 'REVIEWING', num: 4, label: 'Review Order' },
+      { id: 'PAYING', num: 5, label: 'Pay & Dispense' },
+    ]
+    const currentIdx = steps.findIndex(s => s.id === currentStep)
+
+    return (
+      <div className="ks-flow-tabs">
+        {steps.map((st, i) => {
+          const isDone = i < currentIdx
+          const isActive = i === currentIdx
+          return (
+            <div key={st.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div className={`ks-flow-tab ${isDone ? 'ks-flow-tab--done' : ''} ${isActive ? 'ks-flow-tab--active' : ''}`}>
+                <span className="ks-flow-tab-num">{isDone ? '✓' : st.num}</span>
+                <span>{st.label}</span>
+              </div>
+              {i < steps.length - 1 && <span className="ks-flow-tab-arrow">→</span>}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
   return (
     <div className="ks-root">
       {/* Ambient Red & White Mesh Lighting */}
@@ -954,22 +797,6 @@ export default function KioskSessionScreen() {
               <span className="ks-topbar-state-dot" style={{ background: phase.color }} />
               <span style={{ color: phase.color, fontWeight: 700 }}>{phase.label}</span>
             </div>
-
-            {/* Always-Visible Cancel Button on Connected Phone or above step */}
-            <button
-              type="button"
-              className="ks-always-cancel-btn"
-              onClick={handleCancelAndNewUpload}
-              disabled={isActionPending}
-              id="kiosk-always-cancel-btn"
-              title="Cancel session and return to Print from Phone"
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-              <span>Cancel Order</span>
-            </button>
           </div>
         )}
       </header>
@@ -1156,60 +983,30 @@ export default function KioskSessionScreen() {
 
         {/* ── STEP 1: Phone Connected & Uploading State ── */}
         {(state === 'CLAIMED' || state === 'UPLOADING') && !doc && (
-          <div className="ks-flow-panel">
-            <div className="ks-phase-card" style={{ borderColor: 'rgba(220, 38, 38, 0.3)' }}>
-              <div className="ks-phase-icon-wrap" style={{ background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626' }}>
-                <span className="ks-big-icon">📲</span>
-              </div>
-              <div className="ks-phase-info">
-                <h2 className="ks-phase-title" style={{ color: '#dc2626' }}>Phone Connected</h2>
-                <p className="ks-phase-sub">User is selecting and uploading document from their phone…</p>
-                <div className="ks-await-pill" style={{ marginTop: 12 }}>
-                  <span className="ks-await-dot" style={{ background: '#dc2626' }} />
-                  <span>Document will appear on this touchscreen immediately once uploaded</span>
+          <div className="ks-flow-panel" style={{ width: '100%', maxWidth: '820px' }}>
+            <div className="ks-interactive-panel" style={{ width: '100%' }}>
+              {renderStepTabs('UPLOADING')}
+              <div style={{ padding: '36px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 16 }}>
+                <div className="ks-phase-icon-wrap" style={{ background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', width: 68, height: 68, borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ fontSize: 36 }}>📲</span>
                 </div>
-                <div style={{ marginTop: 16 }}>
-                  <button
-                    type="button"
-                    className="ks-inline-cancel-btn"
-                    onClick={handleCancelAndNewUpload}
-                    disabled={isActionPending}
-                    id="ks-cancel-phone-connected"
-                  >
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="18" y1="6" x2="6" y2="18"></line>
-                      <line x1="6" y1="6" x2="18" y2="18"></line>
-                    </svg>
-                    <span>Cancel Connection</span>
-                  </button>
+                <div>
+                  <h2 style={{ fontSize: 24, fontWeight: 800, color: '#dc2626', margin: '0 0 6px' }}>Phone Connected</h2>
+                  <p style={{ fontSize: 14, color: '#475569', margin: 0 }}>Please select and upload your document on your mobile screen.</p>
+                </div>
+                <div className="ks-companion-status-pill" style={{ marginTop: 8 }}>
+                  <span className="ks-companion-dot" />
+                  <span>Zero Touch • Document will appear here once uploaded</span>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* ── SECTION 1: Review Document & Page Preview (CONFIRMING) ── */}
+        {/* ── SECTION 1: Review Document (CONFIRMING) ── */}
         {state === 'CONFIRMING' && (
           <div className="ks-interactive-panel">
-            {/* Flow Steps Header */}
-            <div className="ks-flow-tabs">
-              <div className="ks-flow-tab ks-flow-tab--active">
-                <span className="ks-flow-tab-num">1</span>
-                <span>Review Document</span>
-              </div>
-              <span className="ks-flow-tab-arrow">→</span>
-              <div className="ks-flow-tab">
-                <span className="ks-flow-tab-num">2</span>
-                <span>Print Settings</span>
-              </div>
-              <span className="ks-flow-tab-arrow">→</span>
-              <div className="ks-flow-tab">
-                <span className="ks-flow-tab-num">3</span>
-                <span>Pay &amp; Print</span>
-              </div>
-            </div>
-
-            {/* Split Body */}
+            {renderStepTabs('CONFIRMING')}
             <div className="ks-flow-body">
               {/* Left Column: Page Canvas / Preview */}
               <div className="ks-flow-left">
@@ -1274,10 +1071,10 @@ export default function KioskSessionScreen() {
                 )}
               </div>
 
-              {/* Right Column: Specs & Actions */}
-              <div className="ks-flow-right">
+              {/* Right Column: Specs & Zero-Touch Companion Card */}
+              <div className="ks-flow-right" style={{ justifyContent: 'space-between' }}>
                 <div>
-                  <h3 className="ks-summary-title">Document Details</h3>
+                  <h3 className="ks-summary-title">Document Received</h3>
                   <div className="ks-summary-table">
                     <div className="ks-summary-row">
                       <span>Document</span>
@@ -1292,33 +1089,24 @@ export default function KioskSessionScreen() {
                       <strong style={{ color: '#16a34a' }}>Ready (A4 75GSM)</strong>
                     </div>
                     <div className="ks-summary-row">
-                      <span>Base Rate</span>
-                      <strong>₹{pageDetails.pricing.bwSingle.toFixed(2)} / page (B&amp;W)</strong>
+                      <span>Colour Options</span>
+                      <strong>B&amp;W or Colour Available</strong>
                     </div>
                   </div>
                 </div>
 
-                <div className="ks-action-row">
-                  <button
-                    type="button"
-                    className="ks-btn-primary"
-                    onClick={handleContinueToSettings}
-                    disabled={isActionPending}
-                    id="ks-continue-to-settings"
-                  >
-                    <span>Print Settings</span>
-                    <span>→</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    className="ks-btn-secondary"
-                    onClick={handleCancelAndNewUpload}
-                    disabled={isActionPending}
-                    id="ks-cancel-new-upload-btn"
-                  >
-                    Cancel Order
-                  </button>
+                <div className="ks-companion-card">
+                  <div className="ks-companion-card-header">
+                    <div className="ks-companion-card-icon">📱</div>
+                    <div>
+                      <div className="ks-companion-card-title">Reviewing Document on Mobile</div>
+                      <div className="ks-companion-card-sub">Please review and confirm pages on your phone screen. No touch required on this display.</div>
+                    </div>
+                  </div>
+                  <div className="ks-companion-status-pill">
+                    <span className="ks-companion-dot" />
+                    <span>Continue on phone to Print Options →</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1326,81 +1114,160 @@ export default function KioskSessionScreen() {
         )}
 
         {/* ── SECTION 2: Print Settings (CONFIGURING) ── */}
-        {/* ── SECTION 2: Print Settings (CONFIGURING) — Same Web Settings Optimized for Pi ── */}
         {state === 'CONFIGURING' && (
           <div className="ks-interactive-panel">
-            {/* Flow Steps Header */}
-            <div className="ks-flow-tabs">
-              <div className="ks-flow-tab ks-flow-tab--done">
-                <span className="ks-flow-tab-num">✓</span>
-                <span>Review Document</span>
+            {renderStepTabs('CONFIGURING')}
+            <div className="ks-flow-body">
+              {/* Left Column: Mirrored Settings Grid */}
+              <div className="ks-flow-left">
+                <h3 className="ks-summary-title" style={{ marginBottom: 12 }}>Mirrored Print Options</h3>
+                <div className="ks-mirrored-grid">
+                  <div className="ks-mirror-card">
+                    <span className="ks-mirror-label">Color Mode</span>
+                    <strong className="ks-mirror-val" style={{ color: selectedColour === 'COLOUR' ? '#dc2626' : '#09090b' }}>
+                      {selectedColour === 'COLOUR' ? 'Full Colour' : 'Black & White'}
+                    </strong>
+                    <span className="ks-mirror-sub">{selectedColour === 'COLOUR' ? 'High Quality' : 'Monochrome Laser'}</span>
+                  </div>
+                  <div className="ks-mirror-card">
+                    <span className="ks-mirror-label">Sides</span>
+                    <strong className="ks-mirror-val">
+                      {selectedDuplex === 'DOUBLE' ? '2-Sided' : '1-Sided'}
+                    </strong>
+                    <span className="ks-mirror-sub">{selectedDuplex === 'DOUBLE' ? (duplexBinding === 'SHORT_EDGE' ? 'Short Edge Flip' : 'Long Edge Flip') : 'Single Sided'}</span>
+                  </div>
+                  <div className="ks-mirror-card">
+                    <span className="ks-mirror-label">Copies</span>
+                    <strong className="ks-mirror-val">{selectedCopies} {selectedCopies === 1 ? 'Copy' : 'Copies'}</strong>
+                    <span className="ks-mirror-sub">{calculatedSheets * selectedCopies} Total Sheets</span>
+                  </div>
+                  <div className="ks-mirror-card">
+                    <span className="ks-mirror-label">Paper Tray</span>
+                    <strong className="ks-mirror-val" style={{ color: '#16a34a' }}>A4 75GSM</strong>
+                    <span className="ks-mirror-sub">Standard Tray Ready</span>
+                  </div>
+                </div>
+
+                <div className="ks-total-banner" style={{ marginTop: 14 }}>
+                  <span className="ks-total-label">Estimated Total</span>
+                  <span className="ks-total-price">₹{totalAmount.toFixed(2)}</span>
+                </div>
               </div>
-              <span className="ks-flow-tab-arrow">→</span>
-              <div className="ks-flow-tab ks-flow-tab--active">
-                <span className="ks-flow-tab-num">2</span>
-                <span>Print Settings</span>
-              </div>
-              <span className="ks-flow-tab-arrow">→</span>
-              <div className="ks-flow-tab">
-                <span className="ks-flow-tab-num">3</span>
-                <span>Pay &amp; Print</span>
+
+              {/* Right Column: Doc Specs & Zero-Touch Companion Card */}
+              <div className="ks-flow-right" style={{ justifyContent: 'space-between' }}>
+                <div>
+                  <h3 className="ks-summary-title">Document Specs</h3>
+                  <div className="ks-summary-table">
+                    <div className="ks-summary-row">
+                      <span>File Name</span>
+                      <strong style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{docFileName}</strong>
+                    </div>
+                    <div className="ks-summary-row">
+                      <span>Pages</span>
+                      <strong>{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</strong>
+                    </div>
+                    <div className="ks-summary-row">
+                      <span>Selected Range</span>
+                      <strong>{selectedPageRange === 'ALL' ? 'All Pages' : selectedPageRange}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="ks-companion-card">
+                  <div className="ks-companion-card-header">
+                    <div className="ks-companion-card-icon">⚙️</div>
+                    <div>
+                      <div className="ks-companion-card-title">Configuring Options on Mobile</div>
+                      <div className="ks-companion-card-sub">Select copies, colours, and sides on your phone screen. Selections reflect here in real time.</div>
+                    </div>
+                  </div>
+                  <div className="ks-companion-status-pill">
+                    <span className="ks-companion-dot" />
+                    <span>Zero Touch • Continue on phone screen</span>
+                  </div>
+                </div>
               </div>
             </div>
-
-            <KioskWebPrintSettings
-              fileName={docFileName}
-              totalPages={pageCount}
-              initialSettings={{
-                colour: selectedColour,
-                duplex: selectedDuplex,
-                copies: selectedCopies,
-                pages: selectedPageRange,
-              }}
-              onSettingsChange={(newSettings) => {
-                setSelectedColour(newSettings.colour)
-                setSelectedDuplex(newSettings.duplex)
-                setSelectedCopies(newSettings.copies)
-                setSelectedPageRange(newSettings.pages)
-              }}
-              onProceed={() => handleProceedToPayment()}
-              onBack={handleBackToConfirm}
-              onCancel={handleCancelAndNewUpload}
-              proceedLabel="Pay Now →"
-              isActionPending={isActionPending}
-              kioskId={kioskId}
-              kioskName={kioskName}
-              showTopbar={false}
-            />
           </div>
         )}
 
-        {/* ── SECTION 3: Payment & UPI QR (PAYING) ── */}
-        {state === 'PAYING' && (
+        {/* ── SECTION 3: Review Order (REVIEWING) ── */}
+        {state === 'REVIEWING' && (
           <div className="ks-interactive-panel">
-            {/* Flow Steps Header */}
-            <div className="ks-flow-tabs">
-              <div className="ks-flow-tab ks-flow-tab--done">
-                <span className="ks-flow-tab-num">✓</span>
-                <span>Review Document</span>
+            {renderStepTabs('REVIEWING')}
+            <div className="ks-flow-body">
+              {/* Left Column: Order Breakdown */}
+              <div className="ks-flow-left">
+                <h3 className="ks-summary-title">Order Breakdown</h3>
+                <div className="ks-summary-table">
+                  <div className="ks-summary-row">
+                    <span>Document</span>
+                    <strong style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{docFileName}</strong>
+                  </div>
+                  <div className="ks-summary-row">
+                    <span>Print Configuration</span>
+                    <strong>{selectedColour === 'COLOUR' ? 'Colour' : 'B&W'} • {selectedCopies} copy • {calculatedSheets * selectedCopies} sheets</strong>
+                  </div>
+                  <div className="ks-summary-row">
+                    <span>Paper</span>
+                    <strong>A4 75GSM Plain Paper</strong>
+                  </div>
+                  <div className="ks-summary-row">
+                    <span>Station ID</span>
+                    <strong style={{ fontFamily: 'var(--ks-mono)' }}>{kioskId}</strong>
+                  </div>
+                </div>
+
+                <div className="ks-total-banner" style={{ marginTop: 14 }}>
+                  <span className="ks-total-label">Payable Amount</span>
+                  <span className="ks-total-price">₹{totalAmount.toFixed(2)}</span>
+                </div>
               </div>
-              <span className="ks-flow-tab-arrow">→</span>
-              <div className="ks-flow-tab ks-flow-tab--done">
-                <span className="ks-flow-tab-num">✓</span>
-                <span>Print Settings</span>
-              </div>
-              <span className="ks-flow-tab-arrow">→</span>
-              <div className="ks-flow-tab ks-flow-tab--active">
-                <span className="ks-flow-tab-num">3</span>
-                <span>Pay &amp; Print</span>
+
+              {/* Right Column: Companion Callout */}
+              <div className="ks-flow-right" style={{ justifyContent: 'space-between' }}>
+                <div>
+                  <h3 className="ks-summary-title">Next Step</h3>
+                  <div className="ks-summary-table">
+                    <div className="ks-summary-row">
+                      <span>Payment Method</span>
+                      <strong style={{ color: '#dc2626' }}>Instant UPI QR</strong>
+                    </div>
+                    <div className="ks-summary-row">
+                      <span>Release Trigger</span>
+                      <strong>Automatic Upon Payment</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="ks-companion-card">
+                  <div className="ks-companion-card-header">
+                    <div className="ks-companion-card-icon">📋</div>
+                    <div>
+                      <div className="ks-companion-card-title">Reviewing Order on Mobile</div>
+                      <div className="ks-companion-card-sub">Please review the order details on your phone and tap Pay to show the payment QR code here.</div>
+                    </div>
+                  </div>
+                  <div className="ks-companion-status-pill">
+                    <span className="ks-companion-dot" />
+                    <span>Awaiting continue from phone…</span>
+                  </div>
+                </div>
               </div>
             </div>
+          </div>
+        )}
 
-            {/* Split Body */}
+        {/* ── SECTION 4: Payment & UPI QR (PAYING) ── */}
+        {state === 'PAYING' && (
+          <div className="ks-interactive-panel">
+            {renderStepTabs('PAYING')}
             <div className="ks-flow-body">
-              {/* Left Column: Order Breakdown & Touch Confirmation */}
+              {/* Left Column: Order Breakdown & Hardware Dispense Notice */}
               <div className="ks-flow-left" style={{ justifyContent: 'space-between' }}>
                 <div>
-                  <h3 className="ks-summary-title">Complete Payment</h3>
+                  <h3 className="ks-summary-title">Payment Due</h3>
                   <div className="ks-summary-table">
                     <div className="ks-summary-row">
                       <span>Order ID</span>
@@ -1411,8 +1278,8 @@ export default function KioskSessionScreen() {
                       <strong style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{docFileName}</strong>
                     </div>
                     <div className="ks-summary-row">
-                      <span>Configuration</span>
-                      <strong>{selectedColour === 'COLOUR' ? 'Colour' : 'B&W'} • {selectedCopies} copy • {calculatedSheets} sheets</strong>
+                      <span>Prints</span>
+                      <strong>{selectedColour === 'COLOUR' ? 'Colour' : 'B&W'} • {selectedCopies} copy • {calculatedSheets * selectedCopies} sheets</strong>
                     </div>
                   </div>
 
@@ -1422,40 +1289,18 @@ export default function KioskSessionScreen() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <button
-                    type="button"
-                    className="ks-btn-primary"
-                    onClick={handleExecutePrint}
-                    disabled={isActionPending}
-                    id="ks-confirm-payment-print"
-                  >
-                    <span>Confirm Print</span>
-                    <span>🖨️</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    className="ks-btn-secondary"
-                    onClick={handleBackToSettings}
-                  >
-                    ← Back
-                  </button>
-
-                  <button
-                    type="button"
-                    className="ks-btn-secondary"
-                    onClick={handleCancelAndNewUpload}
-                    disabled={isActionPending}
-                    style={{ color: '#dc2626' }}
-                    id="ks-cancel-from-pay"
-                  >
-                    Cancel Order
-                  </button>
+                <div className="ks-auto-dispense-card">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 20 }}>⚡</span>
+                    <strong style={{ fontSize: 13, color: '#dc2626', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Automatic Print Dispense</strong>
+                  </div>
+                  <p style={{ margin: '6px 0 0', fontSize: 12, color: '#475569', lineHeight: 1.5 }}>
+                    The moment UPI payment is received via webhook, printing starts automatically on the laser printer below. No touch or PIN required!
+                  </p>
                 </div>
               </div>
 
-              {/* Right Column: Dynamic UPI QR Box made by merchant UPI Express API key */}
+              {/* Right Column: Large Dynamic UPI Payment QR Box */}
               <div className="ks-flow-right" style={{ alignItems: 'center', justifyContent: 'center' }}>
                 <div className="ks-pay-qr-card">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1469,16 +1314,16 @@ export default function KioskSessionScreen() {
                     {upiQrValue ? (
                       <QRCodeSVG
                         value={upiQrValue}
-                        size={210}
+                        size={230}
                         level="M"
                         includeMargin={false}
                         fgColor="#09090b"
                         bgColor="#ffffff"
                       />
                     ) : (
-                      <div style={{ width: 210, height: 210, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                      <div style={{ width: 230, height: 230, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
                         <div className="ks-qr-spinner" />
-                        <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>Creating Order…</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>Generating QR…</span>
                       </div>
                     )}
                   </div>
@@ -1486,26 +1331,22 @@ export default function KioskSessionScreen() {
                   <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'flex', alignItems: 'center', gap: 4 }}>
                     <span>UPI Express Gateway</span>
                     <span style={{ color: '#cbd5e1' }}>•</span>
-                    <span style={{ color: '#16a34a' }}>Live</span>
-                  </div>
-
-                  <div style={{ fontSize: 11, fontFamily: 'var(--ks-mono)', color: '#64748b', textAlign: 'center', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {session?.merchantUpiId ? `VPA: ${session.merchantUpiId}` : 'Merchant Verified UPI'}
+                    <span style={{ color: '#16a34a' }}>GPay • PhonePe • Paytm • Any UPI</span>
                   </div>
 
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6,
-                    padding: '4px 10px',
+                    padding: '5px 12px',
                     borderRadius: 999,
                     background: '#f1f5f9',
                     fontSize: 11,
-                    color: '#64748b',
-                    fontWeight: 500,
+                    color: '#475569',
+                    fontWeight: 600,
                   }}>
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3b82f6' }} />
-                    <span>Auto-detects payment</span>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a', boxShadow: '0 0 6px #16a34a' }} />
+                    <span>Listening for payment confirmation…</span>
                   </div>
                 </div>
               </div>
@@ -1594,93 +1435,6 @@ export default function KioskSessionScreen() {
         )}
 
       </main>
-
-      {/* ── Screen Back Button (Fixed at Left Bottom Side of Screen) ── */}
-      {(state === 'CONFIRMING' || state === 'CONFIGURING' || state === 'PAYING') && (
-        <button
-          type="button"
-          className="ks-screen-back-btn"
-          onClick={() => {
-            if (state === 'PAYING') {
-              handleBackToSettings()
-            } else if (state === 'CONFIGURING') {
-              handleBackToConfirm()
-            } else if (state === 'CONFIRMING') {
-              handleCancelAndNewUpload()
-            }
-          }}
-          disabled={isActionPending}
-          id="kiosk-bottom-left-back-btn"
-          title="Back to previous screen"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="19" y1="12" x2="5" y2="12"></line>
-            <polyline points="12 19 5 12 12 5"></polyline>
-          </svg>
-          <span>Back</span>
-        </button>
-      )}
-
-      {/* ── 15-SECOND INACTIVITY NOTICE MODAL (Stops auto-cancelling order) ── */}
-      {inactivityRemaining !== null && (
-        <div
-          className="ks-inactivity-modal-backdrop"
-          onClick={resetInactivityTimer}
-          role="alertdialog"
-          aria-modal="true"
-        >
-          <div
-            className="ks-inactivity-modal-card"
-            onClick={(e) => {
-              e.stopPropagation()
-              resetInactivityTimer()
-            }}
-          >
-            <div className="ks-inactivity-icon-wrap">
-              <span className="ks-inactivity-pulse-ring" />
-              <span className="ks-inactivity-icon">⏳</span>
-            </div>
-
-            <div className="ks-inactivity-countdown-badge">
-              <span className="ks-inactivity-countdown-num">{inactivityRemaining}</span>
-              <span className="ks-inactivity-countdown-unit">SECONDS</span>
-            </div>
-
-            <h2 className="ks-inactivity-title">Are you still there?</h2>
-            <p className="ks-inactivity-desc">
-              No interaction detected. To protect your document privacy and clear the kiosk, your order will be cancelled and reset in <strong>{inactivityRemaining} seconds</strong>.
-            </p>
-
-            <div className="ks-inactivity-actions">
-              <button
-                type="button"
-                className="ks-inactivity-btn-keep"
-                onClick={resetInactivityTimer}
-                id="ks-inactivity-keep-session"
-              >
-                <span>✓ Keep Alive</span>
-              </button>
-
-              <button
-                type="button"
-                className="ks-inactivity-btn-cancel"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setInactivityRemaining(null)
-                  handleCancelAndNewUpload()
-                }}
-                id="ks-inactivity-cancel-now"
-              >
-                <span>✕ Cancel Order</span>
-              </button>
-            </div>
-
-            <p className="ks-inactivity-subhint">
-              👉 Tap anywhere on the screen to stay on this page
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
