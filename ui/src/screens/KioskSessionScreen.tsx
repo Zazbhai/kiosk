@@ -189,14 +189,14 @@ export default function KioskSessionScreen() {
   const apiUrl = getKioskApiUrl()
   const { siteUrl } = useKioskSiteUrl(apiUrl, kioskId)
 
-  // Immediate non-null session: QR code displays INSTANTLY on frame 0
+  // Immediate non-null session: initialized with empty token and qrUrl so that
+  // we NEVER display a stale or constant sessionless QR while creating the session
   const [session, setSession] = useState<LiveSession>(() => {
     const kid = getKioskId()
-    const surl = getKioskSiteUrl()
     return {
       sessionId: `init-${kid}`,
-      token: 'init',
-      qrUrl: getKioskQrUrl(kid, surl),
+      token: '',
+      qrUrl: '',
       state: 'QR_READY',
       phase: 'Scan QR to start uploading',
       phaseStep: 0,
@@ -208,6 +208,7 @@ export default function KioskSessionScreen() {
   const [timeLeft, setTimeLeft] = useState(300)
   const [stateChanged, setStateChanged] = useState(false)
   const [isActionPending, setIsActionPending] = useState(false)
+  const [copiedUrl, setCopiedUrl] = useState(false)
 
   // Interactive UI Selection States on Touchscreen
   const [activePageIdx, setActivePageIdx] = useState(0)
@@ -237,7 +238,7 @@ export default function KioskSessionScreen() {
 
   // ── Session Creation & Upgrade ────────────────────────────────────────────
 
-  const createSession = useCallback(async (force = false) => {
+  const createSession = useCallback(async (force = true) => {
     if (!mountedRef.current) return
 
     if (retryTimerRef.current) {
@@ -269,10 +270,25 @@ export default function KioskSessionScreen() {
         const data = await res.json()
         if (data.success && mountedRef.current) {
           const s = data.session || data
+          const resolvedToken = (s.token || data.token || '').trim()
+          const effectiveBaseUrl = (siteUrl || getKioskSiteUrl()).replace(/\/+$/, '')
+
+          // Guarantee that the QR URL strictly embeds the unique cryptographic session token
+          let resolvedQrUrl = ''
+          if (s.qrUrl && s.qrUrl.includes('&session=') && !s.qrUrl.includes('session=init')) {
+            resolvedQrUrl = s.qrUrl
+          } else if (data.qrUrl && data.qrUrl.includes('&session=') && !data.qrUrl.includes('session=init')) {
+            resolvedQrUrl = data.qrUrl
+          } else if (resolvedToken && resolvedToken !== 'init') {
+            resolvedQrUrl = `${effectiveBaseUrl}/print?id=${encodeURIComponent(kioskId)}&session=${encodeURIComponent(resolvedToken)}`
+          } else {
+            resolvedQrUrl = getKioskQrUrl(kioskId, effectiveBaseUrl, resolvedToken)
+          }
+
           setSession({
             sessionId: s.sessionId || data.sessionId,
-            token: s.token || data.token,
-            qrUrl: s.qrUrl || data.qrUrl || getKioskQrUrl(kioskId, siteUrl),
+            token: resolvedToken,
+            qrUrl: resolvedQrUrl,
             state: s.state || data.state || 'QR_READY',
             phase: s.phase || 'Scan QR to start uploading',
             phaseStep: s.phaseStep || 0,
@@ -304,12 +320,12 @@ export default function KioskSessionScreen() {
       }
 
       if (mountedRef.current) {
-        retryTimerRef.current = setTimeout(createSession, 4000)
+        retryTimerRef.current = setTimeout(() => createSession(true), 4000)
       }
     } catch (e) {
       console.warn('[KioskSession] Network issue creating session:', e)
       if (mountedRef.current) {
-        retryTimerRef.current = setTimeout(createSession, 4000)
+        retryTimerRef.current = setTimeout(() => createSession(true), 4000)
       }
     }
   }, [apiUrl, kioskId, siteUrl])
@@ -317,7 +333,7 @@ export default function KioskSessionScreen() {
   useEffect(() => {
     mountedRef.current = true
     loadKioskRuntimeConfig().catch(() => {})
-    createSession()
+    createSession(true)
 
     return () => {
       mountedRef.current = false
@@ -346,14 +362,28 @@ export default function KioskSessionScreen() {
         if (!data.success || !data.session || !mountedRef.current) return
 
         const s = data.session as LiveSession
+        const effectiveToken = (s.token || session?.token || '').trim()
+        const effectiveBaseUrl = (siteUrl || getKioskSiteUrl()).replace(/\/+$/, '')
+
+        let effectiveQrUrl = ''
+        if (s.qrUrl && s.qrUrl.includes('&session=') && !s.qrUrl.includes('session=init')) {
+          effectiveQrUrl = s.qrUrl
+        } else if (effectiveToken && effectiveToken !== 'init') {
+          effectiveQrUrl = `${effectiveBaseUrl}/print?id=${encodeURIComponent(kioskId)}&session=${encodeURIComponent(effectiveToken)}`
+        }
 
         setSession(prev => {
-          if (!prev) return s
+          if (!prev) return { ...s, qrUrl: effectiveQrUrl, token: effectiveToken }
           if (prev.state !== s.state) {
             setStateChanged(true)
             setTimeout(() => setStateChanged(false), 500)
           }
-          return { ...prev, ...s }
+          return {
+            ...prev,
+            ...s,
+            qrUrl: effectiveQrUrl || prev.qrUrl,
+            token: effectiveToken || prev.token,
+          }
         })
 
         // Auto-rotate on completion after 6 seconds
@@ -361,12 +391,12 @@ export default function KioskSessionScreen() {
           rotateTimerRef.current = setTimeout(() => {
             if (!mountedRef.current) return
             rotateTimerRef.current = null
-            createSession()
+            createSession(true)
           }, 6000)
         }
 
         if (data.isExpired && s.state === 'QR_READY') {
-          createSession()
+          createSession(true)
         }
       } catch {}
     }
@@ -375,7 +405,7 @@ export default function KioskSessionScreen() {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)
     }
-  }, [session?.sessionId, apiUrl, kioskId, createSession])
+  }, [session?.sessionId, session?.token, apiUrl, kioskId, siteUrl, createSession])
 
   // ── Countdown Timer ───────────────────────────────────────────────────────
 
@@ -802,7 +832,19 @@ export default function KioskSessionScreen() {
     }
   }, [isConnectedOrAbove, handleCancelAndNewUpload])
 
-  const qrDisplayValue = session?.qrUrl || getKioskQrUrl(kioskId, siteUrl)
+  const qrDisplayValue = useMemo(() => {
+    // 1. Explicit unique session QR URL containing cryptographic session token
+    if (session?.qrUrl && session.qrUrl.includes('&session=') && !session.qrUrl.includes('session=init')) {
+      return session.qrUrl
+    }
+    // 2. Synthesize using active cryptographic session token
+    if (session?.token && session.token !== 'init') {
+      const base = (siteUrl || getKioskSiteUrl()).replace(/\/+$/, '')
+      return `${base}/print?id=${encodeURIComponent(kioskId)}&session=${encodeURIComponent(session.token)}`
+    }
+    // 3. While initializing, return empty string so loading state renders instead of a constant sessionless QR
+    return ''
+  }, [session?.qrUrl, session?.token, siteUrl, kioskId])
 
   // Current document and previews
   const doc = session?.document
@@ -867,15 +909,130 @@ export default function KioskSessionScreen() {
               </div>
 
               <div className="ks-qr-card">
-                <QRCodeSVG
-                  value={qrDisplayValue}
-                  size={260}
-                  level="M"
-                  includeMargin={false}
-                  fgColor="#09090b"
-                  bgColor="#ffffff"
-                />
+                {qrDisplayValue ? (
+                  <QRCodeSVG
+                    value={qrDisplayValue}
+                    size={260}
+                    level="M"
+                    includeMargin={false}
+                    fgColor="#09090b"
+                    bgColor="#ffffff"
+                  />
+                ) : (
+                  <div className="ks-qr-loading-placeholder">
+                    <div className="ks-qr-spinner" />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#64748b' }}>
+                      Generating Secure Session…
+                    </span>
+                  </div>
+                )}
               </div>
+
+              {/* Unique Session Active verification badge */}
+              {session?.token && session.token !== 'init' && (
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '4px 12px',
+                  borderRadius: 999,
+                  background: 'rgba(22, 163, 74, 0.08)',
+                  border: '1px solid rgba(22, 163, 74, 0.2)',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: '#16a34a',
+                  marginTop: -6,
+                }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a' }} />
+                  <span>Unique Session Active</span>
+                </div>
+              )}
+
+              {/* Temp Test URL Box for Laptop Testing */}
+              {qrDisplayValue && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 12,
+                    padding: '8px 12px',
+                    width: '100%',
+                    maxWidth: '420px',
+                    boxSizing: 'border-box',
+                    fontSize: 12,
+                    color: '#475569',
+                    marginTop: 4,
+                  }}
+                >
+                  <span style={{ fontWeight: 800, color: '#dc2626', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0 }}>
+                    Test URL:
+                  </span>
+                  <a
+                    href={qrDisplayValue}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                      color: '#0284c7',
+                      textDecoration: 'underline',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      flex: 1,
+                      textAlign: 'left',
+                    }}
+                    title={qrDisplayValue}
+                  >
+                    {qrDisplayValue}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (navigator.clipboard) {
+                        navigator.clipboard.writeText(qrDisplayValue)
+                        setCopiedUrl(true)
+                        setTimeout(() => setCopiedUrl(false), 2000)
+                      }
+                    }}
+                    style={{
+                      border: '1px solid #cbd5e1',
+                      background: copiedUrl ? '#16a34a' : '#ffffff',
+                      color: copiedUrl ? '#ffffff' : '#334155',
+                      borderRadius: 6,
+                      padding: '4px 10px',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    {copiedUrl ? 'Copied!' : 'Copy'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.open(qrDisplayValue, '_blank')}
+                    style={{
+                      border: '1px solid #dc2626',
+                      background: '#dc2626',
+                      color: '#ffffff',
+                      borderRadius: 6,
+                      padding: '4px 10px',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    Open ↗
+                  </button>
+                </div>
+              )}
 
               {/* Direct PIN Keypad Switch */}
               <button

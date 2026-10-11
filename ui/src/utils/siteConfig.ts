@@ -21,27 +21,22 @@ export function getKioskSiteUrl(): string {
     }
 
     const localUrl = localStorage.getItem('pb_site_url') || localStorage.getItem('pb_web_url')
-    if (localUrl && localUrl.trim() && localUrl !== 'http://localhost:5200') {
+    if (localUrl && localUrl.trim() && !localUrl.includes('localhost:5200') && !localUrl.includes('127.0.0.1:5200')) {
       return localUrl.trim().replace(/\/+$/, '')
     }
 
     const winUrl = (window as any).__PRINTBOOTH_SITE_URL__ || (window as any).__PRINTBOOTH_WEB_URL__
-    if (winUrl && typeof winUrl === 'string' && winUrl.trim()) {
+    if (winUrl && typeof winUrl === 'string' && winUrl.trim() && !winUrl.includes('localhost:5200')) {
       return winUrl.trim().replace(/\/+$/, '')
-    }
-    // If accessing from LAN / WiFi IP, default to that host on port 5200 instead of localhost
-    if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      return `${window.location.protocol}//${window.location.hostname}:5200`
     }
   }
 
   const envUrl = import.meta.env.VITE_CLIENT_WEB_URL || import.meta.env.VITE_SITE_URL
-  if (envUrl && typeof envUrl === 'string' && envUrl.trim() && envUrl !== 'http://localhost:5200') {
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() && !envUrl.includes('localhost:5200')) {
     return envUrl.trim().replace(/\/+$/, '')
   }
 
-  const cached = typeof window !== 'undefined' ? localStorage.getItem('pb_site_url') : null
-  return cached || 'http://localhost:5200'
+  return 'https://printbooth.co.in'
 }
 
 export function getKioskId(): string {
@@ -79,26 +74,31 @@ export function getKioskApiUrl(): string {
     }
     const localApi = localStorage.getItem('pb_api_url')
     if (localApi && localApi.trim()) {
+      if (localApi.includes('localhost:5000') || localApi.includes('127.0.0.1:5000')) {
+        localStorage.setItem('pb_api_url', 'https://api.printbooth.co.in/api')
+        return 'https://api.printbooth.co.in'
+      }
       return localApi.trim().replace(/\/+$/, '').replace(/\/api$/, '')
     }
     const winApi = (window as any).__PRINTBOOTH_API_URL__
     if (winApi && typeof winApi === 'string' && winApi.trim()) {
       return winApi.trim().replace(/\/+$/, '').replace(/\/api$/, '')
     }
-    if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      return `${window.location.protocol}//${window.location.hostname}:5000`
-    }
   }
   const envApi = import.meta.env.VITE_API_URL
   if (envApi && typeof envApi === 'string' && envApi.trim()) {
     return envApi.trim().replace(/\/+$/, '').replace(/\/api$/, '')
   }
-  return 'http://localhost:5000'
+  return 'https://api.printbooth.co.in'
 }
 
-export function getKioskQrUrl(kioskId: string, customBaseUrl?: string): string {
+export function getKioskQrUrl(kioskId: string, customBaseUrl?: string, sessionToken?: string): string {
   const base = (customBaseUrl || getKioskSiteUrl()).replace(/\/+$/, '')
-  return `${base}/print?id=${encodeURIComponent(kioskId || 'PB-001')}`
+  const idPart = encodeURIComponent(kioskId || 'PB-001')
+  if (sessionToken && sessionToken !== 'init') {
+    return `${base}/print?id=${idPart}&session=${encodeURIComponent(sessionToken)}`
+  }
+  return `${base}/print?id=${idPart}`
 }
 
 export function setKioskSiteUrl(url: string) {
@@ -161,22 +161,22 @@ export async function fetchRemoteSiteConfig(apiUrl: string, kioskId: string = 'P
 /**
  * React Hook that keeps the site URL and QR code URL reactively updated
  */
-export function useKioskSiteUrl(apiUrl: string = 'http://localhost:5000', kioskId: string = 'PB-001') {
+export function useKioskSiteUrl(apiUrl: string = 'https://api.printbooth.co.in', kioskId: string = 'PB-001', sessionToken?: string) {
   const [siteUrl, setSiteUrlState] = useState<string>(() => getKioskSiteUrl())
-  const [qrUrl, setQrUrl] = useState<string>(() => getKioskQrUrl(kioskId, siteUrl))
+  const [qrUrl, setQrUrl] = useState<string>(() => getKioskQrUrl(kioskId, siteUrl, sessionToken))
 
   const updateSiteUrl = useCallback((newUrl: string) => {
     setKioskSiteUrl(newUrl)
     setSiteUrlState(newUrl)
-    setQrUrl(getKioskQrUrl(kioskId, newUrl))
-  }, [kioskId])
+    setQrUrl(getKioskQrUrl(kioskId, newUrl, sessionToken))
+  }, [kioskId, sessionToken])
 
   // Sync with cross-tab / CustomEvent updates
   useEffect(() => {
     const handler = (e: any) => {
       const url = e.detail || getKioskSiteUrl()
       setSiteUrlState(url)
-      setQrUrl(getKioskQrUrl(kioskId, url))
+      setQrUrl(getKioskQrUrl(kioskId, url, sessionToken))
     }
     window.addEventListener('pb_site_url_changed', handler)
     window.addEventListener('storage', handler)
@@ -184,22 +184,22 @@ export function useKioskSiteUrl(apiUrl: string = 'http://localhost:5000', kioskI
       window.removeEventListener('pb_site_url_changed', handler)
       window.removeEventListener('storage', handler)
     }
-  }, [kioskId])
+  }, [kioskId, sessionToken])
 
   // Auto-fetch from backend API on mount
   useEffect(() => {
     fetchRemoteSiteConfig(apiUrl, kioskId).then(remoteUrl => {
       if (remoteUrl) {
         setSiteUrlState(remoteUrl)
-        setQrUrl(getKioskQrUrl(kioskId, remoteUrl))
+        setQrUrl(getKioskQrUrl(kioskId, remoteUrl, sessionToken))
       }
     })
-  }, [apiUrl, kioskId])
+  }, [apiUrl, kioskId, sessionToken])
 
   // Keep QR code synchronized if kioskId changes
   useEffect(() => {
-    setQrUrl(getKioskQrUrl(kioskId, siteUrl))
-  }, [kioskId, siteUrl])
+    setQrUrl(getKioskQrUrl(kioskId, siteUrl, sessionToken))
+  }, [kioskId, siteUrl, sessionToken])
 
   return {
     siteUrl,

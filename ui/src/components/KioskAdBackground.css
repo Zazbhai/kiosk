@@ -12,7 +12,7 @@
   contain: strict;
 }
 
-/* Moving Ad Layer (Subtle ambient tint, covered with white) */
+/* Moving Ad Layer (Balanced ambient visibility) */
 .kiosk-ad-layer {
   position: absolute;
   inset: -60px; /* Bleed for smooth panning without edge seams */
@@ -22,16 +22,21 @@
   will-change: transform, opacity;
   transform: translate3d(0, 0, 0);
   transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1);
-  filter: saturate(0.5) brightness(1.1);
+  filter: saturate(0.95) brightness(1.02);
 }
 
-/* White Cover Overlay (Covers the ad with clean white diffusion) */
+/* Soft Diffusion Overlay (Lets the ad image and ambient mesh shine through with clarity) */
 .kiosk-ad-vignette {
   position: absolute;
   inset: 0;
-  background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: radial-gradient(
+    ellipse 85% 75% at 50% 45%,
+    rgba(255, 255, 255, 0.30) 0%,
+    rgba(255, 255, 255, 0.44) 65%,
+    rgba(255, 255, 255, 0.60) 100%
+  );
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
   pointer-events: none;
   z-index: 2;
 }

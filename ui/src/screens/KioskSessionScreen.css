@@ -35,6 +35,7 @@
   align-items: center;
   justify-content: center;
   background: transparent;
+  z-index: 1;
   font-family: var(--ks-font);
   color: var(--ks-text-1);
   overflow: hidden;
@@ -1845,7 +1846,28 @@
   font-weight: 500;
 }
 
+@keyframes ks-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
 
+.ks-qr-loading-placeholder {
+  width: 260px;
+  height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #f8fafc;
+  border-radius: 16px;
+}
 
-
-
+.ks-qr-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #dc2626;
+  border-radius: 50%;
+  animation: ks-spin 0.8s linear infinite;
+}

@@ -24,7 +24,7 @@ export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: stri
     (window as any).__PRINTBOOTH_API_URL__ ||
     import.meta.env.VITE_PRINTBOOTH_API_URL ||
     import.meta.env.VITE_API_URL ||
-    'http://localhost:5000'
+    'https://api.printbooth.co.in'
   ).replace(/\/api$/, '')
 
   const effectiveKioskId = (

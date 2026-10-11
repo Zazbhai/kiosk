@@ -60,8 +60,13 @@ export default function KioskAdBackground({ kioskId: propKioskId }: KioskAdBackg
   const kioskId = propKioskId || getKioskId() || 'PB-001'
   const apiUrl = getKioskApiUrl()
 
-  // Only render on "Print from your phone" / home screen
-  const isPrintFromPhonePage = location.pathname === '/' || location.pathname === '/session'
+  // Only render on "Print from your phone" / idle upload screens
+  const isPrintFromPhonePage =
+    location.pathname === '/' ||
+    location.pathname === '/session' ||
+    location.pathname === '/upload/qr' ||
+    location.pathname === '/upload' ||
+    location.pathname === '/welcome'
 
   const [ads, setAds] = useState<KioskAdItem[]>(() => {
     if (typeof window !== 'undefined') {
@@ -138,13 +143,13 @@ export default function KioskAdBackground({ kioskId: propKioskId }: KioskAdBackg
 
   return (
     <>
-      {/* ── Background Moving Advertisement Image (Covered with White) ── */}
+      {/* ── Background Moving Advertisement Image (Balanced visibility behind Print from Phone) ── */}
       <div className="kiosk-ad-bg-canvas" aria-hidden="true">
         <div
           className="kiosk-ad-layer kiosk-ad-motion-drift"
           style={{
             backgroundImage: `url(${currentAd.mediaUrl})`,
-            opacity: fadeOpacity * 0.08,
+            opacity: fadeOpacity * 0.45,
           }}
         />
         <div className="kiosk-ad-vignette" />
