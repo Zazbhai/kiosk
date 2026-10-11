@@ -840,6 +840,108 @@
 .ks-preview-nav-btn--prev { left: 12px; }
 .ks-preview-nav-btn--next { right: 12px; }
 
+/* ── Document Page Gallery Strip & Badges (Zero-Touch Kiosk Companion) ── */
+.ks-preview-page-badge {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.ks-auto-cycle-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 8px #22c55e;
+  animation: ks-pulse-dot 1.8s ease-in-out infinite;
+}
+
+.ks-gallery-strip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 6px 2px 8px;
+  margin-top: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(220, 38, 38, 0.25) transparent;
+}
+
+.ks-gallery-strip::-webkit-scrollbar {
+  height: 4px;
+}
+
+.ks-gallery-strip::-webkit-scrollbar-thumb {
+  background: rgba(220, 38, 38, 0.3);
+  border-radius: 4px;
+}
+
+.ks-gallery-thumb-item {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 6px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  transition: all 0.25s var(--ks-ease);
+  box-sizing: border-box;
+}
+
+.ks-gallery-thumb-item--active {
+  border-color: var(--ks-red);
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.18), 0 4px 12px rgba(220, 38, 38, 0.12);
+  transform: translateY(-2px);
+}
+
+.ks-gallery-thumb-img-wrap {
+  width: 52px;
+  height: 70px;
+  background: #f8fafc;
+  border-radius: 5px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #f1f5f9;
+}
+
+.ks-gallery-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ks-gallery-thumb-num {
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--ks-mono);
+  color: #64748b;
+}
+
+.ks-gallery-thumb-item--active .ks-gallery-thumb-num {
+  color: var(--ks-red);
+  font-weight: 800;
+}
+
 .ks-thumb-strip {
   display: flex;
   gap: 8px;
