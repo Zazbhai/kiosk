@@ -93,8 +93,8 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
         }}
       >
         <div id="error-text">
-          {/* 60fps GPU-Composited Floating Mascot (Tap 5x for technician Wi-Fi setup) */}
-          <div className="oopss-mascot-container" onClick={handleTap} title="Tap 5x for technician Wi-Fi setup">
+          {/* 60fps GPU-Composited Floating Mascot */}
+          <div className="oopss-mascot-container" onClick={handleTap} title="Station Offline">
             <div className="oopss-mascot-animator">
               <svg
                 className="sad-mascot-svg"
@@ -132,21 +132,6 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
           <span id="oopss-title" className="oopss-title" onClick={handleTap}>
             {displayTitle}
           </span>
-
-          {/* Technician Wi-Fi / Maintenance Trigger Pill */}
-          <button
-            type="button"
-            className="oopss-wifi-btn"
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              handleTechnicianTrigger()
-            }}
-            title="Configure Wi-Fi Connection (or press Ctrl+Alt+W / F12)"
-          >
-            <span className="wifi-btn-icon">📶</span>
-            <span>Configure Wi-Fi / Network</span>
-          </button>
         </div>
       </motion.div>
     </AnimatePresence>,
