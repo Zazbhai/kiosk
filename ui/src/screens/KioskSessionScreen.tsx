@@ -1510,17 +1510,6 @@ export default function KioskSessionScreen() {
         </button>
       )}
 
-      {/* Footer — shown during DONE to avoid colliding with campaign bar */}
-      {state === 'DONE' && (
-        <footer className="ks-footer">
-          <span>Hardware Engine: <strong>Brother DCP-T420W</strong></span>
-          <span>•</span>
-          <span>Telemetry: <code>ONLINE</code></span>
-          <span>•</span>
-          <span>Paper: <code>A4 75GSM</code></span>
-        </footer>
-      )}
-
       {/* ── 15-SECOND INACTIVITY NOTICE MODAL (Stops auto-cancelling order) ── */}
       {inactivityRemaining !== null && (
         <div

@@ -662,20 +662,9 @@
   margin-top: 6px;
 }
 
-/* ── Footer ────────────────────────────────────────────────────────────────── */
+/* ── Footer (Removed) ── */
 .ks-footer {
-  position: fixed;
-  bottom: 14px;
-  left: 24px;
-  right: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  font-size: 0.74rem;
-  color: var(--ks-text-3);
-  font-family: var(--ks-mono);
-  pointer-events: none;
+  display: none !important;
 }
 
 .ks-footer strong {
