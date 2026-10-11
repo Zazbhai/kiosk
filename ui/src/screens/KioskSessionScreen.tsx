@@ -27,6 +27,7 @@ import {
   getKioskPricing,
   parsePageRange,
 } from '../utils/printSettingsUtils'
+import KioskAdBackground from '../components/KioskAdBackground'
 import './KioskSessionScreen.css'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -872,54 +873,57 @@ export default function KioskSessionScreen() {
 
         {/* ── STEP 0: IDLE QR Code Display (Scanner in Middle, Zero Buttons) ── */}
         {isWaiting && (
-          <div className="ks-qr-panel ks-qr-panel--centered">
-            <div className="ks-qr-center-box">
-              <div className="ks-qr-header">
-                <h1 className="ks-title">Print from Your Phone</h1>
-                <p className="ks-subtitle">Scan the QR code with your camera to upload documents</p>
-              </div>
+          <>
+            <KioskAdBackground kioskId={kioskId} />
+            <div className="ks-qr-panel ks-qr-panel--centered">
+              <div className="ks-qr-center-box">
+                <div className="ks-qr-header">
+                  <h1 className="ks-title">Print from Your Phone</h1>
+                  <p className="ks-subtitle">Scan the QR code with your camera to upload documents</p>
+                </div>
 
-              <div className="ks-qr-card">
-                {qrDisplayValue ? (
-                  <QRCodeSVG
-                    value={qrDisplayValue}
-                    size={260}
-                    level="M"
-                    includeMargin={false}
-                    fgColor="#09090b"
-                    bgColor="#ffffff"
-                  />
-                ) : (
-                  <div className="ks-qr-loading-placeholder">
-                    <div className="ks-qr-spinner" />
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#64748b' }}>
-                      Generating Secure Session…
-                    </span>
+                <div className="ks-qr-card">
+                  {qrDisplayValue ? (
+                    <QRCodeSVG
+                      value={qrDisplayValue}
+                      size={260}
+                      level="M"
+                      includeMargin={false}
+                      fgColor="#09090b"
+                      bgColor="#ffffff"
+                    />
+                  ) : (
+                    <div className="ks-qr-loading-placeholder">
+                      <div className="ks-qr-spinner" />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#64748b' }}>
+                        Generating Secure Session…
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Unique Session Active verification badge */}
+                {session?.token && session.token !== 'init' && (
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '4px 12px',
+                    borderRadius: 999,
+                    background: 'rgba(22, 163, 74, 0.08)',
+                    border: '1px solid rgba(22, 163, 74, 0.2)',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: '#16a34a',
+                    marginTop: -6,
+                  }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a' }} />
+                    <span>Unique Session Active</span>
                   </div>
                 )}
               </div>
-
-              {/* Unique Session Active verification badge */}
-              {session?.token && session.token !== 'init' && (
-                <div style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '4px 12px',
-                  borderRadius: 999,
-                  background: 'rgba(22, 163, 74, 0.08)',
-                  border: '1px solid rgba(22, 163, 74, 0.2)',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: '#16a34a',
-                  marginTop: -6,
-                }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a' }} />
-                  <span>Unique Session Active</span>
-                </div>
-              )}
             </div>
-          </div>
+          </>
         )}
 
         {/* ── STEP 1: Phone Connected & Uploading State ── */}

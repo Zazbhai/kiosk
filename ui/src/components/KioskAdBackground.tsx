@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useLocation } from 'react-router-dom'
 import { getKioskApiUrl, getKioskId } from '../utils/siteConfig'
 import './KioskAdBackground.css'
 
@@ -56,17 +55,8 @@ interface KioskAdBackgroundProps {
 }
 
 export default function KioskAdBackground({ kioskId: propKioskId }: KioskAdBackgroundProps) {
-  const location = useLocation()
   const kioskId = propKioskId || getKioskId() || 'PB-001'
   const apiUrl = getKioskApiUrl()
-
-  // Only render on "Print from your phone" / idle upload screens
-  const isPrintFromPhonePage =
-    location.pathname === '/' ||
-    location.pathname === '/session' ||
-    location.pathname === '/upload/qr' ||
-    location.pathname === '/upload' ||
-    location.pathname === '/welcome'
 
   const [ads, setAds] = useState<KioskAdItem[]>(() => {
     if (typeof window !== 'undefined') {
@@ -126,7 +116,7 @@ export default function KioskAdBackground({ kioskId: propKioskId }: KioskAdBackg
 
   // Track impression silently
   useEffect(() => {
-    if (!currentAd?.campaignId || !isPrintFromPhonePage) return
+    if (!currentAd?.campaignId) return
     if (lastTrackedImpression.current === currentAd.campaignId) return
 
     lastTrackedImpression.current = currentAd.campaignId
@@ -135,11 +125,7 @@ export default function KioskAdBackground({ kioskId: propKioskId }: KioskAdBackg
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kioskId }),
     }).catch(() => {})
-  }, [currentAd?.campaignId, apiUrl, kioskId, isPrintFromPhonePage])
-
-  if (!isPrintFromPhonePage) {
-    return null
-  }
+  }, [currentAd?.campaignId, apiUrl, kioskId])
 
   return (
     <>
