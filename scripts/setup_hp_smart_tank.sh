@@ -122,11 +122,14 @@ else
     echo "  IPP Everywhere not supported on this URI, searching HPLIP PPD..."
 fi
 
-# Try 2: Exact HPLIP PPD for Smart Tank / DeskJet
+# Try 2: Exact HPLIP PPD for Smart Tank / DeskJet (EXCLUDING PhotoSmart!)
 if [ "$DRIVER_CONFIGURED" = false ]; then
-    HP_PPD=$(sudo lpinfo -m 2>/dev/null | grep -i -E "smart_tank|smarttank|hpcups.*smart" | head -n 1 | awk '{print $1}' || true)
+    HP_PPD=$(sudo lpinfo -m 2>/dev/null | grep -i -E "smart[-_ ]?tank|smarttank|660|670" | grep -v -i "photosmart" | head -n 1 | awk '{print $1}' || true)
     if [ -z "$HP_PPD" ]; then
-        HP_PPD=$(sudo lpinfo -m 2>/dev/null | grep -i -E "hpcups.*deskjet|hpcups.*ink_tank|drv:///hp/hpcups.drv" | head -n 1 | awk '{print $1}' || true)
+        HP_PPD=$(sudo lpinfo -m 2>/dev/null | grep -i -E "hpcups.*smart[-_ ]?tank|hpcups.*deskjet|hpcups.*ink_tank|hp-deskjet" | grep -v -i "photosmart" | head -n 1 | awk '{print $1}' || true)
+    fi
+    if [ -z "$HP_PPD" ]; then
+        HP_PPD=$(sudo lpinfo -m 2>/dev/null | grep -i -E "deskjet|inkjet|pcl3" | grep -v -i "photosmart" | head -n 1 | awk '{print $1}' || true)
     fi
 
     if [ -n "$HP_PPD" ]; then
