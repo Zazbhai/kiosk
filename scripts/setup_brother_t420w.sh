@@ -107,30 +107,57 @@ sudo /opt/brother/Printers/dcpt420w/inf/setupPrintcapij dcpt420w -i 2>/dev/null 
 
 # 6. Configure CUPS printer queue
 echo "\n[6/6] Discovering USB device & registering queue in CUPS..."
-DEVICE_URI=$(sudo lpinfo -v 2>/dev/null | grep -i -E "direct usb://brother|usb://brother/dcp-t420w" | head -n 1 | awk '{print $2}' || true)
+
+# Strategy 1: Try lpinfo to find any USB-connected Brother device (note: CUPS backend
+# may report a different model string in the URI than the physical printer label due to
+# USB descriptor quirks — this is normal and does not affect printing)
+DEVICE_URI=$(sudo lpinfo -v 2>/dev/null | grep -i "usb://brother" | head -n 1 | awk '{print $2}' || true)
+
+# Strategy 2: Use any USB printer URI if Brother-specific not found
 if [ -z "$DEVICE_URI" ]; then
-    DEVICE_URI=$(sudo lpinfo -v 2>/dev/null | grep -E "usb://" | head -n 1 | awk '{print $2}' || true)
+    DEVICE_URI=$(sudo lpinfo -v 2>/dev/null | grep -E "^direct usb://" | head -n 1 | awk '{print $2}' || true)
 fi
+
+# Strategy 3: Use /dev/usb/lp0 directly (most reliable on Raspberry Pi — bypasses URI model mismatch)
 if [ -z "$DEVICE_URI" ] && [ -e "/dev/usb/lp0" ]; then
     DEVICE_URI="usb:/dev/usb/lp0"
 fi
+
+# Strategy 4: Hardcoded correct fallback
 if [ -z "$DEVICE_URI" ]; then
     DEVICE_URI="usb://Brother/DCP-T420W"
+fi
+
+echo "  Found device URI: $DEVICE_URI"
+
+# Fix existing misconfigured PrintBooth_Printer if it uses wrong URI / model
+CURRENT_URI=$(sudo lpstat -v PrintBooth_Printer 2>/dev/null | awk '{print $NF}' || true)
+if [ -n "$CURRENT_URI" ] && [ "$CURRENT_URI" != "$DEVICE_URI" ]; then
+    echo "  ⚠  Fixing stale printer URI: was '$CURRENT_URI', updating to '$DEVICE_URI'"
 fi
 
 PRINTER_NAME="PrintBooth_Printer"
 sudo cancel -a "$PRINTER_NAME" 2>/dev/null || true
 sudo lpadmin -x "$PRINTER_NAME" 2>/dev/null || true
+sleep 1
 
 echo "Registering $PRINTER_NAME with official Brother PPD and URI: $DEVICE_URI"
-sudo lpadmin -p "$PRINTER_NAME" -E -v "$DEVICE_URI" -P /usr/share/cups/model/Brother/brother_dcpt420w_printer_en.ppd -o printer-error-policy=retry-current-job
+sudo lpadmin -p "$PRINTER_NAME" -E -v "$DEVICE_URI" \
+    -P /usr/share/cups/model/Brother/brother_dcpt420w_printer_en.ppd \
+    -o printer-error-policy=retry-current-job \
+    -o job-sheets-default=none,none
 sudo lpadmin -d "$PRINTER_NAME"
 sudo cupsenable "$PRINTER_NAME"
 sudo cupsaccept "$PRINTER_NAME"
 
-# Set standard A4 media
+# Set standard A4 media defaults
 sudo lpoptions -p "$PRINTER_NAME" -o media=A4 2>/dev/null || true
 sudo lpoptions -d "$PRINTER_NAME" -o media=A4 2>/dev/null || true
+
+# Verify registration
+echo "\n  Verification:"
+sudo lpstat -v "$PRINTER_NAME" 2>/dev/null || true
+sudo lpstat -p "$PRINTER_NAME" 2>/dev/null || true
 
 # Clean up temporary downloads
 cd "$ORIGINAL_DIR" 2>/dev/null || cd /tmp
