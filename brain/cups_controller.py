@@ -1092,17 +1092,23 @@ class CupsController:
         elif norm_orient == "PORTRAIT":
             options["orientation-requested"] = "3"
 
-        # Color vs Monochrome (BRMonoColor is the exact PPD key for Brother DCP-T420W, ColorModel is IPP/Postscript standard)
+        # Color vs Monochrome (ColorModel & print-color-mode are standard CUPS / IPP attributes)
         raw_c = str(colour_mode or "BW").upper().replace("&", "").strip()
         is_color = raw_c in ("COLOR", "COLOUR")
         if is_color:
-            options["BRMonoColor"] = "FullColor"
             options["ColorModel"] = "RGB"
             options["print-color-mode"] = "color"
         else:
-            options["BRMonoColor"] = "Mono"
             options["ColorModel"] = "KGray"
             options["print-color-mode"] = "monochrome"
+
+        # Apply Brother-specific PPD keys ONLY if Brother hardware is active
+        try:
+            usb_status = self.check_usb_printer()
+            if usb_status.get("isBrother"):
+                options["BRMonoColor"] = "FullColor" if is_color else "Mono"
+        except Exception:
+            pass
 
         # Duplex / Double-Sided Configuration
         # ONLY apply duplex options if double-sided is explicitly requested.
@@ -1418,7 +1424,7 @@ class CupsController:
             for page in doc:
                 pix = page.get_pixmap(colorspace=pymupdf.csGRAY, dpi=300)
                 img_data = pix.tobytes("png")
-                img_pdf = pymupdf.open("png", img_data)
+                img_pdf = pymupdf.open(stream=img_data, filetype="png")
                 rect = page.rect
                 new_page = out_doc.new_page(width=rect.width, height=rect.height)
                 new_page.show_pdf_page(rect, img_pdf, 0)
@@ -1712,18 +1718,22 @@ class CupsController:
                 subprocess.run(["cupsenable", printer], timeout=5, capture_output=True)
                 subprocess.run(["cupsaccept", printer], timeout=5, capture_output=True)
 
-                # Attempt hardware mode sync if Brother utility exists
-                for br_bin in ["/usr/bin/brprintconf_dcpt420w", "/opt/brother/Printers/dcpt420w/lpd/brprintconf_dcpt420w"]:
-                    if os.path.exists(br_bin):
-                        try:
-                            corm_arg = "FullColor" if is_color else "Mono"
-                            # Set -corm (color mode) and -copies on Brother hardware (run directly and via sudo)
-                            subprocess.run([br_bin, "-corm", corm_arg, "-copies", str(clean_copies)], timeout=3, capture_output=True)
-                            subprocess.run(["sudo", br_bin, "-corm", corm_arg, "-copies", str(clean_copies)], timeout=3, capture_output=True)
-                            print(f"[CUPS] Brother hardware configured via {br_bin}: -corm {corm_arg} -copies {clean_copies}")
-                        except Exception as e:
-                            print(f"[CUPS] Brother hardware config notice: {e}")
-                        break
+                # Attempt hardware mode sync ONLY if Brother printer hardware is active
+                try:
+                    usb_status = self.check_usb_printer()
+                    if usb_status.get("isBrother"):
+                        for br_bin in ["/usr/bin/brprintconf_dcpt420w", "/opt/brother/Printers/dcpt420w/lpd/brprintconf_dcpt420w"]:
+                            if os.path.exists(br_bin):
+                                try:
+                                    corm_arg = "FullColor" if is_color else "Mono"
+                                    subprocess.run([br_bin, "-corm", corm_arg, "-copies", str(clean_copies)], timeout=3, capture_output=True)
+                                    subprocess.run(["sudo", br_bin, "-corm", corm_arg, "-copies", str(clean_copies)], timeout=3, capture_output=True)
+                                    print(f"[CUPS] Brother hardware configured via {br_bin}: -corm {corm_arg} -copies {clean_copies}")
+                                except Exception as e:
+                                    print(f"[CUPS] Brother hardware config notice: {e}")
+                                break
+                except Exception:
+                    pass
 
                 try:
                     cmd = ["lp", "-c", "-d", printer]
