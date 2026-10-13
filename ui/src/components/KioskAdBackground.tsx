@@ -78,7 +78,6 @@ export default function KioskAdBackground({ kioskId: propKioskId }: KioskAdBackg
     }
 
     const interval = setInterval(() => {
-      // Fade out current ad
       setFadeOpacity(0)
       setTimeout(() => {
         setCurrentIndex((prev) => (prev + 1) % ads.length)
@@ -101,7 +100,6 @@ export default function KioskAdBackground({ kioskId: propKioskId }: KioskAdBackg
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     }).catch(() => {
-      // Fallback endpoint
       fetch(`${apiUrl}/api/advertisements/${encodeURIComponent(currentAd.campaignId)}/impression`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -110,98 +108,39 @@ export default function KioskAdBackground({ kioskId: propKioskId }: KioskAdBackg
     })
   }, [currentAd?.campaignId, apiUrl, kioskId])
 
-  // Reduced, soft white-blended opacity so ad artwork maintains kiosk theme and is not too visible
   const rawAdOpacity = currentAd?.opacity ?? 0.18
   const effectiveAdOpacity = Math.min(0.20, Math.max(0.12, (rawAdOpacity || 0.18) * 0.75))
 
-  // Unified single text per advertisement
-  const adList = ads.length > 0 ? ads : [
-    {
-      advertiser: 'PrintBooth',
-      headline: 'Autonomous High-Speed Laser Printing • Scan QR Code to Start',
-    } as KioskAdItem,
-  ]
-
-  const singleTexts = adList.map((ad) => {
-    const adv = (ad.advertiser || '').trim()
-    const msg = (ad.headline || ad.title || ad.tagline || '').trim()
-    if (adv && msg) {
-      if (msg.toLowerCase().startsWith(adv.toLowerCase())) {
-        return msg
-      }
-      return `${adv} — ${msg}`
-    }
-    return msg || adv || 'PrintBooth — Autonomous Self-Service Printing'
-  })
-
-  // Ensure enough items for a wide continuous glide
-  let baseLoop = [...singleTexts]
-  while (baseLoop.length < 4) {
-    baseLoop = [...baseLoop, ...singleTexts]
-  }
-  const tickerItems = [...baseLoop, ...baseLoop]
-
   return (
-    <>
-      {/* ── Layer 1: Fixed Ambient Ad Background Canvas (z-index: 0) ── */}
-      <div className="kiosk-ad-bg-canvas" aria-hidden="true">
-        {currentAd ? (
-          <>
-            <div
-              className="kiosk-ad-layer kiosk-ad-motion-drift"
-              style={{
-                backgroundImage: `url(${currentAd.mediaUrl})`,
-                opacity: fadeOpacity * effectiveAdOpacity,
-              }}
-            />
-            {/* White opacity overlay maintaining the clean white theme */}
-            <div className="kiosk-ad-white-overlay" />
-          </>
-        ) : (
-          /* Default Brand Logo Stage with Moving Animation (when 0 ads configured, outside middle) */
-          <div className="kiosk-bg-logo-stage">
-            <div className="kiosk-bg-logo-card">
-              <div className="kiosk-bg-logo-mark-wrap">
-                <div className="kiosk-bg-logo-aura" />
-                <img
-                  src="/logo.png"
-                  alt="PrintBooth"
-                  className="kiosk-bg-logo-img"
-                />
-              </div>
-              <div className="kiosk-bg-logo-typography">
-                <h2 className="kiosk-bg-logo-wordmark">PRINTBOOTH</h2>
-                <div className="kiosk-bg-logo-badge">
-                  <span className="kiosk-bg-logo-dot" />
-                  <span>AUTONOMOUS PRINTING KIOSK</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+    <div className="kiosk-ad-bg-canvas" aria-hidden="true">
+      {/* If admin has active ad image, display it smoothly behind white overlay */}
+      {currentAd?.mediaUrl ? (
+        <>
+          <div
+            className="kiosk-ad-layer kiosk-ad-motion-drift"
+            style={{
+              backgroundImage: `url(${currentAd.mediaUrl})`,
+              opacity: fadeOpacity * effectiveAdOpacity,
+            }}
+          />
+          <div className="kiosk-ad-white-overlay" />
+        </>
+      ) : null}
 
-        {/* Subtle Depth Vignette */}
-        <div className="kiosk-ad-vignette" />
+      {/* ── Big App Logo Background: No texts, pure logo mark, moving in smooth ad drift motion ── */}
+      <div className="kiosk-bg-logo-stage">
+        <div className="kiosk-bg-logo-ambient-wrap">
+          <div className="kiosk-bg-logo-aura" />
+          <img
+            src="/logo.png"
+            alt=""
+            className="kiosk-bg-logo-big-img"
+          />
+        </div>
       </div>
 
-      {/* ── Layer 2: Dynamic Animated Bottom Moving Text Ticker (White and Red Only, 1 Text Per Ad) ── */}
-      <aside className="ks-ad-bottom-bar" role="complementary" aria-label="Sponsor Announcements">
-        <div className="ks-ad-shine-overlay" aria-hidden="true" />
-        <div className="ks-ad-ticker-viewport">
-          <div className="ks-ad-ticker-track">
-            {tickerItems.map((text, idx) => (
-              <div
-                key={idx}
-                className="ks-ad-ticker-segment"
-                aria-hidden={idx >= baseLoop.length ? 'true' : undefined}
-              >
-                <span className="ks-ad-ticker-bullet" aria-hidden="true">●</span>
-                <span className="ks-ad-ticker-text">{text}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </aside>
-    </>
+      {/* Subtle Depth Vignette */}
+      <div className="kiosk-ad-vignette" />
+    </div>
   )
 }

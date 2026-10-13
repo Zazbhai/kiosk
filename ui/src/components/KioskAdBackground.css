@@ -1,4 +1,4 @@
-/* ─── Hardware-Accelerated Kiosk Moving Advertisement Background ─── */
+/* ─── Hardware-Accelerated Kiosk Moving Advertisement & Brand Logo Background ─── */
 
 .kiosk-ad-bg-canvas {
   position: fixed;
@@ -30,16 +30,16 @@
   position: absolute;
   inset: 0;
   background: radial-gradient(
-    ellipse 85% 75% at 50% 48%,
-    rgba(255, 255, 255, 0.88) 0%,
-    rgba(255, 255, 255, 0.70) 50%,
-    rgba(255, 255, 255, 0.40) 100%
+    ellipse 85% 75% at 50% 50%,
+    rgba(255, 255, 255, 0.90) 0%,
+    rgba(255, 255, 255, 0.72) 55%,
+    rgba(255, 255, 255, 0.45) 100%
   );
   pointer-events: none;
   z-index: 1;
 }
 
-/* Smooth Subtle Drift Motion */
+/* Smooth Subtle Drift Motion for Ad Images */
 .kiosk-ad-motion-drift {
   animation: adDriftMotion 36s ease-in-out infinite alternate;
 }
@@ -56,284 +56,98 @@
   }
 }
 
-/* ─── Kiosk Background Brand Logo Stage (When 0 ads configured, positioned outside middle) ─── */
+/* ─── Big App Logo Stage (Pure Logo Mark, Big Size, Smooth Ad Drift Motion, No Texts) ─── */
 .kiosk-bg-logo-stage {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  padding-left: clamp(40px, 8vw, 130px);
+  justify-content: center;
   pointer-events: none;
   z-index: 1;
+  overflow: hidden;
   background: radial-gradient(
-    circle at 20% 50%,
-    rgba(220, 38, 38, 0.05) 0%,
-    rgba(255, 255, 255, 0.98) 60%,
+    ellipse 80% 75% at 50% 50%,
+    rgba(255, 255, 255, 0.35) 0%,
+    rgba(255, 255, 255, 0.88) 70%,
     #ffffff 100%
   );
-  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: opacity;
 }
 
-/* Continuous smooth kinetic moving animation */
-.kiosk-bg-logo-card {
+/* Big ambient moving wrap with continuous ad-style drift */
+.kiosk-bg-logo-ambient-wrap {
+  position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  width: clamp(560px, 68vw, 980px);
+  max-width: 96vw;
+  height: clamp(560px, 68vw, 980px);
+  max-height: 90vh;
   will-change: transform;
-  animation: logoKineticGlide 8s ease-in-out infinite alternate;
+  animation: logoAdDriftMotion 32s ease-in-out infinite alternate;
 }
 
-@keyframes logoKineticGlide {
+@keyframes logoAdDriftMotion {
   0% {
-    transform: translate3d(0, 0, 0) rotate(0deg);
+    transform: translate3d(-34px, -22px, 0) scale(1.02);
   }
-  30% {
-    transform: translate3d(14px, -20px, 0) rotate(1.2deg);
+  35% {
+    transform: translate3d(26px, -14px, 0) scale(1.07);
   }
-  65% {
-    transform: translate3d(-10px, -32px, 0) rotate(-1deg);
+  70% {
+    transform: translate3d(-20px, 28px, 0) scale(1.04);
   }
   100% {
-    transform: translate3d(12px, -10px, 0) rotate(1.5deg);
+    transform: translate3d(32px, 18px, 0) scale(1.08);
   }
 }
 
-.kiosk-bg-logo-mark-wrap {
-  position: relative;
-  width: 140px;
-  height: 140px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
+/* Soft radiant ambient laser-red aura behind big logo */
 .kiosk-bg-logo-aura {
   position: absolute;
-  inset: -24px;
-  background: radial-gradient(circle, rgba(220, 38, 38, 0.28) 0%, rgba(220, 38, 38, 0) 70%);
+  inset: -15%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(220, 38, 38, 0.18) 0%,
+    rgba(220, 38, 38, 0.06) 45%,
+    rgba(220, 38, 38, 0) 70%
+  );
   border-radius: 50%;
-  filter: blur(16px);
-  animation: auraGlow 2.8s ease-in-out infinite alternate;
+  filter: blur(52px);
+  pointer-events: none;
+  z-index: 1;
 }
 
-@keyframes auraGlow {
-  0% { opacity: 0.45; transform: scale(0.92); }
-  100% { opacity: 0.95; transform: scale(1.18); }
-}
-
-.kiosk-bg-logo-img {
-  width: 110px;
-  height: 110px;
+/* Big App Logo Image (Pure Emblem, No Texts) */
+.kiosk-bg-logo-big-img {
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   position: relative;
   z-index: 2;
-  filter: drop-shadow(0 14px 28px rgba(220, 38, 38, 0.24));
-  animation: logoFloatingTilt 10s ease-in-out infinite alternate;
-}
-
-@keyframes logoFloatingTilt {
-  0% { transform: scale(1) rotate(-1.5deg); }
-  50% { transform: scale(1.05) rotate(1.5deg); }
-  100% { transform: scale(1) rotate(-1.5deg); }
-}
-
-.kiosk-bg-logo-typography {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-
-.kiosk-bg-logo-wordmark {
-  font-family: var(--ks-font, 'Geist', 'Space Grotesk', -apple-system, sans-serif);
-  font-size: 1.85rem;
-  font-weight: 900;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: #09090b;
-  margin: 0;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-}
-
-.kiosk-bg-logo-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  background: rgba(220, 38, 38, 0.08);
-  border: 1px solid rgba(220, 38, 38, 0.22);
-  color: #dc2626;
-  font-size: 0.76rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  padding: 5px 14px;
-  border-radius: 0px;
-  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.10);
-}
-
-.kiosk-bg-logo-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #dc2626;
-  box-shadow: 0 0 8px #dc2626;
-  animation: none !important;
-}
-
-@keyframes dotPulse {
-  0%, 100% { opacity: 1; transform: none; }
-}
-
-/* Responsive adjustment for portrait/narrow tablets: keep logo clear of QR card */
-@media (max-width: 960px) {
-  .kiosk-bg-logo-stage {
-    padding-left: 0;
-    justify-content: center;
-    align-items: flex-start;
-    padding-top: 72px;
-  }
-
-  .kiosk-bg-logo-card {
-    transform: scale(0.8);
-  }
-}
-
-/* ─── Bottom Full-Bleed Red Moving Ticker Bar (Strictly White & Red) ─── */
-.ks-ad-bottom-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  width: 100vw;
-  height: 44px;
-  z-index: 60;
-  background: linear-gradient(90deg, #991b1b 0%, #b91c1c 20%, #dc2626 50%, #b91c1c 80%, #991b1b 100%) !important;
-  border-radius: 0 !important;
-  border-top: 1.5px solid rgba(255, 255, 255, 0.45) !important;
-  border-bottom: none !important;
-  border-left: none !important;
-  border-right: none !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55),
-              0 -4px 24px rgba(220, 38, 38, 0.60) !important;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
+  opacity: 0.34;
+  filter: drop-shadow(0 28px 64px rgba(220, 38, 38, 0.22));
   user-select: none;
-  pointer-events: auto;
-  box-sizing: border-box;
-  margin: 0 !important;
-  padding: 0;
+  pointer-events: none;
+  transform: translateZ(0);
 }
 
-/* White shimmering light sweep beam across the red bar */
-.ks-ad-shine-overlay {
+/* Subtle Vignette for Cinema Depth */
+.kiosk-ad-vignette {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  overflow: hidden;
-  z-index: 1;
+  background: radial-gradient(circle at 50% 50%, transparent 65%, rgba(0, 0, 0, 0.03) 100%);
+  z-index: 3;
 }
 
-.ks-ad-shine-overlay::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -80%;
-  width: 45%;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.15) 25%,
-    rgba(255, 255, 255, 0.50) 50%,
-    rgba(255, 255, 255, 0.15) 75%,
-    rgba(255, 255, 255, 0) 100%
-  );
-  transform: skewX(-25deg);
-  animation: barShineSweep 3.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-@keyframes barShineSweep {
-  0% {
-    left: -70%;
+/* Unconditional reduced motion respect */
+@media (prefers-reduced-motion: reduce) {
+  .kiosk-ad-layer,
+  .kiosk-ad-motion-drift,
+  .kiosk-bg-logo-ambient-wrap {
+    animation: none !important;
+    transform: none !important;
   }
-  45% {
-    left: 150%;
-  }
-  100% {
-    left: 150%;
-  }
-}
-
-/* Marquee Viewport & Track */
-.ks-ad-ticker-viewport {
-  width: 100%;
-  overflow: hidden;
-  position: relative;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  z-index: 2;
-  mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
-  -webkit-mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
-}
-
-/* Seamless Continuous Infinite Glide (0% to -50% for duplicated list) */
-.ks-ad-ticker-track {
-  display: inline-flex;
-  align-items: center;
-  gap: 0;
-  white-space: nowrap;
-  will-change: transform;
-  animation: tickerInfiniteGlide 30s linear infinite;
-}
-
-.ks-ad-bottom-bar:hover .ks-ad-ticker-track {
-  animation-play-state: paused;
-}
-
-@keyframes tickerInfiniteGlide {
-  0% {
-    transform: translate3d(0, 0, 0);
-  }
-  100% {
-    transform: translate3d(-50%, 0, 0);
-  }
-}
-
-/* 1 Segment per Ad (Bullet + Unified Text) */
-.ks-ad-ticker-segment {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 32px;
-  flex-shrink: 0;
-}
-
-/* Delimiter bullet between ads */
-.ks-ad-ticker-bullet {
-  color: #ffffff !important;
-  font-size: 0.65rem;
-  opacity: 0.95;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-shadow: 0 0 6px rgba(255, 255, 255, 0.85);
-  flex-shrink: 0;
-}
-
-/* 1 High-Contrast Bold White Text per Ad */
-.ks-ad-ticker-text {
-  font-family: var(--ks-font, 'Geist', 'Space Grotesk', -apple-system, sans-serif);
-  font-size: 0.95rem;
-  font-weight: 750;
-  color: #ffffff !important;
-  letter-spacing: 0.025em;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65), 0 0 12px rgba(0, 0, 0, 0.35);
-  white-space: nowrap;
-  line-height: 1;
 }
