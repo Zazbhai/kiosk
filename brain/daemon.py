@@ -19,7 +19,7 @@ import time
 import urllib.request
 import urllib.parse
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 if hasattr(sys.stdout, 'reconfigure'):
     try:
