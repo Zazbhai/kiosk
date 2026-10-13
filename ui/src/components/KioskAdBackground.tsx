@@ -50,10 +50,14 @@ export default function KioskAdBackground({ kioskId: propKioskId }: KioskAdBackg
       const res = await fetch(`${apiUrl}/api/advertisements/kiosk/${encodeURIComponent(kioskId)}`)
       if (res.ok) {
         const json = await res.json()
-        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+        if (json.success && Array.isArray(json.data)) {
           setAds(json.data)
           try {
-            localStorage.setItem('pb_kiosk_cached_ads', JSON.stringify(json.data))
+            if (json.data.length > 0) {
+              localStorage.setItem('pb_kiosk_cached_ads', JSON.stringify(json.data))
+            } else {
+              localStorage.removeItem('pb_kiosk_cached_ads')
+            }
           } catch {}
         }
       }
@@ -106,24 +110,55 @@ export default function KioskAdBackground({ kioskId: propKioskId }: KioskAdBackg
     })
   }, [currentAd?.campaignId, apiUrl, kioskId])
 
-  // Reduced, subtle opacity so the advertisement artwork is elegantly understated behind the kiosk
-  const rawAdOpacity = currentAd?.opacity ?? 0.25
-  const effectiveAdOpacity = Math.min(0.28, Math.max(0.18, (rawAdOpacity || 0.25) * 0.75))
+  // Reduced, soft white-blended opacity so ad artwork maintains kiosk theme and is not too visible
+  const rawAdOpacity = currentAd?.opacity ?? 0.18
+  const effectiveAdOpacity = Math.min(0.20, Math.max(0.12, (rawAdOpacity || 0.18) * 0.75))
+
+  // Unified single text per advertisement
+  const adList = ads.length > 0 ? ads : [
+    {
+      advertiser: 'PrintBooth',
+      headline: 'Autonomous High-Speed Laser Printing • Scan QR Code to Start',
+    } as KioskAdItem,
+  ]
+
+  const singleTexts = adList.map((ad) => {
+    const adv = (ad.advertiser || '').trim()
+    const msg = (ad.headline || ad.title || ad.tagline || '').trim()
+    if (adv && msg) {
+      if (msg.toLowerCase().startsWith(adv.toLowerCase())) {
+        return msg
+      }
+      return `${adv} — ${msg}`
+    }
+    return msg || adv || 'PrintBooth — Autonomous Self-Service Printing'
+  })
+
+  // Ensure enough items for a wide continuous glide
+  let baseLoop = [...singleTexts]
+  while (baseLoop.length < 4) {
+    baseLoop = [...baseLoop, ...singleTexts]
+  }
+  const tickerItems = [...baseLoop, ...baseLoop]
 
   return (
     <>
       {/* ── Layer 1: Fixed Ambient Ad Background Canvas (z-index: 0) ── */}
       <div className="kiosk-ad-bg-canvas" aria-hidden="true">
         {currentAd ? (
-          <div
-            className="kiosk-ad-layer kiosk-ad-motion-drift"
-            style={{
-              backgroundImage: `url(${currentAd.mediaUrl})`,
-              opacity: fadeOpacity * effectiveAdOpacity,
-            }}
-          />
+          <>
+            <div
+              className="kiosk-ad-layer kiosk-ad-motion-drift"
+              style={{
+                backgroundImage: `url(${currentAd.mediaUrl})`,
+                opacity: fadeOpacity * effectiveAdOpacity,
+              }}
+            />
+            {/* White opacity overlay maintaining the clean white theme */}
+            <div className="kiosk-ad-white-overlay" />
+          </>
         ) : (
-          /* Default Brand Logo Stage (when 0 campaigns configured) */
+          /* Default Brand Logo Stage with Moving Animation (when 0 ads configured, outside middle) */
           <div className="kiosk-bg-logo-stage">
             <div className="kiosk-bg-logo-card">
               <div className="kiosk-bg-logo-mark-wrap">
@@ -149,57 +184,19 @@ export default function KioskAdBackground({ kioskId: propKioskId }: KioskAdBackg
         <div className="kiosk-ad-vignette" />
       </div>
 
-      {/* ── Layer 2: Dynamic Animated Bottom Moving Text Ticker (Full-bleed edge-to-edge shiny red) ── */}
+      {/* ── Layer 2: Dynamic Animated Bottom Moving Text Ticker (White and Red Only, 1 Text Per Ad) ── */}
       <aside className="ks-ad-bottom-bar" role="complementary" aria-label="Sponsor Announcements">
         <div className="ks-ad-shine-overlay" aria-hidden="true" />
         <div className="ks-ad-ticker-viewport">
           <div className="ks-ad-ticker-track">
-            {/* 4 duplicated segments for seamless, infinite continuous glide with zero blank gaps */}
-            {[0, 1, 2, 3].map((idx) => (
-              <div key={idx} className="ks-ad-ticker-segment">
-                <span
-                  className="ks-ad-ticker-badge"
-                  style={{
-                    backgroundColor: currentAd?.accentColor || '#dc2626',
-                  }}
-                >
-                  <span className="ks-ad-ticker-badge-dot" />
-                  {currentAd?.badgeText || 'CAMPUS SPONSOR'}
-                </span>
-
-                <span
-                  className="ks-ad-ticker-advertiser"
-                  style={{
-                    color: currentAd?.accentColor || '#dc2626',
-                  }}
-                >
-                  {currentAd?.advertiser || 'PrintBooth Express'}
-                </span>
-
-                <span className="ks-ad-ticker-divider">/</span>
-
-                <span className="ks-ad-ticker-text">
-                  {currentAd?.headline || currentAd?.title || 'Autonomous High-Speed Laser Printing'}
-                </span>
-
-                {currentAd?.tagline && (
-                  <>
-                    <span className="ks-ad-ticker-divider">•</span>
-                    <span className="ks-ad-ticker-sub">{currentAd.tagline}</span>
-                  </>
-                )}
-
-                {currentAd?.callToAction && (
-                  <span
-                    className="ks-ad-ticker-cta"
-                    style={{
-                      borderColor: currentAd?.accentColor || '#dc2626',
-                      color: currentAd?.accentColor || '#dc2626',
-                    }}
-                  >
-                    {currentAd.callToAction}
-                  </span>
-                )}
+            {tickerItems.map((text, idx) => (
+              <div
+                key={idx}
+                className="ks-ad-ticker-segment"
+                aria-hidden={idx >= baseLoop.length ? 'true' : undefined}
+              >
+                <span className="ks-ad-ticker-bullet" aria-hidden="true">●</span>
+                <span className="ks-ad-ticker-text">{text}</span>
               </div>
             ))}
           </div>

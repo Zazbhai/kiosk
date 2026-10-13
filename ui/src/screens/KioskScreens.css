@@ -248,3 +248,268 @@
   flex-wrap: wrap;
   justify-content: center;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   RESPONSIVE MEDIA QUERIES FOR KIOSK SCREENS
+   ═══════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 640px) {
+  .kiosk-welcome {
+    gap: 24px;
+    margin-top: 16px;
+    width: 100%;
+  }
+
+  .kiosk-welcome__text {
+    gap: 12px;
+  }
+
+  .kiosk-welcome__actions {
+    flex-direction: column;
+    width: 100%;
+    max-width: 320px;
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .kiosk-welcome__actions .kiosk-btn {
+    width: 100% !important;
+    min-width: auto !important;
+    max-width: 100% !important;
+  }
+
+  /* Upload Methods */
+  .kiosk-upload-methods {
+    gap: 20px;
+    margin-top: 16px;
+    width: 100%;
+  }
+
+  .upload-method-options {
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .upload-method-card {
+    width: 100%;
+    max-width: 320px;
+    min-width: auto;
+    padding: 22px 20px;
+    border-radius: 16px;
+    gap: 10px;
+  }
+
+  .upload-method-card__title {
+    font-size: 1.05rem;
+  }
+
+  /* QR Upload */
+  .kiosk-qr-screen {
+    gap: 16px;
+    margin-top: 12px;
+    width: 100%;
+  }
+
+  .qr-display {
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .qr-display svg {
+    max-width: 100%;
+    height: auto;
+    width: min(200px, 60vw) !important;
+    height: min(200px, 60vw) !important;
+  }
+
+  .kiosk-timer {
+    font-size: 1.4rem;
+  }
+
+  /* USB */
+  .usb-file-list {
+    max-width: 100%;
+    max-height: 50vh;
+  }
+
+  .usb-file-item {
+    padding: 12px 14px;
+    border-radius: 12px;
+  }
+
+  /* Settings */
+  .kiosk-settings {
+    gap: 12px;
+    margin-top: 12px;
+    max-width: 100%;
+  }
+
+  .kiosk-setting-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px 16px;
+  }
+
+  .kiosk-radio-group {
+    width: 100%;
+  }
+
+  .kiosk-radio {
+    flex: 1;
+    text-align: center;
+    padding: 8px 12px;
+    font-size: 0.82rem;
+  }
+
+  /* Review */
+  .kiosk-review {
+    gap: 14px;
+    max-width: 100%;
+  }
+
+  .kiosk-review-card {
+    border-radius: 14px;
+  }
+
+  .kiosk-review-row {
+    padding: 12px 16px;
+    font-size: 0.85rem;
+  }
+
+  .kiosk-total-row {
+    padding: 14px 16px;
+    border-radius: 14px !important;
+  }
+
+  .kiosk-total-amount {
+    font-size: 1.5rem;
+  }
+
+  /* Payment */
+  .kiosk-payment {
+    gap: 16px;
+    margin-top: 16px !important;
+  }
+
+  .kiosk-qr-box {
+    padding: 12px;
+    border-radius: 14px;
+  }
+
+  .kiosk-qr-box svg {
+    width: min(200px, 60vw) !important;
+    height: min(200px, 60vw) !important;
+  }
+
+  /* Printing */
+  .kiosk-printing {
+    gap: 20px;
+  }
+
+  .kiosk-progress-wrap {
+    max-width: 100%;
+    padding: 0 10px;
+  }
+
+  /* Back Button */
+  .kiosk-back {
+    bottom: 56px;
+    left: 16px;
+  }
+
+  .kiosk-back .kiosk-btn {
+    padding: 10px 16px;
+    font-size: 14px;
+    min-height: 42px;
+    min-width: auto;
+  }
+
+  /* PIN Keypad Screen */
+  .kiosk-pin-screen {
+    max-width: 320px;
+    gap: 12px;
+    margin-top: 8px;
+  }
+
+  .kiosk-pin-title {
+    font-size: 1.45rem;
+  }
+
+  .kiosk-pin-display {
+    gap: 8px;
+  }
+
+  .kiosk-pin-cell {
+    width: 44px;
+    height: 56px;
+    font-size: 1.5rem;
+  }
+
+  .kiosk-numpad {
+    width: 100%;
+    max-width: 290px;
+    gap: 8px;
+  }
+
+  .kiosk-numpad-key {
+    height: 48px;
+    font-size: 1.35rem;
+  }
+
+  .kiosk-pin-actions {
+    width: 100%;
+    max-width: 290px;
+  }
+
+  .kiosk-pin-submit {
+    min-height: 48px;
+    font-size: 0.92rem;
+  }
+}
+
+@media (max-height: 700px) {
+  .kiosk-welcome {
+    gap: 16px;
+    margin-top: 8px;
+  }
+
+  .kiosk-welcome__text img {
+    width: 44px !important;
+    height: 44px !important;
+    margin-bottom: 2px !important;
+  }
+
+  .kiosk-upload-methods {
+    gap: 14px;
+    margin-top: 8px;
+  }
+
+  .upload-method-card {
+    padding: 16px 20px;
+  }
+
+  .kiosk-qr-screen {
+    gap: 12px;
+    margin-top: 8px;
+  }
+
+  .qr-display {
+    padding: 10px;
+  }
+
+  .kiosk-pin-screen {
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .kiosk-pin-cell {
+    height: 48px;
+  }
+
+  .kiosk-numpad-key {
+    height: 42px;
+  }
+}

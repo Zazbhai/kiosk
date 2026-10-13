@@ -31,6 +31,7 @@ import {
 } from '../utils/printSettingsUtils'
 import KioskAdBackground from '../components/KioskAdBackground'
 import PrinterDispenseAnimation from '../components/PrinterDispenseAnimation'
+import KioskInactivityBanner from '../components/KioskInactivityBanner'
 import './KioskSessionScreen.css'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -65,6 +66,9 @@ export interface DocumentFileItem {
   copies?: number
   colour?: string
   duplex?: string
+  pages?: string
+  pageRange?: string
+  settings?: any
   previews?: DocumentPreviewPage[]
 }
 
@@ -85,6 +89,7 @@ export interface PrintSettingsData {
   duplex: 'SINGLE' | 'DOUBLE'
   copies: number
   pageRange: string
+  pages?: string
   paperSize: string
   pricePerPage: number
   totalAmount: number
@@ -146,7 +151,7 @@ interface PhaseInfo {
   color: string
 }
 
-const PHASES: Record<string, PhaseInfo> = {
+export const PHASES: Record<string, PhaseInfo> = {
   QR_READY: {
     label: 'Scan QR to Upload',
     sublabel: 'Use your phone camera to scan the code below',
@@ -251,7 +256,10 @@ export default function KioskSessionScreen() {
   const [urlParamsCleared, setUrlParamsCleared] = useState(false)
 
   // Hardware variant: PrintBooth Pro (Touch & Color) vs PrintBooth Lite (Zero-touch & Monochrome)
-  const kioskVariant: 'pro' | 'lite' = session?.kioskVariant || getKioskVariant()
+  const queryVariant = typeof window !== 'undefined'
+    ? (new URLSearchParams(window.location.search).get('variant') || new URLSearchParams(window.location.search).get('kioskVariant') || new URLSearchParams(window.location.search).get('model'))
+    : null
+  const kioskVariant: 'pro' | 'lite' = (queryVariant ? (queryVariant.toLowerCase().includes('lite') ? 'lite' : 'pro') : null) || session?.kioskVariant || getKioskVariant()
   const isLite = kioskVariant === 'lite'
   const isPro = !isLite
 
@@ -261,8 +269,19 @@ export default function KioskSessionScreen() {
   const [selectedDuplex, setSelectedDuplex] = useState<'SINGLE' | 'DOUBLE'>('SINGLE')
   const [selectedCopies, setSelectedCopies] = useState(1)
   const [selectedPageRange, setSelectedPageRange] = useState('ALL')
-  const [printingProgress, setPrintingProgress] = useState(0)
   const [touchModified, setTouchModified] = useState(false)
+  const [_printingProgress, setPrintingProgress] = useState(0)
+
+  // Viewport Responsive Sizing
+  const [windowWidth, setWindowWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1024)
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  const responsiveMainQrSize = windowWidth <= 420 ? 190 : windowWidth <= 640 ? 220 : 260
+  const responsiveUpiQrSize = windowWidth <= 420 ? 180 : windowWidth <= 640 ? 200 : 230
 
   // Enhanced & Per-Page Customization State
   const [settingsMode, setSettingsMode] = useState<'GLOBAL' | 'PER_PAGE'>('GLOBAL')
@@ -276,8 +295,11 @@ export default function KioskSessionScreen() {
   const [_printDpi, setPrintDpi] = useState<'600' | '1200'>('600')
   const [_paperWeight, setPaperWeight] = useState<'75GSM' | '100GSM'>('75GSM')
   void _timeLeft
+  void _printingProgress
   void _printDpi
   void _paperWeight
+  void duplexBinding
+  void setDuplexBinding
   const [pageCustomizations, setPageCustomizations] = useState<Record<number, {
     colour: 'BW' | 'COLOUR'
     skipped: boolean
@@ -288,8 +310,8 @@ export default function KioskSessionScreen() {
   const [phoneDisconnectCountdown, setPhoneDisconnectCountdown] = useState<number | null>(null)
   const disconnectCountdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // 5-minute (300s) inactivity watchdog in each interactive section
-  const [inactivitySecondsLeft, setInactivitySecondsLeft] = useState<number>(300)
+  // 1-minute (60s) inactivity watchdog in each interactive section
+  const [inactivitySecondsLeft, setInactivitySecondsLeft] = useState<number>(60)
   const lastSectionActivityTimeRef = useRef<number>(Date.now())
   const lastActiveSectionRef = useRef<string | null>(null)
 
@@ -566,21 +588,21 @@ export default function KioskSessionScreen() {
     }
   }, [recordKioskActivity])
 
-  // Reset section inactivity timer whenever state changes or updates arrive from phone
+  // Reset section inactivity timer to 60s whenever state changes or updates arrive from phone
   useEffect(() => {
     if (!session) return
     const curState = session.state
     if (curState !== lastActiveSectionRef.current) {
       lastActiveSectionRef.current = curState
       lastSectionActivityTimeRef.current = Date.now()
-      setInactivitySecondsLeft(300)
+      setInactivitySecondsLeft(60)
     } else {
       lastSectionActivityTimeRef.current = Date.now()
-      setInactivitySecondsLeft(300)
+      setInactivitySecondsLeft(60)
     }
   }, [session?.state, session?.document, session?.settings, session?.lastPhoneActivityAt])
 
-  // Watchdog: 5-minute countdown in each interactive section
+  // Watchdog: 1-minute countdown in each interactive section if no activity on user phone
   useEffect(() => {
     const currentSectionState = session?.state
     const isInteractiveSection =
@@ -595,17 +617,48 @@ export default function KioskSessionScreen() {
 
     const watchdog = setInterval(() => {
       const elapsed = Date.now() - lastSectionActivityTimeRef.current
-      const remaining = Math.max(0, Math.ceil((300000 - elapsed) / 1000))
+      const remaining = Math.max(0, Math.ceil((60000 - elapsed) / 1000))
       setInactivitySecondsLeft(remaining)
 
-      if (elapsed >= 300000) {
+      if (elapsed >= 60000) {
         clearInterval(watchdog)
         handleInactivityExpireAndReset()
       }
-    }, 1000)
+    }, 500)
 
     return () => clearInterval(watchdog)
   }, [session?.state, handleInactivityExpireAndReset])
+
+  const handlePrintComplete = useCallback(async () => {
+    clearUrlStateParam()
+    const curId = session?.sessionId
+    if (curId && !curId.startsWith('init-')) {
+      try {
+        await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(curId)}/complete`, {
+          method: 'POST',
+        }).catch(() => {})
+      } catch {}
+    }
+    setSession(prev =>
+      prev
+        ? {
+            ...prev,
+            state: 'DONE',
+            phase: 'Print complete! Collect from tray.',
+            phaseStep: 4,
+          }
+        : null
+    )
+    setActiveStateOverride('DONE')
+
+    if (rotateTimerRef.current) clearTimeout(rotateTimerRef.current)
+    rotateTimerRef.current = setTimeout(async () => {
+      if (!mountedRef.current) return
+      rotateTimerRef.current = null
+      setActiveStateOverride(null)
+      await handleCancelAndNewUpload()
+    }, 2200)
+  }, [session?.sessionId, apiUrl, clearUrlStateParam, handleCancelAndNewUpload])
 
   const handleExecutePrint = useCallback(async () => {
     if (!session?.sessionId) return
@@ -615,22 +668,7 @@ export default function KioskSessionScreen() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       })
-      setSession(prev => prev ? { ...prev, state: 'PRINTING', phase: 'Printing document on Brother hardware…' } : null)
-
-      // Start live progress bar simulation
-      setPrintingProgress(5)
-      let cur = 5
-      if (progressTimerRef.current) clearInterval(progressTimerRef.current)
-      progressTimerRef.current = setInterval(() => {
-        cur += 15
-        if (cur >= 100) {
-          cur = 100
-          if (progressTimerRef.current) clearInterval(progressTimerRef.current)
-          fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/complete`, { method: 'POST' }).catch(() => {})
-          setSession(prev => prev ? { ...prev, state: 'DONE', phase: 'Print complete! Collect from tray.' } : null)
-        }
-        setPrintingProgress(cur)
-      }, 700)
+      setSession(prev => (prev ? { ...prev, state: 'PRINTING', phase: 'Printing document…' } : null))
     } finally {
       setIsActionPending(false)
     }
@@ -751,7 +789,14 @@ export default function KioskSessionScreen() {
           setPhoneDisconnectCountdown(null)
         }
 
-        if (s.state === 'CANCELLED' || data.isPhoneInactive || data.isPhoneDisconnectedExpired) {
+        if (typeof data.inactivityRemainingSec === 'number') {
+          setInactivitySecondsLeft(data.inactivityRemainingSec)
+          if (data.resetAt) {
+            lastSectionActivityTimeRef.current = data.resetAt - 60000
+          }
+        }
+
+        if (s.state === 'CANCELLED' || data.isPhoneInactive || data.isPhoneDisconnectedExpired || data.isInactiveTimeout) {
           setPhoneDisconnectCountdown(null)
           handleCancelAndNewUpload()
         }
@@ -821,10 +866,10 @@ export default function KioskSessionScreen() {
                               cur.state !== 'CANCELLED'
       if (!isStillPrePrint) return
 
-      const maxInactivityMs = 300000 // 5 minutes
+      const maxInactivityMs = 60000 // 1 minute
       const lastPhone = cur.lastPhoneActivityAt || cur.claimedAt || cur.createdAt
       if (lastPhone && (Date.now() - lastPhone >= maxInactivityMs)) {
-        console.log(`[KioskSessionScreen] ⏱️ Session inactivity reached (5 min). Returning to upload from your phone page.`)
+        console.log(`[KioskSessionScreen] ⏱️ Session phone inactivity reached (1 min). Returning to upload from your phone page.`)
         handleCancelAndNewUpload()
       }
     }
@@ -842,7 +887,8 @@ export default function KioskSessionScreen() {
       }
       if (session.settings.duplex) setSelectedDuplex(session.settings.duplex)
       if (session.settings.copies) setSelectedCopies(session.settings.copies)
-      if (session.settings.pageRange) setSelectedPageRange(session.settings.pageRange)
+      const incomingPages = session.settings.pageRange || session.settings.pages
+      if (incomingPages) setSelectedPageRange(incomingPages)
       if (session.settings.settingsMode) setSettingsMode(session.settings.settingsMode as any)
       if (session.settings.nUpLayout) setNUpLayout(session.settings.nUpLayout as any)
       if (session.settings.duplexBinding) setDuplexBinding(session.settings.duplexBinding as any)
@@ -852,7 +898,19 @@ export default function KioskSessionScreen() {
     } else if (session?.colourMode) {
       setSelectedColour(isLite ? 'BW' : (session.colourMode === 'COLOUR' ? 'COLOUR' : 'BW'))
     }
-  }, [session?.settings, session?.colourMode, isLite])
+    const rootPages = (session as any)?.pageRange || (session as any)?.pages
+    if (rootPages) setSelectedPageRange(rootPages)
+  }, [session?.settings, session?.colourMode, (session as any)?.pageRange, (session as any)?.pages, isLite])
+
+  // Support dev-mode ?devPages= URL query parameter
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !urlParamsCleared) {
+      const devPagesParam = new URLSearchParams(window.location.search).get('devPages')
+      if (devPagesParam) {
+        setSelectedPageRange(devPagesParam)
+      }
+    }
+  }, [urlParamsCleared])
 
   // Strictly enforce B&W monochrome on Lite kiosks
   useEffect(() => {
@@ -863,7 +921,39 @@ export default function KioskSessionScreen() {
 
   // ── Dynamic Pricing Calculation with Per-Page & Eco Savings ───────────────
 
-  const pageCount = session?.document?.pageCount || session?.totalPages || (session?.document?.pages?.length) || 1
+  const rawDocPageCount = session?.document?.pageCount || session?.totalPages || (session?.document?.pages?.length) || 1
+
+  const maxPageFromQuery = useMemo(() => {
+    if (typeof window !== 'undefined') {
+      const dev = new URLSearchParams(window.location.search).get('devPages') || new URLSearchParams(window.location.search).get('pages')
+      if (dev) {
+        const nums = dev.split(/[,-]/).map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n))
+        if (nums.length > 0) return Math.max(...nums)
+      }
+    }
+    return 1
+  }, [])
+
+  const devTotalParam = typeof window !== 'undefined' ? Number(new URLSearchParams(window.location.search).get('devTotalPages')) : 0
+  const pageCount = Math.max(rawDocPageCount, devTotalParam || 0, maxPageFromQuery)
+
+  const effectivePageRange = useMemo(() => {
+    if (typeof window !== 'undefined') {
+      const devPagesParam = new URLSearchParams(window.location.search).get('devPages') || new URLSearchParams(window.location.search).get('pages')
+      if (devPagesParam) return devPagesParam
+    }
+    if (selectedPageRange && selectedPageRange !== 'ALL') return selectedPageRange
+    if (session?.settings?.pageRange && session.settings.pageRange !== 'ALL') return session.settings.pageRange
+    if (session?.settings?.pages && session.settings.pages !== 'ALL') return session.settings.pages
+    if ((session as any)?.pageRange && (session as any).pageRange !== 'ALL') return (session as any).pageRange
+    if ((session as any)?.pages && (session as any).pages !== 'ALL') return (session as any).pages
+    return 'ALL'
+  }, [selectedPageRange, session?.settings?.pageRange, session?.settings?.pages, (session as any)?.pageRange, (session as any)?.pages])
+
+  const isCustomPages = effectivePageRange.trim().toUpperCase() !== 'ALL' && effectivePageRange.trim().length > 0
+  const selectedPageNumbers = useMemo(() => {
+    return parsePageRange(effectivePageRange, pageCount)
+  }, [effectivePageRange, pageCount])
 
   const pageDetails = useMemo(() => {
     const pricing = getKioskPricing()
@@ -888,7 +978,7 @@ export default function KioskSessionScreen() {
       }
     } else {
       // GLOBAL uniform mode with selected page range
-      const activePages = parsePageRange(selectedPageRange, pageCount)
+      const activePages = parsePageRange(effectivePageRange, pageCount)
       skippedCount = Math.max(0, pageCount - activePages.length)
       if (selectedColour === 'COLOUR') {
         colourCount = activePages.length
@@ -936,7 +1026,7 @@ export default function KioskSessionScreen() {
       colourRate: isDouble ? pricing.colorDouble : pricing.colorSingle,
       pricing,
     }
-  }, [pageCount, pageCustomizations, settingsMode, selectedColour, selectedDuplex, nUpLayout, selectedCopies, selectedPageRange])
+  }, [pageCount, pageCustomizations, settingsMode, selectedColour, selectedDuplex, nUpLayout, selectedCopies, effectivePageRange])
 
   // Reset touch override whenever phone updates the session amount
   useEffect(() => {
@@ -1024,10 +1114,28 @@ export default function KioskSessionScreen() {
         colour: selectedColour,
         duplex: selectedDuplex,
         copies: next,
+        pageRange: effectivePageRange,
+        pages: effectivePageRange,
         totalAmount: pageDetails.calculatedTotal,
       },
     })
-  }, [selectedCopies, selectedColour, selectedDuplex, pageDetails.calculatedTotal, session?.settings, syncProgress])
+  }, [selectedCopies, selectedColour, selectedDuplex, effectivePageRange, pageDetails.calculatedTotal, session?.settings, syncProgress])
+
+  const handleProPageRangeChange = useCallback((range: string) => {
+    setTouchModified(true)
+    setSelectedPageRange(range)
+    syncProgress({
+      settings: {
+        ...session?.settings,
+        colour: selectedColour,
+        duplex: selectedDuplex,
+        copies: selectedCopies,
+        pageRange: range,
+        pages: range,
+        totalAmount: pageDetails.calculatedTotal,
+      },
+    })
+  }, [selectedColour, selectedDuplex, selectedCopies, pageDetails.calculatedTotal, session?.settings, syncProgress])
 
   const handleProConfirmAndNext = useCallback(() => {
     setActiveStateOverride(null)
@@ -1052,10 +1160,12 @@ export default function KioskSessionScreen() {
         colour: selectedColour,
         duplex: selectedDuplex,
         copies: selectedCopies,
+        pageRange: effectivePageRange,
+        pages: effectivePageRange,
         totalAmount,
       },
     })
-  }, [totalAmount, selectedColour, selectedDuplex, selectedCopies, session?.settings, syncProgress])
+  }, [totalAmount, selectedColour, selectedDuplex, selectedCopies, effectivePageRange, session?.settings, syncProgress])
 
   const handleProProceedToPayment = useCallback(() => {
     setActiveStateOverride(null)
@@ -1097,7 +1207,20 @@ export default function KioskSessionScreen() {
   // Accurately mirror the mobile user's exact flow step without premature jumping
   const state: SessionState = rawState
 
-  const phase = PHASES[state || 'QR_READY'] || PHASES.QR_READY
+  const handleUniversalBack = useCallback(() => {
+    if (state === 'PAYING') {
+      handleProBackToSettings()
+    } else if (state === 'REVIEWING') {
+      handleProBackToSettings()
+    } else if (state === 'CONFIGURING') {
+      handleProBackToDoc()
+    } else if (state === 'CONFIRMING' || state === 'CLAIMED' || state === 'UPLOADING') {
+      handleCancelAndNewUpload()
+    } else if (state === 'OTP_READY') {
+      handleProBackToSettings()
+    }
+  }, [state, handleProBackToSettings, handleProBackToDoc, handleCancelAndNewUpload])
+
   const isWaiting = state === 'QR_READY'
   const isPrinting = state === 'PRINTING'
   const isDone = state === 'DONE'
@@ -1201,20 +1324,155 @@ export default function KioskSessionScreen() {
     return []
   }, [doc?.pages, docFiles, doc?.fileUrl, docFileName, apiUrl, session?.sessionId])
 
-  const activePageUrl = docPages[activePageIdx]?.url || docPages[0]?.url || ''
-  const activePageTitle = docPages[activePageIdx]?.title || `Page ${activePageIdx + 1} of ${pageCount}`
+  // ── Single-File Custom Pages Preview Filtering ───────────────────────────
+  const filteredDocPages = useMemo(() => {
+    if (docFiles.length > 1) return []
 
-  // Auto-cycle through document pages smoothly on zero-touch kiosk display
+    if (!isCustomPages) {
+      if (docPages.length > 0) return docPages
+      return Array.from({ length: pageCount }).map((_, i) => ({
+        pageNumber: i + 1,
+        url: '',
+        title: `Page ${i + 1}`,
+      }))
+    }
+
+    // Custom pages active: strictly only include pages selected by user
+    const filtered: Array<{ pageNumber: number; url: string; title?: string }> = []
+    for (const pNum of selectedPageNumbers) {
+      const match = docPages.find(p => p.pageNumber === pNum)
+      if (match) {
+        filtered.push(match)
+      } else {
+        filtered.push({
+          pageNumber: pNum,
+          url: '',
+          title: `Page ${pNum}`,
+        })
+      }
+    }
+    return filtered
+  }, [docFiles.length, isCustomPages, docPages, selectedPageNumbers, pageCount])
+
+  // ── Multi-File Representation with Per-File Previews & Custom Pages ─────────
+  const multiFileItems = useMemo(() => {
+    if (docFiles.length <= 1) return []
+
+    const resolveUrl = (u?: string) => {
+      if (!u || !u.trim()) return ''
+      return u.startsWith('/api') ? `${apiUrl}${u}` : u
+    }
+
+    return docFiles.map((f, fileIdx) => {
+      const rawPages = Math.max(1, f.pageCount || 1)
+      const fileRange = f.pageRange || f.pages || f.settings?.pageRange || f.settings?.pages || (isCustomPages ? effectivePageRange : 'ALL')
+      const activeNums = parsePageRange(fileRange, rawPages)
+      const isFileCustom = fileRange.trim().toUpperCase() !== 'ALL'
+
+      const filePages = activeNums.map(pageNum => {
+        const matched = f.previews?.find(p => p.pageNumber === pageNum)
+        const url = matched?.url ? resolveUrl(matched.url) : ''
+        return {
+          pageNumber: pageNum,
+          url,
+          title: `${f.fileName} - Page ${pageNum}`,
+        }
+      })
+
+      return {
+        file: f,
+        index: fileIdx,
+        fileName: f.fileName,
+        pageCount: rawPages,
+        effectiveRange: fileRange,
+        isCustom: isFileCustom,
+        activePageNumbers: activeNums,
+        pages: filePages,
+      }
+    })
+  }, [docFiles, isCustomPages, effectivePageRange, apiUrl])
+
+  // ── Interleaved Animation Sequence ─────────────────────────────────────────
+  // Spec: "1st file 1st page then 2nd file first page and so on and returns back to 1st file 2nd page and so on"
+  const interleavedSequence = useMemo(() => {
+    if (multiFileItems.length <= 1) return []
+
+    const maxPages = Math.max(...multiFileItems.map(item => item.activePageNumbers.length), 1)
+    const steps: Array<{
+      fileIndex: number
+      fileName: string
+      pageNumber: number
+      pageIndexWithinFile: number
+      totalPagesInFile: number
+      previewUrl: string
+    }> = []
+
+    for (let s = 0; s < maxPages; s++) {
+      for (let fIdx = 0; fIdx < multiFileItems.length; fIdx++) {
+        const item = multiFileItems[fIdx]
+        if (s < item.activePageNumbers.length) {
+          const pageNum = item.activePageNumbers[s]
+          const pageObj = item.pages[s]
+          steps.push({
+            fileIndex: fIdx,
+            fileName: item.fileName,
+            pageNumber: pageNum,
+            pageIndexWithinFile: s,
+            totalPagesInFile: item.activePageNumbers.length,
+            previewUrl: pageObj?.url || '',
+          })
+        }
+      }
+    }
+
+    return steps
+  }, [multiFileItems])
+
+  const [interleavedStepIdx, setInterleavedStepIdx] = useState(0)
+  const [fileCurrentPage, setFileCurrentPage] = useState<Record<number, number>>({})
+
+  // Multi-File Auto-Animation Timer (runs every 2800ms)
   useEffect(() => {
-    if (pageCount <= 1) {
+    if (multiFileItems.length <= 1 || interleavedSequence.length <= 1) {
+      setInterleavedStepIdx(0)
+      return
+    }
+
+    const timer = setInterval(() => {
+      setInterleavedStepIdx(prev => (prev + 1) % interleavedSequence.length)
+    }, 2800)
+
+    return () => clearInterval(timer)
+  }, [multiFileItems.length, interleavedSequence.length])
+
+  const currentInterleavedStep = interleavedSequence[interleavedStepIdx] || interleavedSequence[0]
+
+  useEffect(() => {
+    if (currentInterleavedStep) {
+      setFileCurrentPage(prev => ({
+        ...prev,
+        [currentInterleavedStep.fileIndex]: currentInterleavedStep.pageNumber,
+      }))
+    }
+  }, [currentInterleavedStep])
+
+  // Active single-file page
+  const currentFilteredPage = filteredDocPages[activePageIdx % (filteredDocPages.length || 1)] || filteredDocPages[0] || { pageNumber: 1, url: '', title: 'Page 1' }
+  const activePageUrl = currentFilteredPage.url || ''
+  const activePageTitle = currentFilteredPage.title || `Page ${currentFilteredPage.pageNumber} of ${pageCount}`
+
+  // Single-File Auto-cycle through filtered custom document pages smoothly
+  useEffect(() => {
+    if (docFiles.length > 1) return
+    if (filteredDocPages.length <= 1) {
       setActivePageIdx(0)
       return
     }
     const timer = setInterval(() => {
-      setActivePageIdx(prev => (prev + 1) % pageCount)
-    }, 3500)
+      setActivePageIdx(prev => (prev + 1) % filteredDocPages.length)
+    }, 3200)
     return () => clearInterval(timer)
-  }, [pageCount])
+  }, [docFiles.length, filteredDocPages.length])
 
   // Dynamic UPI URL for payment QR code generated by merchant UPI Express key
   const effectiveOrderId = session?.orderId || `ORD-${Date.now().toString().slice(-6)}`
@@ -1344,121 +1602,260 @@ export default function KioskSessionScreen() {
     )
   }
 
-  const renderDocumentPreviewBox = () => (
-    <div className="ks-flow-left">
-      <div className="ks-preview-wrap">
-        {activePageUrl && !failedPreviewUrls.has(activePageUrl) ? (
-          <img
-            src={activePageUrl}
-            alt={activePageTitle}
-            className="ks-preview-img"
-            onError={() => {
-              setFailedPreviewUrls(prev => new Set(prev).add(activePageUrl))
-            }}
-          />
-        ) : (
-          <div className="ks-preview-canvas">
-            <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', paddingBottom: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#dc2626' }}>PRINTBOOTH VERIFIED</span>
-              <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>
-                {docFiles.length > 1 ? `${docFiles.length} FILES • ${pageCount} PAGES` : `PAGE ${activePageIdx + 1} OF ${pageCount}`}
-              </span>
+  const renderDocumentPreviewBox = () => {
+    // ── Multi-File View: Different rows per file with interleaved auto-show animation ──
+    if (multiFileItems.length > 1) {
+      return (
+        <div className="ks-flow-left">
+          <div className="ks-multifile-preview-wrap">
+            {/* Header bar indicating file count and current animation ticker */}
+            <div className="ks-multifile-header-bar">
+              <div className="ks-mf-header-title-wrap">
+                <span className="ks-mf-header-icon">📂</span>
+                <span className="ks-mf-header-title">{multiFileItems.length} Files Uploaded</span>
+                <span className="ks-mf-header-badge">{calculatedSheets * selectedCopies} Total Sheets</span>
+              </div>
+              <div className="ks-mf-ticker-badge">
+                <span className="ks-auto-cycle-dot" />
+                <span className="ks-mf-ticker-text">
+                  {currentInterleavedStep
+                    ? `File ${currentInterleavedStep.fileIndex + 1} of ${multiFileItems.length} · Page ${currentInterleavedStep.pageNumber}`
+                    : `Active Preview`}
+                </span>
+              </div>
             </div>
-            {docFiles.length > 1 ? (
-              <div className="ks-multifile-preview-list">
-                {docFiles.map((f, idx) => (
-                  <div key={idx} className="ks-multifile-preview-item">
-                    <span className="ks-multifile-preview-icon">📄</span>
-                    <div className="ks-multifile-preview-info">
-                      <span className="ks-multifile-preview-title" title={f.fileName}>{f.fileName}</span>
-                      <span className="ks-multifile-preview-meta">{f.pageCount || 1} {f.pageCount === 1 ? 'page' : 'pages'}</span>
+
+            {/* Individual rows for each file */}
+            <div className="ks-multifile-rows-container">
+              {multiFileItems.map((item) => {
+                const isRowActive = currentInterleavedStep ? currentInterleavedStep.fileIndex === item.index : false
+                const displayedPageNum = fileCurrentPage[item.index] || item.activePageNumbers[0] || 1
+                const pageObj = item.pages.find(p => p.pageNumber === displayedPageNum) || item.pages[0]
+                const hasImg = Boolean(pageObj?.url && !failedPreviewUrls.has(pageObj.url))
+
+                return (
+                  <div
+                    key={item.index}
+                    className={`ks-multifile-row ${isRowActive ? 'ks-multifile-row--active' : ''}`}
+                    onClick={isPro ? () => {
+                      setFileCurrentPage(prev => ({ ...prev, [item.index]: displayedPageNum }))
+                    } : undefined}
+                  >
+                    {/* Left: Interactive/Animated Page Thumbnail */}
+                    <div className="ks-row-thumb-wrap">
+                      {hasImg ? (
+                        <img
+                          src={pageObj?.url}
+                          alt={pageObj?.title}
+                          className="ks-row-thumb-img"
+                          onError={() => {
+                            if (pageObj?.url) {
+                              setFailedPreviewUrls(prev => new Set(prev).add(pageObj.url))
+                            }
+                          }}
+                        />
+                      ) : (
+                        <div className="ks-row-thumb-canvas">
+                          <div className="ks-row-thumb-canvas-top">
+                            <span className="ks-row-thumb-type-tag">A4</span>
+                            <span className="ks-row-thumb-page-indicator">P.{displayedPageNum}</span>
+                          </div>
+                          <div className="ks-row-thumb-body-mockup">
+                            <div className="ks-mock-line ks-mock-line--head" />
+                            <div className="ks-mock-line" />
+                            <div className="ks-mock-line ks-mock-line--short" />
+                          </div>
+                        </div>
+                      )}
+                      <div className="ks-row-thumb-badge">
+                        <span>P.{displayedPageNum}</span>
+                      </div>
+                    </div>
+
+                    {/* Middle: File Details */}
+                    <div className="ks-row-info">
+                      <div className="ks-row-info-header">
+                        <span className="ks-row-file-name" title={item.fileName}>
+                          {item.fileName}
+                        </span>
+                        {isRowActive && (
+                          <span className="ks-row-active-pill">
+                            <span className="ks-auto-cycle-dot" />
+                            <span>Previewing Page {displayedPageNum}</span>
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="ks-row-meta-line">
+                        <span>{item.pageCount} {item.pageCount === 1 ? 'page' : 'pages'}</span>
+                        <span className="ks-row-dot">•</span>
+                        <span>{item.file.colour || selectedColour === 'COLOUR' ? 'Colour' : 'B&W'}</span>
+                        <span className="ks-row-dot">•</span>
+                        <span>{item.file.duplex || selectedDuplex === 'DOUBLE' ? '2-Sided' : '1-Sided'}</span>
+                        {item.isCustom && (
+                          <>
+                            <span className="ks-row-dot">•</span>
+                            <span className="ks-row-custom-tag">
+                              Custom: {item.effectiveRange} ({item.activePageNumbers.length} pgs)
+                            </span>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Right/Bottom: Page selection pills for this file */}
+                      <div className="ks-row-pages-bar">
+                        <span className="ks-row-pages-label">Pages:</span>
+                        {item.activePageNumbers.map((pNum) => {
+                          const isPageActive = displayedPageNum === pNum
+                          return (
+                            <button
+                              key={pNum}
+                              type="button"
+                              className={`ks-row-page-pill ${isPageActive ? 'ks-row-page-pill--active' : ''}`}
+                              onClick={isPro ? (e) => {
+                                e.stopPropagation()
+                                setFileCurrentPage(prev => ({ ...prev, [item.index]: pNum }))
+                              } : undefined}
+                              title={`Page ${pNum}`}
+                            >
+                              {pNum}
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
                   </div>
-                ))}
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    // ── Single Document Preview Box ──
+    return (
+      <div className="ks-flow-left">
+        <div className="ks-preview-wrap">
+          {activePageUrl && !failedPreviewUrls.has(activePageUrl) ? (
+            <img
+              src={activePageUrl}
+              alt={activePageTitle}
+              className="ks-preview-img"
+              onError={() => {
+                setFailedPreviewUrls(prev => new Set(prev).add(activePageUrl))
+              }}
+            />
+          ) : (
+            <div className="ks-preview-canvas">
+              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', paddingBottom: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#dc2626' }}>PRINTBOOTH VERIFIED</span>
+                <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>
+                  {isCustomPages
+                    ? `PAGE ${currentFilteredPage.pageNumber} OF ${pageCount} (CUSTOM · ${(activePageIdx % filteredDocPages.length) + 1}/${selectedPageNumbers.length})`
+                    : `PAGE ${currentFilteredPage.pageNumber} OF ${pageCount}`}
+                </span>
               </div>
-            ) : (
+
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 36 }}>📄</span>
                 <span style={{ fontSize: 13, fontWeight: 700, color: '#09090b', textAlign: 'center', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {docFileName}
                 </span>
+                {isCustomPages && (
+                  <span style={{ fontSize: 11, color: '#dc2626', fontWeight: 700, background: '#fef2f2', padding: '2px 8px', borderRadius: 6, border: '1px solid #fecaca' }}>
+                    Custom Pages: {effectivePageRange} ({selectedPageNumbers.length} of {pageCount} Selected)
+                  </span>
+                )}
               </div>
-            )}
-            <div style={{ width: '100%', fontSize: 10, color: '#94a3b8', textAlign: 'center', borderTop: '1px solid #f1f5f9', paddingTop: 6 }}>
-              {docFiles.length > 1 ? `A4 Paper Size • Standard 75GSM • ${docFiles.length} Documents Selected` : 'A4 Paper Size • Standard 75GSM'}
+
+              <div style={{ width: '100%', fontSize: 10, color: '#94a3b8', textAlign: 'center', borderTop: '1px solid #f1f5f9', paddingTop: 6 }}>
+                A4 Paper Size • Standard 75GSM
+              </div>
             </div>
+          )}
+
+          {/* Floating Page Badge */}
+          <div className="ks-preview-page-badge">
+            <span className="ks-auto-cycle-dot" />
+            <span>
+              {isCustomPages
+                ? `Page ${currentFilteredPage.pageNumber} of ${pageCount} (Custom · ${(activePageIdx % filteredDocPages.length) + 1} of ${selectedPageNumbers.length})`
+                : (filteredDocPages[activePageIdx % filteredDocPages.length]?.title || `Page ${(activePageIdx % pageCount) + 1} of ${pageCount}`)}
+            </span>
+          </div>
+        </div>
+
+        {/* Pro Touchscreen Navigation Bar */}
+        {isPro && filteredDocPages.length > 1 && (
+          <div className="ks-preview-nav-bar">
+            <button
+              type="button"
+              className="ks-preview-nav-btn"
+              disabled={activePageIdx === 0}
+              onClick={() => setActivePageIdx(p => Math.max(0, p - 1))}
+            >
+              ◀ Prev
+            </button>
+            <span className="ks-preview-nav-text">
+              {isCustomPages
+                ? `Page ${currentFilteredPage.pageNumber} of ${pageCount} (${(activePageIdx % filteredDocPages.length) + 1}/${selectedPageNumbers.length})`
+                : `Page ${(activePageIdx % pageCount) + 1} of ${pageCount}`}
+            </span>
+            <button
+              type="button"
+              className="ks-preview-nav-btn"
+              disabled={activePageIdx >= filteredDocPages.length - 1}
+              onClick={() => setActivePageIdx(p => Math.min(filteredDocPages.length - 1, p + 1))}
+            >
+              Next ▶
+            </button>
           </div>
         )}
 
-        {/* Floating Page Badge */}
-        <div className="ks-preview-page-badge">
-          <span className="ks-auto-cycle-dot" />
-          <span>{docPages[activePageIdx]?.title || (docFiles.length > 1 ? `${docFiles.length} Files • Page ${activePageIdx + 1} of ${pageCount}` : `Page ${activePageIdx + 1} of ${pageCount}`)}</span>
-        </div>
-      </div>
-
-      {/* Pro Touchscreen Navigation Bar */}
-      {isPro && pageCount > 1 && (
-        <div className="ks-preview-nav-bar">
-          <button
-            type="button"
-            className="ks-preview-nav-btn"
-            disabled={activePageIdx === 0}
-            onClick={() => setActivePageIdx(p => Math.max(0, p - 1))}
-          >
-            ◀ Prev
-          </button>
-          <span className="ks-preview-nav-text">Page {activePageIdx + 1} of {pageCount}</span>
-          <button
-            type="button"
-            className="ks-preview-nav-btn"
-            disabled={activePageIdx >= pageCount - 1}
-            onClick={() => setActivePageIdx(p => Math.min(pageCount - 1, p + 1))}
-          >
-            Next ▶
-          </button>
-        </div>
-      )}
-
-      {/* Horizontal thumbnail gallery of all uploaded pages */}
-      {pageCount > 1 && (
-        <div className="ks-gallery-strip">
-          {Array.from({ length: pageCount }).map((_, idx) => {
-            const thumbUrl = docPages[idx]?.url
-            const pageTitle = docPages[idx]?.title || `Page ${idx + 1}`
-            const isActive = idx === activePageIdx
-            return (
-              <div
-                key={idx}
-                className={`ks-gallery-thumb-item ${isActive ? 'ks-gallery-thumb-item--active' : ''}`}
-                onClick={isPro ? () => setActivePageIdx(idx) : undefined}
-                style={{ cursor: isPro ? 'pointer' : 'default' }}
-                title={isPro ? `Touch to view ${pageTitle}` : undefined}
-              >
-                <div className="ks-gallery-thumb-img-wrap">
-                  {thumbUrl && !failedPreviewUrls.has(thumbUrl) ? (
-                    <img
-                      src={thumbUrl}
-                      alt={pageTitle}
-                      className="ks-gallery-thumb-img"
-                      onError={() => {
-                        setFailedPreviewUrls(prev => new Set(prev).add(thumbUrl))
-                      }}
-                    />
-                  ) : (
-                    <span style={{ fontSize: 14 }}>📄</span>
-                  )}
+        {/* Horizontal thumbnail gallery of pages */}
+        {filteredDocPages.length > 1 && (
+          <div className="ks-gallery-strip">
+            {filteredDocPages.map((p, idx) => {
+              const thumbUrl = p.url
+              const pageTitle = p.title || `Page ${p.pageNumber}`
+              const isActive = (activePageIdx % filteredDocPages.length) === idx
+              return (
+                <div
+                  key={idx}
+                  className={`ks-gallery-thumb-item ${isActive ? 'ks-gallery-thumb-item--active' : ''}`}
+                  onClick={isPro ? () => setActivePageIdx(idx) : undefined}
+                  style={{ cursor: isPro ? 'pointer' : 'default' }}
+                  title={isPro ? `Touch to view ${pageTitle}` : undefined}
+                >
+                  <div className="ks-gallery-thumb-img-wrap">
+                    {thumbUrl && !failedPreviewUrls.has(thumbUrl) ? (
+                      <img
+                        src={thumbUrl}
+                        alt={pageTitle}
+                        className="ks-gallery-thumb-img"
+                        onError={() => {
+                          setFailedPreviewUrls(prev => new Set(prev).add(thumbUrl))
+                        }}
+                      />
+                    ) : (
+                      <div className="ks-gallery-thumb-placeholder">
+                        <span className="ks-gallery-thumb-doc-icon">📄</span>
+                        <span className="ks-gallery-thumb-num">P.{p.pageNumber}</span>
+                      </div>
+                    )}
+                  </div>
+                  <span className="ks-gallery-thumb-num" title={pageTitle}>
+                    P.{p.pageNumber}
+                  </span>
                 </div>
-                <span className="ks-gallery-thumb-num" title={pageTitle}>
-                  {docPages[idx]?.title && docPages[idx].title!.length <= 8 ? docPages[idx].title : `P.${idx + 1}`}
-                </span>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="ks-root">
@@ -1503,22 +1900,18 @@ export default function KioskSessionScreen() {
         </aside>
       )}
 
-      {/* Top Status Bar */}
-      <header className="ks-topbar">
-        <div className="ks-topbar-pill">
-          <img src="/logo.png" alt="PrintBooth" style={{ width: 18, height: 18, objectFit: 'contain' }} />
-          <span className="ks-topbar-dot" />
-          <span>{kioskName || kioskId}</span>
-        </div>
-        <div className="ks-topbar-right-group" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {isConnectedOrAbove && (
-            <div className="ks-topbar-pill ks-topbar-right">
-              <span className="ks-topbar-state-dot" style={{ background: phase.color }} />
-              <span style={{ color: phase.color, fontWeight: 700 }}>{phase.label}</span>
+      {/* Universal Kiosk Header (Station Pill on Sharp Top Left ONLY on upload from phone page) */}
+      {isWaiting && (
+        <header className="ks-topbar">
+          <div className="ks-topbar-left">
+            <div className="ks-topbar-pill">
+              <img src="/logo.png" alt="PrintBooth" style={{ width: 18, height: 18, objectFit: 'contain' }} />
+              <span className="ks-topbar-dot" />
+              <span className="ks-topbar-station-name">{kioskName || kioskId}</span>
             </div>
-          )}
-        </div>
-      </header>
+          </div>
+        </header>
+      )}
 
       {/* Main Container */}
       <main className={`ks-main ${stateChanged ? 'ks-transition' : ''}`}>
@@ -1537,7 +1930,7 @@ export default function KioskSessionScreen() {
                   {qrDisplayValue ? (
                     <QRCodeSVG
                       value={qrDisplayValue}
-                      size={260}
+                      size={responsiveMainQrSize}
                       level="M"
                       includeMargin={false}
                       fgColor="#09090b"
@@ -1561,7 +1954,7 @@ export default function KioskSessionScreen() {
                       alignItems: 'center',
                       gap: 8,
                       padding: '6px 16px',
-                      borderRadius: 999,
+                      borderRadius: 0,
                       background: 'rgba(255, 255, 255, 0.95)',
                       border: '1px solid #e2e8f0',
                       boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
@@ -1708,14 +2101,6 @@ export default function KioskSessionScreen() {
                       <span>Total Pages</span>
                       <strong>{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</strong>
                     </div>
-                    <div className="ks-summary-row">
-                      <span>Paper Tray</span>
-                      <strong style={{ color: '#16a34a' }}>Ready (A4 75GSM)</strong>
-                    </div>
-                    <div className="ks-summary-row">
-                      <span>Colour Options</span>
-                      <strong>{isLite ? 'Black & White' : 'Black & White & Colour'}</strong>
-                    </div>
                   </div>
                 </div>
 
@@ -1724,44 +2109,22 @@ export default function KioskSessionScreen() {
                     <div className="ks-companion-card-header">
                       <div className="ks-companion-card-icon">📱</div>
                       <div>
-                        <div className="ks-companion-card-title">Confirming Documents on Mobile</div>
+                        <div className="ks-companion-card-title">Confirming on Mobile</div>
                         <div className="ks-companion-card-sub">Review and confirm pages on your phone to continue.</div>
                       </div>
                     </div>
-                    <div className="ks-companion-status-pill">
-                      <span className="ks-companion-dot" />
-                      <span>Continue on phone to Settings →</span>
-                    </div>
                   </div>
                 ) : (
-                  <div className="ks-pro-touch-card">
-                    <div className="ks-pro-touch-header">
-                      <div className="ks-pro-touch-title">
-                        <span>Confirm &amp; Proceed on Display</span>
-                      </div>
-                      <span className="ks-pro-touch-sub">Or review and continue on your paired phone screen</span>
-                    </div>
-                    <div className="ks-pro-actions-grid">
-                      <button
-                        type="button"
-                        onClick={handleProConfirmAndNext}
-                        className="ks-pro-btn ks-pro-btn--primary"
-                      >
-                        <span>Confirm Document &amp; Settings</span>
-                        <span className="ks-pro-arrow">→</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleCancelAndNewUpload}
-                        className="ks-pro-btn ks-pro-btn--secondary"
-                      >
-                        Cancel / Disconnect
-                      </button>
-                    </div>
-                    <div className="ks-companion-status-pill" style={{ marginTop: 10 }}>
-                      <span className="ks-companion-dot" />
-                      <span>Step 2: Review on phone or touch display</span>
-                    </div>
+                  <div className="ks-pro-touch-card" style={{ marginTop: 'auto' }}>
+                    <button
+                      type="button"
+                      onClick={handleProConfirmAndNext}
+                      className="ks-pro-btn ks-pro-btn--primary"
+                      style={{ width: '100%', height: 48 }}
+                    >
+                      <span>Confirm &amp; Print Settings</span>
+                      <span className="ks-pro-arrow">→</span>
+                    </button>
                   </div>
                 )}
               </div>
@@ -1777,157 +2140,212 @@ export default function KioskSessionScreen() {
               {/* Left Column: Real Page Preview & Gallery */}
               {renderDocumentPreviewBox()}
 
-              {/* Right Column: Mirrored Settings & Touch Controls */}
-              <div className="ks-flow-right" style={{ justifyContent: 'space-between', gap: 16 }}>
-                <div>
-                  <h3 className="ks-summary-title" style={{ marginBottom: 12 }}>Print Settings</h3>
-                  <div className="ks-mirrored-grid">
-                    <div className="ks-mirror-card">
-                      <span className="ks-mirror-label">Color Mode</span>
-                      <strong className="ks-mirror-val" style={{ color: !isLite && selectedColour === 'COLOUR' ? '#dc2626' : '#09090b' }}>
-                        {isLite ? 'Black & White' : (selectedColour === 'COLOUR' ? 'Full Colour' : 'Black & White')}
-                      </strong>
-                      <span className="ks-mirror-sub">
-                        {selectedColour === 'COLOUR' ? 'High Quality Colour' : 'Standard Black & White'}
-                      </span>
-                    </div>
-                    <div className="ks-mirror-card">
-                      <span className="ks-mirror-label">Sides</span>
-                      <strong className="ks-mirror-val">
-                        {selectedDuplex === 'DOUBLE' ? '2-Sided' : '1-Sided'}
-                      </strong>
-                      <span className="ks-mirror-sub">{selectedDuplex === 'DOUBLE' ? (duplexBinding === 'SHORT_EDGE' ? 'Short Edge Flip' : 'Long Edge Flip') : 'Single Sided'}</span>
-                    </div>
-                    <div className="ks-mirror-card">
-                      <span className="ks-mirror-label">Copies</span>
-                      <strong className="ks-mirror-val">{selectedCopies} {selectedCopies === 1 ? 'Copy' : 'Copies'}</strong>
-                      <span className="ks-mirror-sub">{calculatedSheets * selectedCopies} Total Sheets</span>
-                    </div>
-                    <div className="ks-mirror-card">
-                      <span className="ks-mirror-label">Paper Tray</span>
-                      <strong className="ks-mirror-val" style={{ color: '#16a34a' }}>A4 75GSM</strong>
-                      <span className="ks-mirror-sub">Standard Tray Ready</span>
-                    </div>
-                  </div>
-
-                  <div className="ks-total-banner" style={{ marginTop: 14 }}>
-                    <span className="ks-total-label">Estimated Total</span>
-                    <span className="ks-total-price">₹{totalAmount.toFixed(2)}</span>
-                  </div>
-                </div>
-
+              {/* Right Column: Settings & Touch Controls */}
+              <div className="ks-flow-right" style={{ justifyContent: 'space-between', gap: 14 }}>
                 {isLite ? (
-                  <div className="ks-companion-card">
-                    <div className="ks-companion-card-header">
-                      <div className="ks-companion-card-icon">⚙️</div>
-                      <div>
-                        <div className="ks-companion-card-title">Configuring Settings on Mobile</div>
-                        <div className="ks-companion-card-sub">Select copies and duplex on your phone screen. Selections reflect here in real time.</div>
+                  <div>
+                    <h3 className="ks-summary-title" style={{ marginBottom: 12 }}>Print Settings</h3>
+                    <div className="ks-mirrored-grid">
+                      <div className="ks-mirror-card">
+                        <span className="ks-mirror-label">Color Mode</span>
+                        <strong className="ks-mirror-val" style={{ color: selectedColour === 'COLOUR' ? '#dc2626' : '#09090b' }}>
+                          {selectedColour === 'COLOUR' ? 'Full Colour' : 'Black & White'}
+                        </strong>
+                        <span className="ks-mirror-sub">{selectedColour === 'COLOUR' ? 'High Quality Colour' : 'Standard B&W'}</span>
+                      </div>
+                      <div className="ks-mirror-card">
+                        <span className="ks-mirror-label">Sides</span>
+                        <strong className="ks-mirror-val">{selectedDuplex === 'DOUBLE' ? '2-Sided' : '1-Sided'}</strong>
+                        <span className="ks-mirror-sub">{selectedDuplex === 'DOUBLE' ? 'Duplex' : 'Single Sided'}</span>
+                      </div>
+                      <div className="ks-mirror-card">
+                        <span className="ks-mirror-label">Copies</span>
+                        <strong className="ks-mirror-val">{selectedCopies} {selectedCopies === 1 ? 'Copy' : 'Copies'}</strong>
+                        <span className="ks-mirror-sub">{calculatedSheets * selectedCopies} Total Sheets</span>
+                      </div>
+                      <div className={`ks-mirror-card ${isCustomPages ? 'ks-mirror-card--custom' : ''}`}>
+                        <span className="ks-mirror-label">Pages</span>
+                        <strong className="ks-mirror-val" style={{ color: isCustomPages ? '#dc2626' : '#09090b' }}>
+                          {isCustomPages ? `Custom (${effectivePageRange})` : 'All Pages'}
+                        </strong>
+                        <span className="ks-mirror-sub" style={{ color: isCustomPages ? '#dc2626' : '#94a3b8' }}>
+                          {isCustomPages ? `${selectedPageNumbers.length} of ${pageCount} Selected` : `${pageCount} Total Pages`}
+                        </span>
+                      </div>
+                      <div className="ks-mirror-card ks-mirror-card--full">
+                        <span className="ks-mirror-label">Paper Tray</span>
+                        <strong className="ks-mirror-val" style={{ color: '#16a34a' }}>A4 75GSM</strong>
+                        <span className="ks-mirror-sub">Ready • Standard Tray</span>
                       </div>
                     </div>
-                    <div className="ks-companion-status-pill">
-                      <span className="ks-companion-dot" />
-                      <span>Zero Touch • Continue on phone screen</span>
+
+                    <div className="ks-total-banner" style={{ marginTop: 14 }}>
+                      <span className="ks-total-label">Estimated Total</span>
+                      <span className="ks-total-price">₹{totalAmount.toFixed(2)}</span>
+                    </div>
+
+                    <div className="ks-companion-card" style={{ marginTop: 12 }}>
+                      <div className="ks-companion-card-header">
+                        <div className="ks-companion-card-icon">⚙️</div>
+                        <div>
+                          <div className="ks-companion-card-title">Configuring on Mobile</div>
+                          <div className="ks-companion-card-sub">Select copies, custom pages, and duplex on phone. Changes reflect here live.</div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="ks-pro-touch-card">
-                    <div className="ks-pro-touch-header">
-                      <div className="ks-pro-touch-title">
-                        <span className="ks-pro-touch-badge">👆 On-Screen Touch Controls</span>
-                        <span>Adjust Print Settings</span>
+                  <div className="ks-pro-touch-card" style={{ height: '100%', justifyContent: 'space-between' }}>
+                    <div>
+                      <h3 className="ks-summary-title" style={{ marginBottom: 10 }}>Print Settings</h3>
+                      <div className="ks-pro-settings-controls">
+                        {/* Colour Mode Selector */}
+                        <div className="ks-pro-control-group">
+                          <span className="ks-pro-control-label">Colour Mode</span>
+                          <div className="ks-pro-pill-toggle">
+                            <button
+                              type="button"
+                              className={`ks-pro-pill-opt ${selectedColour === 'BW' ? 'ks-pro-pill-opt--active' : ''}`}
+                              onClick={() => handleProColourChange('BW')}
+                            >
+                              <span>🖤 B&amp;W (₹{pageDetails.pricing.bwSingle}/p)</span>
+                            </button>
+                            <button
+                              type="button"
+                              className={`ks-pro-pill-opt ${selectedColour === 'COLOUR' ? 'ks-pro-pill-opt--active-red' : ''}`}
+                              onClick={() => handleProColourChange('COLOUR')}
+                            >
+                              <span>🎨 Full Colour (₹{pageDetails.pricing.colorSingle}/p)</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Sides Selector */}
+                        <div className="ks-pro-control-group">
+                          <span className="ks-pro-control-label">Sides</span>
+                          <div className="ks-pro-pill-toggle">
+                            <button
+                              type="button"
+                              className={`ks-pro-pill-opt ${selectedDuplex === 'SINGLE' ? 'ks-pro-pill-opt--active' : ''}`}
+                              onClick={() => handleProDuplexChange('SINGLE')}
+                            >
+                              <span>📄 1-Sided</span>
+                            </button>
+                            <button
+                              type="button"
+                              className={`ks-pro-pill-opt ${selectedDuplex === 'DOUBLE' ? 'ks-pro-pill-opt--active' : ''}`}
+                              onClick={() => handleProDuplexChange('DOUBLE')}
+                            >
+                              <span>📑 2-Sided</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Pages Selector */}
+                        <div className="ks-pro-control-group">
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                            <span className="ks-pro-control-label">Pages</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: isCustomPages ? '#dc2626' : '#64748b' }}>
+                              {isCustomPages ? `Custom: ${effectivePageRange} (${selectedPageNumbers.length}/${pageCount} pgs)` : `All Pages (${pageCount})`}
+                            </span>
+                          </div>
+                          <div className="ks-pro-pill-toggle">
+                            <button
+                              type="button"
+                              className={`ks-pro-pill-opt ${!isCustomPages ? 'ks-pro-pill-opt--active' : ''}`}
+                              onClick={() => handleProPageRangeChange('ALL')}
+                            >
+                              <span>📄 All Pages</span>
+                            </button>
+                            <button
+                              type="button"
+                              className={`ks-pro-pill-opt ${isCustomPages ? 'ks-pro-pill-opt--active-red' : ''}`}
+                              onClick={() => handleProPageRangeChange(isCustomPages ? effectivePageRange : (pageCount > 1 ? `1-${Math.min(2, pageCount)}` : '1'))}
+                            >
+                              <span>📑 Custom Range</span>
+                            </button>
+                          </div>
+                          {isCustomPages && pageCount > 1 && (
+                            <div className="ks-pro-page-preset-chips" style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                className={`ks-pro-chip ${effectivePageRange === '1' ? 'ks-pro-chip--active' : ''}`}
+                                onClick={() => handleProPageRangeChange('1')}
+                              >
+                                Page 1
+                              </button>
+                              {pageCount >= 2 && (
+                                <button
+                                  type="button"
+                                  className={`ks-pro-chip ${effectivePageRange === `1-${Math.min(2, pageCount)}` ? 'ks-pro-chip--active' : ''}`}
+                                  onClick={() => handleProPageRangeChange(`1-${Math.min(2, pageCount)}`)}
+                                >
+                                  Pages 1-{Math.min(2, pageCount)}
+                                </button>
+                              )}
+                              {pageCount >= 3 && (
+                                <button
+                                  type="button"
+                                  className={`ks-pro-chip ${effectivePageRange === '1,3' ? 'ks-pro-chip--active' : ''}`}
+                                  onClick={() => handleProPageRangeChange('1,3')}
+                                >
+                                  Odd (1, 3)
+                                </button>
+                              )}
+                              {pageCount >= 4 && (
+                                <button
+                                  type="button"
+                                  className={`ks-pro-chip ${effectivePageRange === '2,4' ? 'ks-pro-chip--active' : ''}`}
+                                  onClick={() => handleProPageRangeChange('2,4')}
+                                >
+                                  Even (2, 4)
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Copies Stepper */}
+                        <div className="ks-pro-control-group">
+                          <span className="ks-pro-control-label">Copies</span>
+                          <div className="ks-pro-stepper">
+                            <button
+                              type="button"
+                              className="ks-pro-stepper-btn"
+                              disabled={selectedCopies <= 1}
+                              onClick={() => handleProCopiesChange(-1)}
+                            >
+                              −
+                            </button>
+                            <span className="ks-pro-stepper-val">{selectedCopies}</span>
+                            <button
+                              type="button"
+                              className="ks-pro-stepper-btn"
+                              disabled={selectedCopies >= 50}
+                              onClick={() => handleProCopiesChange(1)}
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      <span className="ks-pro-touch-sub">Touch below to modify or adjust on your phone screen</span>
+
+                      <div className="ks-total-banner" style={{ marginTop: 12 }}>
+                        <span className="ks-total-label">Estimated Total</span>
+                        <span className="ks-total-price">₹{totalAmount.toFixed(2)}</span>
+                      </div>
                     </div>
 
-                    <div className="ks-pro-settings-controls">
-                      {/* Colour Mode Selector */}
-                      <div className="ks-pro-control-group">
-                        <span className="ks-pro-control-label">Colour Mode</span>
-                        <div className="ks-pro-pill-toggle">
-                          <button
-                            type="button"
-                            className={`ks-pro-pill-opt ${selectedColour === 'BW' ? 'ks-pro-pill-opt--active' : ''}`}
-                            onClick={() => handleProColourChange('BW')}
-                          >
-                            <span>🖤 B&amp;W (₹{pageDetails.pricing.bwSingle}/p)</span>
-                          </button>
-                          <button
-                            type="button"
-                            className={`ks-pro-pill-opt ${selectedColour === 'COLOUR' ? 'ks-pro-pill-opt--active-red' : ''}`}
-                            onClick={() => handleProColourChange('COLOUR')}
-                          >
-                            <span>🎨 Full Colour (₹{pageDetails.pricing.colorSingle}/p)</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Sides Selector */}
-                      <div className="ks-pro-control-group">
-                        <span className="ks-pro-control-label">Sides</span>
-                        <div className="ks-pro-pill-toggle">
-                          <button
-                            type="button"
-                            className={`ks-pro-pill-opt ${selectedDuplex === 'SINGLE' ? 'ks-pro-pill-opt--active' : ''}`}
-                            onClick={() => handleProDuplexChange('SINGLE')}
-                          >
-                            <span>📄 1-Sided</span>
-                          </button>
-                          <button
-                            type="button"
-                            className={`ks-pro-pill-opt ${selectedDuplex === 'DOUBLE' ? 'ks-pro-pill-opt--active' : ''}`}
-                            onClick={() => handleProDuplexChange('DOUBLE')}
-                          >
-                            <span>📑 2-Sided</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Copies Stepper */}
-                      <div className="ks-pro-control-group">
-                        <span className="ks-pro-control-label">Copies</span>
-                        <div className="ks-pro-stepper">
-                          <button
-                            type="button"
-                            className="ks-pro-stepper-btn"
-                            disabled={selectedCopies <= 1}
-                            onClick={() => handleProCopiesChange(-1)}
-                          >
-                            −
-                          </button>
-                          <span className="ks-pro-stepper-val">{selectedCopies}</span>
-                          <button
-                            type="button"
-                            className="ks-pro-stepper-btn"
-                            disabled={selectedCopies >= 50}
-                            onClick={() => handleProCopiesChange(1)}
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="ks-pro-actions-grid" style={{ marginTop: 12 }}>
+                    <div style={{ marginTop: 12 }}>
                       <button
                         type="button"
                         onClick={handleProProceedToReview}
                         className="ks-pro-btn ks-pro-btn--primary"
+                        style={{ width: '100%', height: 48 }}
                       >
                         <span>Review Order (₹{totalAmount.toFixed(2)})</span>
                         <span className="ks-pro-arrow">→</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={handleProBackToDoc}
-                        className="ks-pro-btn ks-pro-btn--secondary"
-                      >
-                        ← Back to Document
-                      </button>
-                    </div>
-                    <div className="ks-companion-status-pill" style={{ marginTop: 10 }}>
-                      <span className="ks-companion-dot" />
-                      <span>Step 3: Modify settings on phone or touch display</span>
                     </div>
                   </div>
                 )}
@@ -1945,7 +2363,7 @@ export default function KioskSessionScreen() {
               {renderDocumentPreviewBox()}
 
               {/* Right Column: Order Breakdown & Next Step Callout */}
-              <div className="ks-flow-right" style={{ justifyContent: 'space-between', gap: 16 }}>
+              <div className="ks-flow-right" style={{ justifyContent: 'space-between', gap: 14 }}>
                 <div>
                   <h3 className="ks-summary-title">Review Order</h3>
                   <div className="ks-summary-table">
@@ -1964,7 +2382,7 @@ export default function KioskSessionScreen() {
                     ) : (
                       <div className="ks-summary-row">
                         <span>Document</span>
-                        <strong style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{docFileName}</strong>
+                        <strong style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{docFileName}</strong>
                       </div>
                     )}
                     <div className="ks-summary-row">
@@ -1972,16 +2390,20 @@ export default function KioskSessionScreen() {
                       <strong>{selectedColour === 'COLOUR' ? 'Full Colour' : 'B&W'} • {selectedCopies} {selectedCopies === 1 ? 'copy' : 'copies'} • {calculatedSheets * selectedCopies} sheets</strong>
                     </div>
                     <div className="ks-summary-row">
-                      <span>Paper</span>
-                      <strong>A4 75GSM Plain Paper</strong>
+                      <span>Pages to Print</span>
+                      <strong style={{ color: isCustomPages ? '#dc2626' : '#09090b' }}>
+                        {isCustomPages
+                          ? `Custom: ${effectivePageRange} (${selectedPageNumbers.length} of ${pageCount} pages)`
+                          : `All Pages (${pageCount} pages)`}
+                      </strong>
                     </div>
                     <div className="ks-summary-row">
-                      <span>Station</span>
-                      <strong style={{ fontFamily: 'var(--ks-font)' }}>{kioskName || kioskId}</strong>
+                      <span>Paper Tray</span>
+                      <strong style={{ color: '#16a34a' }}>Ready (A4 75GSM)</strong>
                     </div>
                   </div>
 
-                  <div className="ks-total-banner" style={{ marginTop: 14 }}>
+                  <div className="ks-total-banner" style={{ marginTop: 12 }}>
                     <span className="ks-total-label">Payable Amount</span>
                     <span className="ks-total-price">₹{totalAmount.toFixed(2)}</span>
                   </div>
@@ -1993,43 +2415,21 @@ export default function KioskSessionScreen() {
                       <div className="ks-companion-card-icon">📋</div>
                       <div>
                         <div className="ks-companion-card-title">Reviewing Order on Mobile</div>
-                        <div className="ks-companion-card-sub">Please review order details on your phone and tap Pay to show payment QR code.</div>
+                        <div className="ks-companion-card-sub">Review order details on phone and tap Pay to show payment QR.</div>
                       </div>
-                    </div>
-                    <div className="ks-companion-status-pill">
-                      <span className="ks-companion-dot" />
-                      <span>Awaiting continue from phone…</span>
                     </div>
                   </div>
                 ) : (
                   <div className="ks-pro-touch-card">
-                    <div className="ks-pro-touch-header">
-                      <div className="ks-pro-touch-title">
-                        <span>Confirm Order &amp; Proceed to Pay</span>
-                      </div>
-                      <span className="ks-pro-touch-sub">Tap below or tap Pay on your mobile screen</span>
-                    </div>
-                    <div className="ks-pro-actions-grid">
-                      <button
-                        type="button"
-                        onClick={handleProProceedToPayment}
-                        className="ks-pro-btn ks-pro-btn--primary"
-                      >
-                        <span>Proceed to Pay ₹{totalAmount.toFixed(2)}</span>
-                        <span className="ks-pro-arrow">→</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleProBackToSettings}
-                        className="ks-pro-btn ks-pro-btn--secondary"
-                      >
-                        ← Modify Settings
-                      </button>
-                    </div>
-                    <div className="ks-companion-status-pill" style={{ marginTop: 10 }}>
-                      <span className="ks-companion-dot" />
-                      <span>Step 4: Confirm on phone or tap Proceed below</span>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={handleProProceedToPayment}
+                      className="ks-pro-btn ks-pro-btn--primary"
+                      style={{ width: '100%', height: 48 }}
+                    >
+                      <span>Proceed to Pay ₹{totalAmount.toFixed(2)}</span>
+                      <span className="ks-pro-arrow">→</span>
+                    </button>
                   </div>
                 )}
               </div>
@@ -2043,7 +2443,7 @@ export default function KioskSessionScreen() {
             {renderStepTabs('payment')}
             <div className="ks-flow-body">
               {/* Left Column: Order Breakdown & Hardware Dispense Notice */}
-              <div className="ks-flow-left" style={{ justifyContent: 'space-between' }}>
+              <div className="ks-flow-left" style={{ justifyContent: 'space-between', gap: 12 }}>
                 <div>
                   <h3 className="ks-summary-title">Payment</h3>
                   <div className="ks-summary-table">
@@ -2071,7 +2471,10 @@ export default function KioskSessionScreen() {
                     )}
                     <div className="ks-summary-row">
                       <span>Prints</span>
-                      <strong>{selectedColour === 'COLOUR' ? 'Colour' : 'B&W'} • {selectedCopies} copy • {calculatedSheets * selectedCopies} sheets</strong>
+                      <strong>
+                        {selectedColour === 'COLOUR' ? 'Colour' : 'B&W'} • {selectedCopies} copy • {calculatedSheets * selectedCopies} sheets
+                        {isCustomPages ? ` • Custom (${effectivePageRange})` : ''}
+                      </strong>
                     </div>
                   </div>
 
@@ -2090,27 +2493,6 @@ export default function KioskSessionScreen() {
                     Printing begins automatically once payment is received. Collect your printed pages from the output tray below.
                   </p>
                 </div>
-
-                {/* Pro Touchscreen Action Buttons */}
-                {isPro && (
-                  <div className="ks-pro-paying-actions" style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-                    <button
-                      type="button"
-                      onClick={handleProBackToSettings}
-                      className="ks-pro-btn ks-pro-btn--secondary"
-                      style={{ flex: 1 }}
-                    >
-                      ← Modify Settings
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCancelAndNewUpload}
-                      className="ks-pro-btn ks-pro-btn--ghost"
-                    >
-                      Cancel Order
-                    </button>
-                  </div>
-                )}
               </div>
 
               {/* Right Column: Large Dynamic UPI Payment QR Box */}
@@ -2127,20 +2509,20 @@ export default function KioskSessionScreen() {
                     {upiQrValue ? (
                       <QRCodeSVG
                         value={upiQrValue}
-                        size={230}
+                        size={responsiveUpiQrSize}
                         level="M"
                         includeMargin={false}
                         fgColor="#09090b"
                         bgColor="#ffffff"
                       />
                     ) : session?.paymentError ? (
-                      <div style={{ width: 230, height: 230, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 16, textAlign: 'center' }}>
+                      <div style={{ width: responsiveUpiQrSize, height: responsiveUpiQrSize, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 16, textAlign: 'center' }}>
                         <span style={{ fontSize: 28 }}>⚠️</span>
                         <span style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>Payment Not Configured</span>
                         <span style={{ fontSize: 11, color: '#64748b', lineHeight: 1.4 }}>{session.paymentError}</span>
                       </div>
                     ) : (
-                      <div style={{ width: 230, height: 230, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                      <div style={{ width: responsiveUpiQrSize, height: responsiveUpiQrSize, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
                         <div className="ks-qr-spinner" />
                         <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>Generating QR…</span>
                       </div>
@@ -2195,12 +2577,12 @@ export default function KioskSessionScreen() {
         {/* ── SECTION 4: Live Printing Progress (PRINTING) ── */}
         {isPrinting && (
           <PrinterDispenseAnimation
-            progress={printingProgress}
             fileName={docFileName}
             sheets={calculatedSheets}
             copies={selectedCopies}
-            isComplete={false}
-            phaseMessage={session?.phase}
+            colourMode={selectedColour}
+            onComplete={handlePrintComplete}
+            docPages={filteredDocPages.length > 0 ? filteredDocPages : docPages}
           />
         )}
 
@@ -2240,63 +2622,41 @@ export default function KioskSessionScreen() {
         )}
 
 
-        {/* ── Floating Inactivity Warning Alert (Zero layout shift, z-70) ── */}
-        {inactivitySecondsLeft <= 30 &&
-          (state === 'CLAIMED' ||
-            state === 'UPLOADING' ||
-            state === 'CONFIRMING' ||
-            state === 'CONFIGURING' ||
-            state === 'REVIEWING' ||
-            state === 'PAYING') && (
-            <div
-              className="ks-inactivity-toast"
-              style={{
-                position: 'fixed',
-                top: 24,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                zIndex: 70,
-                background: '#ffffff',
-                border: '1.5px solid #dc2626',
-                boxShadow: '0 8px 30px rgba(220, 38, 38, 0.22)',
-                borderRadius: 12,
-                padding: '10px 22px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                cursor: 'pointer',
-                animation: 'ks-fade-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) both',
-              }}
-              onClick={recordKioskActivity}
-            >
-              <span style={{ fontSize: 20 }}>⏱️</span>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 800, color: '#dc2626', fontFamily: 'var(--ks-font)' }}>
-                  Inactivity Timeout Warning
-                </div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
-                  Session resetting in <strong style={{ color: '#dc2626' }}>{inactivitySecondsLeft}s</strong> · Tap anywhere to continue session
-                </div>
-              </div>
-            </div>
-          )}
+        {/* ── 15-Second Inactivity Warning Text (Requested by user) ── */}
+        {isConnectedOrAbove && (
+          <KioskInactivityBanner
+            remainingSec={inactivitySecondsLeft}
+            resetAt={Date.now() + inactivitySecondsLeft * 1000}
+          />
+        )}
 
       </main>
 
-      {/* Cancel Button in Sharp Left Bottom (PrintBooth Pro only) */}
-      {(state === 'CLAIMED' || state === 'UPLOADING') && !doc && isPro && (
-        <button
-          type="button"
-          onClick={handleCancelAndNewUpload}
-          className="ks-sharp-cancel-btn"
-          id="kiosk-pro-cancel-btn"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-          <span>Cancel</span>
-        </button>
+      {/* Universal Kiosk Bottom Navigation (Back on Sharp Bottom Left, Cancel on Sharp Bottom Right) */}
+      {isConnectedOrAbove && (
+        <nav className="ks-bottom-nav" aria-label="Session Navigation">
+          <button
+            type="button"
+            className="ks-bottom-btn ks-bottom-btn--back"
+            onClick={handleUniversalBack}
+            title="Back to previous step"
+            id="ks-universal-back"
+          >
+            <span className="ks-bottom-btn-arrow">←</span>
+            <span>Back</span>
+          </button>
+
+          <button
+            type="button"
+            className="ks-bottom-btn ks-bottom-btn--cancel"
+            onClick={handleCancelAndNewUpload}
+            title="Cancel session and start over"
+            id="ks-universal-cancel"
+          >
+            <span className="ks-bottom-btn-cross">✕</span>
+            <span>Cancel</span>
+          </button>
+        </nav>
       )}
     </div>
   )

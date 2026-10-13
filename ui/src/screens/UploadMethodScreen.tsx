@@ -1,28 +1,55 @@
 import { useNavigate } from 'react-router-dom'
-import { QrCode, Usb, ArrowLeft } from '@phosphor-icons/react'
+import { QrCode, Usb } from '@phosphor-icons/react'
 import './KioskScreens.css'
 
 export default function UploadMethodScreen() {
   const navigate = useNavigate()
+  const kioskId = localStorage.getItem('pb_kiosk_id') || 'PB-001'
+  const kioskName = localStorage.getItem('pb_kiosk_name') || 'Station 1'
 
   return (
     <div className="kiosk-screen">
       <div className="kiosk-bg-mesh" />
       <div className="kiosk-statusbar">
         <div className="statusbar__left">
-          <div className="statusbar__dot" />
-          <span className="statusbar__kiosk">PB-001</span>
-          <span>MIT ADT University</span>
+          <button
+            type="button"
+            className="kiosk-nav-btn kiosk-nav-btn--back"
+            onClick={() => navigate('/')}
+            id="upload-nav-back"
+          >
+            <span>←</span>
+            <span>Back</span>
+          </button>
+        </div>
+        <div className="statusbar__center">
+          <div className="statusbar__pill">
+            <div className="statusbar__dot" />
+            <span className="statusbar__kiosk">{kioskId}</span>
+            <span>•</span>
+            <span>{kioskName}</span>
+          </div>
+        </div>
+        <div className="statusbar__right">
+          <button
+            type="button"
+            className="kiosk-nav-btn kiosk-nav-btn--cancel"
+            onClick={() => navigate('/')}
+            id="upload-nav-cancel"
+          >
+            <span>✕</span>
+            <span>Cancel</span>
+          </button>
         </div>
       </div>
 
-      <div className="kiosk-upload-methods kiosk-enter">
+      <div className="kiosk-upload-methods kiosk-enter" style={{ margin: 'auto auto', gap: 28, marginTop: 'auto', marginBottom: 'auto' }}>
         <div>
-          <h1 className="kiosk-title">Upload Document</h1>
-          <p className="kiosk-subtitle" style={{ marginTop: 12 }}>How would you like to upload?</p>
+          <h1 className="kiosk-title" style={{ fontSize: '2.2rem' }}>Upload Document</h1>
+          <p className="kiosk-subtitle" style={{ marginTop: 8 }}>Choose your preferred upload method</p>
         </div>
 
-        <div className="upload-method-options">
+        <div className="upload-method-options" style={{ gap: 24 }}>
           <button
             className="upload-method-card"
             onClick={() => navigate('/upload/qr')}
@@ -47,13 +74,6 @@ export default function UploadMethodScreen() {
             <div className="upload-method-card__sub">Insert USB to browse files</div>
           </button>
         </div>
-      </div>
-
-      <div className="kiosk-back">
-        <button className="kiosk-btn kiosk-btn-ghost" onClick={() => navigate('/')} id="upload-back">
-          <ArrowLeft size={20} />
-          Back
-        </button>
       </div>
     </div>
   )

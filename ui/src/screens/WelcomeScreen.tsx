@@ -13,15 +13,17 @@ export default function WelcomeScreen() {
 
       {/* Status bar */}
       <div className="kiosk-statusbar">
-        <div className="statusbar__left">
-          <div className="statusbar__dot" />
-          <span className="statusbar__kiosk">{kioskId}</span>
-          <span>{kioskName}</span>
+        <div className="statusbar__left" />
+        <div className="statusbar__center">
+          <div className="statusbar__pill">
+            <div className="statusbar__dot" />
+            <span className="statusbar__kiosk">{kioskId}</span>
+            <span>•</span>
+            <span>{kioskName}</span>
+          </div>
         </div>
         <div className="statusbar__right">
-          <span>Printer: Ready</span>
-          <span>Paper: 100%</span>
-          <span id="kiosk-time" />
+          <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 700 }}>● Ready</span>
         </div>
       </div>
 

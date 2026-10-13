@@ -1,254 +1,564 @@
-/* ─── PrintBooth Custom Printer Dispense Animation ─────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap');
 
-.ks-printer-anim-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  max-width: 520px;
-  margin: 0 auto;
-  text-align: center;
-  animation: ks-fade-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+/* ─── MONO P1 Hardware Simulation Styles ─────────────────────────────────── */
+.ks-mono-stage {
+  --s: clamp(5.2px, min(1.1vmin, 0.92vh), 8px);
+  --y0: calc(47% + var(--s) * 2);
+  --red: #ff3b30;
+  --red2: #cf231c;
+  --green: #3ce678;
+  --paper: #dcdcdf;
+  --mute: #6d6d73;
+  --f: 'Space Grotesk', system-ui, sans-serif;
+
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: radial-gradient(70% 55% at 50% 48%, #17171b, #060607 78%);
+  contain: strict;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family: var(--f);
+  color: #c6c6ca;
+  box-sizing: border-box;
 }
 
-.ks-printer-stage {
-  position: relative;
-  width: 260px;
-  height: 260px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 24px;
+@media (max-aspect-ratio: 1/1) {
+  .ks-mono-stage {
+    --s: clamp(5.8px, 1.35vw, 9.5px);
+    --y0: calc(47% + var(--s) * 2);
+  }
 }
 
-/* Ambient backlight glow */
-.ks-printer-ambient-glow {
+/* ---------- printer ---------- */
+.ks-mono-stage .printer {
   position: absolute;
-  width: 220px;
-  height: 220px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(67, 136, 204, 0.22) 0%, rgba(220, 38, 38, 0.08) 55%, transparent 75%);
-  pointer-events: none;
-  animation: ks-glow-pulse 2s ease-in-out infinite alternate;
-}
-
-@keyframes ks-glow-pulse {
-  0% { transform: scale(0.92); opacity: 0.6; }
-  100% { transform: scale(1.1); opacity: 1; }
-}
-
-/* Printer Body with subtle mechanical vibration */
-.ks-printer-body-wrap {
-  position: relative;
-  width: 220px;
-  height: 220px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  left: 50%;
+  top: calc(var(--y0) - var(--s) * 24);
+  width: calc(var(--s) * 46);
+  height: calc(var(--s) * 24);
+  transform: translateX(-50%);
   z-index: 5;
 }
 
-.ks-printer--active .ks-printer-body-wrap {
-  animation: ks-printer-hum 0.14s ease-in-out infinite alternate;
-}
-
-@keyframes ks-printer-hum {
-  0% { transform: translateY(0px) rotate(0deg); }
-  50% { transform: translateY(-0.8px) rotate(0.15deg); }
-  100% { transform: translateY(0.8px) rotate(-0.15deg); }
-}
-
-.ks-printer-graphic {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-  filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.12));
-}
-
-/* Status LEDs */
-.ks-printer-led {
+.ks-mono-stage .stk,
+.ks-mono-stage .feed {
   position: absolute;
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 6;
-}
-
-.ks-printer-led--green {
-  top: 55%;
-  right: 18.5%;
-  width: 7px;
-  height: 7px;
-  background: #22c55e;
-  box-shadow: 0 0 8px #22c55e;
-  animation: ks-led-blink 0.8s ease-in-out infinite alternate;
-}
-
-.ks-printer-led--busy {
-  top: 61%;
-  right: 18.5%;
-  width: 7px;
-  height: 7px;
-  background: #3b82f6;
-  box-shadow: 0 0 8px #3b82f6;
-  animation: ks-led-blink 0.4s ease-in-out infinite alternate;
-}
-
-@keyframes ks-led-blink {
-  0% { opacity: 0.4; transform: scale(0.9); }
-  100% { opacity: 1; transform: scale(1.2); }
-}
-
-/* Paper Feed Slot (Top) */
-.ks-paper-input-slot {
-  position: absolute;
-  top: 8px;
   left: 50%;
-  transform: translateX(-50%);
-  width: 90px;
-  height: 50px;
-  overflow: hidden;
-  z-index: 2;
-  pointer-events: none;
-}
-
-.ks-printer--active .ks-paper-in-sheet {
-  width: 100%;
-  height: 60px;
-  background: #cbd5e1;
-  border: 1px solid #94a3b8;
-  border-radius: 3px 3px 0 0;
-  animation: ks-feed-in 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-@keyframes ks-feed-in {
-  0% { transform: translateY(0); opacity: 1; }
-  70% { transform: translateY(35px); opacity: 0.8; }
-  100% { transform: translateY(50px); opacity: 0; }
-}
-
-/* Paper Output Tray (Bottom) */
-.ks-paper-output-tray {
-  position: absolute;
-  bottom: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 110px;
-  height: 65px;
-  overflow: hidden;
-  z-index: 10;
-  pointer-events: none;
-}
-
-.ks-printer--active .ks-paper-dispensing-sheet {
-  width: 86px;
-  height: 52px;
-  margin: 0 auto;
-  background: #ffffff;
-  border: 1.5px solid #94a3b8;
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  animation: ks-dispense-out 2.2s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
-}
-
-@keyframes ks-dispense-out {
-  0% { transform: translateY(-38px) scale(0.85); opacity: 0; }
-  30% { transform: translateY(-15px) scale(0.92); opacity: 0.7; }
-  75% { transform: translateY(12px) scale(1); opacity: 1; }
-  90% { transform: translateY(16px) scale(1); opacity: 1; }
-  100% { transform: translateY(24px) scale(1.02); opacity: 0; }
-}
-
-.ks-paper-print-line {
-  height: 3px;
+  top: calc(var(--s) * -8);
+  width: calc(var(--s) * 18);
+  height: calc(var(--s) * 12);
+  background: #cfcfd3;
   border-radius: 2px;
-  background: #0f172a;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3);
+  transform: translate(-50%, 0) rotate(-6deg);
+  transform-origin: 50% 100%;
 }
 
-.ks-line-header {
-  width: 45%;
-  height: 4px;
-  background: #dc2626;
+.ks-mono-stage .stk.a {
+  background: #b7b7bc;
+  transform: translate(-47%, -4px) rotate(-5deg);
 }
 
-.ks-line-body-1 {
-  width: 85%;
-  background: #334155;
+.ks-mono-stage .stk.b {
+  background: #8f8f95;
+  transform: translate(-44%, -8px) rotate(-4deg);
 }
 
-.ks-line-body-2 {
-  width: 70%;
-  background: #475569;
+.ks-mono-stage .feed {
+  will-change: transform;
 }
 
-/* ── Typography & Telemetry ───────────────────────────────────────────────── */
-.ks-printer-meta {
+.ks-mono-stage .top {
+  position: absolute;
+  left: 3%;
+  top: 0;
+  width: 94%;
+  height: calc(var(--s) * 4.2);
+  z-index: 2;
+  clip-path: polygon(8% 0, 92% 0, 100% 100%, 0 100%);
+  background: linear-gradient(#f2f2f5, #cfcfd4);
+}
+
+.ks-mono-stage .top:after {
+  content: '';
+  position: absolute;
+  left: 24%;
+  top: 38%;
+  width: 52%;
+  height: 16%;
+  background: #17171a;
+  border-radius: 2px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.ks-mono-stage .body {
+  position: absolute;
+  left: 0;
+  top: calc(var(--s) * 4);
+  width: 100%;
+  height: calc(var(--s) * 20);
+  z-index: 1;
+  border-radius: calc(var(--s) * 1.4) calc(var(--s) * 1.4) calc(var(--s) * 0.6) calc(var(--s) * 0.6);
+  background: linear-gradient(#ececef, #dedee2 10%, #cdcdd2 70%, #bdbdc3);
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 -3px 8px rgba(0, 0, 0, 0.22),
+    0 calc(var(--s) * 3) calc(var(--s) * 5) rgba(0, 0, 0, 0.65);
+}
+
+.ks-mono-stage .body:after {
+  content: '';
+  position: absolute;
+  left: 9%;
+  bottom: calc(var(--s) * 2.6);
+  width: 10%;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--red);
+  box-shadow: 0 0 6px rgba(255, 59, 48, 0.7);
+}
+
+.ks-mono-stage .seam {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 33%;
+  height: calc(var(--s) * 0.7);
+  background: linear-gradient(#ff5248, var(--red2));
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5), 0 0 8px rgba(255, 59, 48, 0.45);
+}
+
+.ks-mono-stage .brand {
+  position: absolute;
+  left: 6%;
+  top: 9%;
+  color: #4a4a50;
+  font: 700 calc(var(--s) * 1.1) / 1 var(--f);
+  letter-spacing: 0.38em;
+}
+
+.ks-mono-stage .brand:before {
+  content: '';
+  display: inline-block;
+  width: 0.75em;
+  height: 0.75em;
+  border-radius: 50%;
+  background: var(--red);
+  margin-right: 0.9em;
+  box-shadow: 0 0 6px var(--red);
+}
+
+.ks-mono-stage .leds {
+  position: absolute;
+  right: 6%;
+  top: 8%;
+  display: flex;
+  gap: calc(var(--s) * 1.6);
+}
+
+.ks-mono-stage .led {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--s) * 0.5);
+  font: 500 calc(var(--s) * 0.8) / 1 var(--f);
+  letter-spacing: 0.2em;
+  color: #6a6a70;
+}
+
+.ks-mono-stage .led u {
+  width: calc(var(--s) * 0.9);
+  height: calc(var(--s) * 0.9);
+  border-radius: 50%;
+  background: #123a22;
+  transition: background 0.4s, box-shadow 0.4s;
+}
+
+.ks-mono-stage .led.g u {
+  background: var(--green);
+  box-shadow: 0 0 calc(var(--s) * 1.4) var(--green), inset 0 0 2px #fff;
+}
+
+.ks-mono-stage .led.r u {
+  background: #3a0f0c;
+}
+
+.ks-mono-stage .printer.printing .led.rdy u {
+  background: #123a22;
+  box-shadow: none;
+}
+
+.ks-mono-stage .printer.printing .led.r u {
+  background: var(--red);
+  box-shadow: 0 0 calc(var(--s) * 1.4) var(--red);
+  animation: none !important;
+}
+
+.ks-mono-stage .printer.booting .led.r u {
+  background: var(--red);
+  box-shadow: 0 0 calc(var(--s) * 1.4) var(--red);
+  animation: none !important;
+}
+
+.ks-mono-stage .lcd {
+  position: absolute;
+  left: 6%;
+  top: 42%;
+  width: 34%;
+  height: 34%;
+  background: #000;
+  border-radius: calc(var(--s) * 0.5);
+  padding: calc(var(--s) * 1) calc(var(--s) * 1.3);
+  color: #ececee;
+  box-shadow:
+    0 0 0 calc(var(--s) * 0.25) #b2b2b8,
+    0 0 0 calc(var(--s) * 0.34) #8e8e95,
+    inset 0 0 calc(var(--s) * 1.4) rgba(255, 255, 255, 0.08);
+}
+
+.ks-mono-stage .lcd small {
+  display: block;
+  font: 500 calc(var(--s) * 0.9) / 1 var(--f);
+  letter-spacing: 0.25em;
+  color: #7a7a80;
+  text-transform: uppercase;
+}
+
+.ks-mono-stage .lcd b {
+  display: block;
+  margin-top: calc(var(--s) * 0.7);
+  font: 700 calc(var(--s) * 2) / 1 var(--f);
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+}
+
+.ks-mono-stage .lcd i {
+  display: block;
+  margin-top: calc(var(--s) * 0.9);
+  height: calc(var(--s) * 0.4);
+  background: #1c1c20;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.ks-mono-stage .lcd i:after {
+  content: '';
+  display: block;
+  height: 100%;
+  background: #fff;
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+}
+
+.ks-mono-stage .printer.printing .lcd i:after,
+.ks-mono-stage .printer.booting .lcd i:after {
+  animation: ksMonoProg 3.7s linear infinite;
+}
+
+.ks-mono-stage .vent {
+  position: absolute;
+  right: 6%;
+  top: 42%;
+  width: 26%;
+  height: 34%;
+  border-radius: 2px;
+  background: repeating-linear-gradient(#9d9da4 0 2px, transparent 2px calc(var(--s) * 1.1));
+}
+
+.ks-mono-stage .btn {
+  position: absolute;
+  right: 38%;
+  top: 50%;
+  width: calc(var(--s) * 4.4);
+  height: calc(var(--s) * 4.4);
+  margin-top: calc(var(--s) * -0.4);
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  background: radial-gradient(circle at 35% 30%, #ff7168, #c7241d 70%);
+  box-shadow:
+    0 0 0 calc(var(--s) * 0.35) #a9a9af,
+    0 0 0 calc(var(--s) * 0.5) #e6e6ea,
+    0 calc(var(--s) * 0.5) calc(var(--s) * 0.9) rgba(0, 0, 0, 0.5);
+  transition: transform 0.12s;
+}
+
+.ks-mono-stage .btn:active {
+  transform: scale(0.93);
+}
+
+.ks-mono-stage .btn svg {
+  position: absolute;
+  inset: 25%;
+  width: 50%;
+  height: 50%;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2.3;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.35));
+}
+
+.ks-mono-stage .btn:after {
+  content: '';
+  position: absolute;
+  inset: -18%;
+  border-radius: 50%;
+  box-shadow: 0 0 calc(var(--s) * 2) rgba(60, 230, 120, 0.55);
+  opacity: 0.45;
+}
+
+.ks-mono-stage .printer.printing .btn:after,
+.ks-mono-stage .printer.booting .btn:after {
+  box-shadow: 0 0 calc(var(--s) * 2) rgba(255, 59, 48, 0.85);
+  animation: ksMonoBreathe 1.2s ease-in-out infinite alternate;
+}
+
+.ks-mono-stage .lip {
+  position: absolute;
+  left: 9%;
+  bottom: 0;
+  width: 82%;
+  height: calc(var(--s) * 1.5);
+  background: #000;
+  border-radius: 2px 2px 0 0;
+  overflow: hidden;
+}
+
+.ks-mono-stage .scan {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 18%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #ff5046, transparent);
+  opacity: 0;
+}
+
+.ks-mono-stage .printer.printing .scan {
+  opacity: 1;
+  animation: ksMonoScan 0.8s ease-in-out infinite alternate;
+}
+
+/* ---------- output rig ---------- */
+.ks-mono-stage .rig {
+  position: absolute;
+  left: 50%;
+  top: var(--y0);
+  width: 0;
+  height: 0;
+  z-index: 3;
+}
+
+.ks-mono-stage .cavity {
+  position: absolute;
+  left: calc(var(--s) * -15);
+  top: calc(var(--s) * 28);
+  width: calc(var(--s) * 30);
+  height: calc(var(--s) * 16);
+  border-radius: calc(var(--s) * 1) calc(var(--s) * 1) calc(var(--s) * 2) calc(var(--s) * 2);
+  background: linear-gradient(#050506, #0c0c0e);
+}
+
+.ks-mono-stage .spill {
+  position: absolute;
+  left: calc(var(--s) * -20);
+  top: calc(var(--s) * -2);
+  width: calc(var(--s) * 40);
+  height: calc(var(--s) * 14);
+  background: radial-gradient(closest-side, rgba(255, 80, 70, 0.34), transparent);
+  opacity: 0;
+  transition: opacity 0.7s;
+}
+
+.ks-mono-stage .printer.printing ~ .rig .spill,
+.ks-mono-stage .rig.on .spill {
+  opacity: 1;
+}
+
+.ks-mono-stage[data-mode="color"] .spill {
+  background: radial-gradient(closest-side, rgba(255, 60, 170, 0.42), rgba(0, 220, 255, 0.18) 60%, transparent);
+}
+
+.ks-mono-stage[data-mode="color"] .scan {
+  background: linear-gradient(90deg, transparent, #00e5ff, #ff2d95, #ffe600, transparent);
+}
+
+.ks-mono-stage .pshadow {
+  position: absolute;
+  left: calc(var(--s) * -23);
+  top: 0;
+  width: calc(var(--s) * 46);
+  height: calc(var(--s) * 6);
+  z-index: 20;
+  pointer-events: none;
+  background: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.2) 55%, transparent);
+}
+
+.ks-mono-stage .tray {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--y0) + var(--s) * 30);
+  width: calc(var(--s) * 32);
+  height: calc(var(--s) * 14);
+  margin-left: calc(var(--s) * -16);
+  z-index: 6;
+  border-radius: calc(var(--s) * 1.2) calc(var(--s) * 1.2) calc(var(--s) * 2) calc(var(--s) * 2);
+  background: linear-gradient(#34343a, #1b1b1e 14%, #101012);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 calc(var(--s) * 2) calc(var(--s) * 4) rgba(0, 0, 0, 0.7);
+}
+
+.ks-mono-stage .tray:before {
+  content: '';
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: calc(var(--s) * 2.6);
+  height: 2px;
+  border-radius: 2px;
+  background: var(--red);
+  box-shadow: 0 0 8px rgba(255, 59, 48, 0.6);
+}
+
+.ks-mono-stage .tray:after {
+  content: 'OUTPUT';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--s) * 0.9);
+  text-align: center;
+  font: 500 calc(var(--s) * 0.8) / 1 var(--f);
+  letter-spacing: 0.5em;
+  color: #55555b;
+}
+
+/* ---------- paper ---------- */
+.ks-mono-stage .paper {
+  position: absolute;
+  left: calc(var(--s) * -10);
+  top: 0;
+  width: calc(var(--s) * 20);
+  height: calc(var(--s) * 27);
+  background: var(--paper);
+  overflow: hidden;
+  transform: translate(0, -100%);
+  will-change: transform;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.25),
+    0 calc(var(--s) * 0.5) calc(var(--s) * 1.2) rgba(0, 0, 0, 0.5);
+}
+
+.ks-mono-stage .paper svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.ks-mono-stage .paper:after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.3), transparent 38%, rgba(0, 0, 0, 0.09));
+}
+
+.ks-mono-stage .cover {
+  position: absolute;
+  inset: 0;
+  background: var(--paper);
+  will-change: transform;
+}
+
+.ks-mono-stage .cover:after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 3px;
+  background: #e5322d;
+  box-shadow: 0 0 10px 2px rgba(229, 50, 45, 0.5);
+}
+
+.ks-mono-stage .paper[data-m="color"] .cover:after {
+  background: linear-gradient(90deg, #00e5ff, #ff2d95, #ffe600);
+  box-shadow: 0 0 14px 3px rgba(255, 45, 149, 0.55);
+}
+
+/* Document Thumbnail Container inside Paper */
+.ks-mono-stage .paper-preview-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: #ffffff;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 12px;
+}
+
+.ks-mono-stage .paper-preview-img {
   width: 100%;
-}
-
-.ks-printer-headline {
-  font-size: 2.1rem;
-  font-weight: 800;
-  letter-spacing: -0.035em;
-  color: #09090b;
-  margin: 0;
-  line-height: 1.15;
-}
-
-.ks-printer-caption {
-  font-size: 0.95rem;
-  color: #475569;
-  max-width: 36ch;
-  line-height: 1.5;
-  margin: 0;
-}
-
-.ks-printer-file-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 16px;
-  border-radius: 999px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  font-size: 0.82rem;
-  color: #334155;
-  font-weight: 600;
-  font-family: var(--ks-mono, monospace);
-  margin-top: 4px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
-}
-
-.ks-printer-file-pct {
-  color: #dc2626;
-  font-weight: 800;
-}
-
-/* ── Track & Progress Bar ─────────────────────────────────────────────────── */
-.ks-printer-progress-track {
-  width: 100%;
-  max-width: 440px;
-  height: 8px;
-  background: #e2e8f0;
-  border-radius: 999px;
-  overflow: hidden;
-  margin-top: 8px;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
-}
-
-.ks-printer-progress-bar {
   height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #dc2626, #ef4444);
-  box-shadow: 0 0 12px rgba(220, 38, 38, 0.4);
-  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  object-fit: cover;
+  display: block;
+}
+
+.ks-mono-stage .paper-meta-strip {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.ks-mono-stage .paper-no {
+  font-family: var(--f);
+  font-weight: 700;
+  font-size: calc(var(--s) * 0.9);
+  letter-spacing: 0.1em;
+  color: #111;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 1px 5px;
+  border-radius: 2px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.ks-mono-stage .paper-accent {
+  width: calc(var(--s) * 0.9);
+  height: calc(var(--s) * 0.9);
+  background: #e5322d;
+  border-radius: 1px;
+}
+
+/* ---------- keyframes ---------- */
+@keyframes ksMonoProg {
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes ksMonoScan {
+  to {
+    transform: translateX(450%);
+  }
+}
+
+@keyframes ksMonoBreathe {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ksMonoBlink {
+  to {
+    opacity: 0.35;
+  }
 }

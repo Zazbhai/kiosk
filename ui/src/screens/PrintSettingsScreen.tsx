@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import TimerSvg from '../components/TimerSvg'
 import KioskWebPrintSettings from '../components/KioskWebPrintSettings'
+import KioskInactivityBanner from '../components/KioskInactivityBanner'
 import {
   parsePageRange,
   type FileSettings,
@@ -9,9 +9,9 @@ import {
 import { getKioskId, getKioskName } from '../utils/siteConfig'
 import './PrintSettingsScreen.css'
 
-// ─── Inactivity Constants (Auto-Return to Home on Idle) ─────────────────────
-const INACTIVITY_TIMEOUT_MS = 90 * 1000 // 1 minute 30 seconds
-const INACTIVITY_WARNING_SECONDS = 15 // warning popup at 15s remaining
+// ─── Inactivity Constants (1-Minute Inactivity, 15s Warning) ─────────────────
+const INACTIVITY_TIMEOUT_MS = 60 * 1000 // 1 minute
+const INACTIVITY_WARNING_SECONDS = 15 // warning at 15s remaining
 
 export default function PrintSettingsScreen() {
   const navigate = useNavigate()
@@ -74,8 +74,7 @@ export default function PrintSettingsScreen() {
     lastActivityRef.current = Date.now()
 
     const onUserTouch = () => {
-      lastActivityRef.current = Date.now()
-      setInactivityRemaining(null)
+      resetInactivity()
     }
 
     window.addEventListener('touchstart', onUserTouch, { passive: true })
@@ -153,38 +152,11 @@ export default function PrintSettingsScreen() {
         showTopbar={true}
       />
 
-      {/* ── Inactivity Warning Modal (Auto-Cancel Protection) ── */}
-      {inactivityRemaining !== null && (
-        <div className="ks-inactivity-modal-backdrop" onClick={resetInactivity}>
-          <div className="ks-inactivity-modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="ks-inactivity-icon-pulse">
-              <TimerSvg size={56} />
-            </div>
-            <div className="ks-inactivity-countdown-badge">{inactivityRemaining}</div>
-            <h3 className="ks-inactivity-title">Are you still there?</h3>
-            <p className="ks-inactivity-message">
-              Returning to home screen in <strong>{inactivityRemaining} seconds</strong> due to
-              inactivity. Touch anywhere to keep your session alive.
-            </p>
-            <div className="ks-inactivity-actions">
-              <button
-                type="button"
-                className="ks-inactivity-btn-keep"
-                onClick={resetInactivity}
-              >
-                Keep Alive
-              </button>
-              <button
-                type="button"
-                className="ks-inactivity-btn-cancel"
-                onClick={handleCancelOrder}
-              >
-                Cancel Order
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ── 15-Second Inactivity Warning Text Banner ── */}
+      <KioskInactivityBanner
+        remainingSec={inactivityRemaining}
+        resetAt={lastActivityRef.current + INACTIVITY_TIMEOUT_MS}
+      />
     </div>
   )
 }

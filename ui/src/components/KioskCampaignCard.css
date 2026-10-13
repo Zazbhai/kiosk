@@ -361,3 +361,73 @@
   opacity: 0.85;
   font-family: monospace;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   RESPONSIVE CAMPAIGN CARD & MODAL STYLES
+   ═══════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 640px) {
+  .ks-ad-card-container {
+    max-width: 100%;
+    padding: 0 4px;
+    box-sizing: border-box;
+  }
+
+  .ks-ad-card {
+    border-radius: 18px;
+  }
+
+  .ks-ad-image-wrap {
+    height: 140px;
+  }
+
+  .ks-ad-content {
+    padding: 12px 14px;
+    gap: 6px;
+  }
+
+  .ks-ad-headline {
+    font-size: 1.05rem;
+  }
+
+  .ks-ad-tagline {
+    font-size: 0.82rem;
+  }
+
+  .ks-ad-cta-btn {
+    min-height: 44px;
+    font-size: 13px;
+    padding: 8px 14px;
+  }
+
+  .ks-ad-modal-card {
+    padding: 20px 16px;
+    border-radius: 20px;
+    max-height: 85vh;
+    overflow-y: auto;
+    gap: 10px;
+  }
+
+  .ks-ad-modal-title {
+    font-size: 1.15rem;
+  }
+
+  .ks-ad-modal-tagline {
+    font-size: 0.85rem;
+  }
+
+  .ks-ad-modal-qr-frame {
+    padding: 12px;
+  }
+
+  .ks-ad-modal-qr-frame svg {
+    width: 150px !important;
+    height: 150px !important;
+  }
+
+  .ks-ad-modal-close-btn {
+    height: 46px;
+    font-size: 14px;
+  }
+}
+

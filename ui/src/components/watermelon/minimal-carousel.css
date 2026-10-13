@@ -501,65 +501,75 @@
   .card-sub-value {
     font-size: 13px;
   }
-  .secondary-grid {
-    gap: 8px;
-  }
-  .secondary-card {
-    height: 106px;
-    padding: 10px 10px;
-    border-radius: 16px;
-  }
-  .secondary-card-icon-wrap {
-    width: 32px;
-    height: 32px;
-  }
-  /* Hide decorative dots pill on mobile to give full card width to text */
-  .dots-icon-pill {
-    display: none;
-  }
-  .secondary-card-title {
-    font-size: 13px;
-  }
-  .secondary-card-value {
-    font-size: 11px;
-  }
-}
-
-@media (max-width: 380px) {
-  .expanded-card {
-    padding: 14px 14px 16px;
-    border-radius: 18px;
-  }
-  .card-main-title {
-    font-size: 20px;
-  }
-  .card-sub-value {
-    font-size: 12px;
-  }
-  .card-toggle-pills {
-    padding: 3px;
-    gap: 2px;
-  }
-  .card-toggle-pill {
-    padding: 4px 9px;
-    font-size: 11px;
+  .carousel-cards-stack::before {
+    inset: 0 !important;
   }
   .secondary-grid {
     gap: 6px;
+    width: 100%;
   }
   .secondary-card {
-    height: 98px;
-    padding: 8px 8px;
+    height: auto;
+    min-height: 84px;
+    min-width: 0 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 8px 8px 10px;
     border-radius: 14px;
   }
   .secondary-card-icon-wrap {
     width: 28px;
     height: 28px;
   }
+  /* Hide decorative dots pill on mobile to give full card width to text */
+  .dots-icon-pill {
+    display: none;
+  }
   .secondary-card-title {
-    font-size: 12px;
+    font-size: 11.5px;
+    line-height: 1.15;
   }
   .secondary-card-value {
     font-size: 10px;
+    line-height: 1.15;
+  }
+}
+
+@media (max-width: 380px) {
+  .expanded-card {
+    padding: 12px 12px 14px;
+    border-radius: 16px;
+  }
+  .card-main-title {
+    font-size: 18px;
+  }
+  .card-sub-value {
+    font-size: 11.5px;
+  }
+  .card-toggle-pills {
+    padding: 2px;
+    gap: 2px;
+  }
+  .card-toggle-pill {
+    padding: 4px 6px;
+    font-size: 10.5px;
+  }
+  .secondary-grid {
+    gap: 4px;
+  }
+  .secondary-card {
+    min-height: 76px;
+    padding: 6px 6px 8px;
+    border-radius: 12px;
+  }
+  .secondary-card-icon-wrap {
+    width: 24px;
+    height: 24px;
+  }
+  .secondary-card-title {
+    font-size: 10.5px;
+  }
+  .secondary-card-value {
+    font-size: 9.5px;
   }
 }

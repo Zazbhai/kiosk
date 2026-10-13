@@ -262,15 +262,10 @@ export default function KioskWebPrintSettings({
 
   return (
     <div className="kwps-root">
-      {/* ── Top Bar (Optional, can be hidden if parent screen has top header) ── */}
+      {/* ── Universal Navigation Top Bar (Back on Left, Station in Center, Cancel on Right) ── */}
       {showTopbar && (
         <header className="kwps-topbar">
           <div className="kwps-topbar__left">
-            <div className="kwps-topbar__dot" />
-            <span className="kwps-station-tag">{kioskId} • {kioskName}</span>
-          </div>
-
-          <div className="kwps-topbar__actions">
             {onBack && (
               <button
                 type="button"
@@ -283,7 +278,16 @@ export default function KioskWebPrintSettings({
                 <span>Back</span>
               </button>
             )}
+          </div>
 
+          <div className="kwps-topbar__center">
+            <div className="kwps-topbar__pill">
+              <div className="kwps-topbar__dot" />
+              <span className="kwps-station-tag">{kioskId} • {kioskName}</span>
+            </div>
+          </div>
+
+          <div className="kwps-topbar__right">
             {onCancel && (
               <button
                 type="button"
@@ -356,8 +360,17 @@ export default function KioskWebPrintSettings({
 
               <div className="kwps-table-row">
                 <span className="kwps-row-label">Pages Selected</span>
-                <span className="kwps-row-val">
-                  {pageCount} of {realPageCount} {realPageCount === 1 ? 'pg' : 'pgs'}
+                <span
+                  className="kwps-row-val"
+                  style={
+                    settings.pages && settings.pages !== 'ALL'
+                      ? { color: '#dc2626', fontWeight: 700 }
+                      : undefined
+                  }
+                >
+                  {settings.pages && settings.pages !== 'ALL'
+                    ? `Custom (${settings.pages}) · ${pageCount} of ${realPageCount} pgs`
+                    : `All Pages (${realPageCount} pgs)`}
                 </span>
               </div>
 
@@ -456,21 +469,6 @@ export default function KioskWebPrintSettings({
           </div>
         </aside>
       </div>
-
-      {/* ── Screen Back Button at Left Bottom Side of Screen ── */}
-      {onBack && (
-        <button
-          type="button"
-          className="kwps-screen-back-btn"
-          onClick={onBack}
-          disabled={isActionPending}
-          id="kwps-screen-back-btn"
-          title="Back to previous screen"
-        >
-          <ArrowLeft size={18} weight="bold" />
-          <span>Back</span>
-        </button>
-      )}
 
       {/* ── Compact Floating Action Bar (Active on Mobile / Narrow Displays) ── */}
       <div className="kwps-compact-action-bar">

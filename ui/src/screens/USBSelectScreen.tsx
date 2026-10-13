@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { File, ArrowLeft, ArrowRight } from '@phosphor-icons/react'
+import { File, ArrowRight } from '@phosphor-icons/react'
 import './KioskScreens.css'
 
 const MOCK_USB_FILES = [
@@ -13,6 +13,8 @@ const MOCK_USB_FILES = [
 export default function USBSelectScreen() {
   const navigate = useNavigate()
   const [selected, setSelected] = useState<string | null>(null)
+  const kioskId = localStorage.getItem('pb_kiosk_id') || 'PB-001'
+  const kioskName = localStorage.getItem('pb_kiosk_name') || 'Station 1'
 
   function handleContinue() {
     if (!selected) return
@@ -25,18 +27,44 @@ export default function USBSelectScreen() {
       <div className="kiosk-bg-mesh" />
       <div className="kiosk-statusbar">
         <div className="statusbar__left">
-          <div className="statusbar__dot" />
-          <span className="statusbar__kiosk">PB-001</span>
+          <button
+            type="button"
+            className="kiosk-nav-btn kiosk-nav-btn--back"
+            onClick={() => navigate('/upload')}
+            id="usb-nav-back"
+          >
+            <span>←</span>
+            <span>Back</span>
+          </button>
+        </div>
+        <div className="statusbar__center">
+          <div className="statusbar__pill">
+            <div className="statusbar__dot" />
+            <span className="statusbar__kiosk">{kioskId}</span>
+            <span>•</span>
+            <span>{kioskName}</span>
+          </div>
+        </div>
+        <div className="statusbar__right">
+          <button
+            type="button"
+            className="kiosk-nav-btn kiosk-nav-btn--cancel"
+            onClick={() => navigate('/')}
+            id="usb-nav-cancel"
+          >
+            <span>✕</span>
+            <span>Cancel</span>
+          </button>
         </div>
       </div>
 
-      <div className="kiosk-enter" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 32, marginTop: 48 }}>
+      <div className="kiosk-enter" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18, margin: 'auto auto', width: '100%', maxWidth: 540 }}>
         <div style={{ textAlign: 'center' }}>
           <h1 className="kiosk-title" style={{ fontSize: '2rem' }}>Select File</h1>
-          <p className="kiosk-subtitle" style={{ marginTop: 10 }}>USB Drive — 4 files found</p>
+          <p className="kiosk-subtitle" style={{ marginTop: 6 }}>USB Drive — 4 files found</p>
         </div>
 
-        <div className="usb-file-list">
+        <div className="usb-file-list" style={{ width: '100%', maxHeight: '42vh', overflowY: 'auto' }}>
           {MOCK_USB_FILES.map(f => (
             <button
               key={f.name}
@@ -53,25 +81,18 @@ export default function USBSelectScreen() {
           ))}
         </div>
 
-        <div className="kiosk-action-bar">
+        <div className="kiosk-action-bar" style={{ marginTop: 6, width: '100%' }}>
           <button
             className="kiosk-btn kiosk-btn-primary"
             onClick={handleContinue}
             disabled={!selected}
-            style={{ opacity: selected ? 1 : 0.4 }}
+            style={{ width: '100%', opacity: selected ? 1 : 0.4 }}
             id="usb-continue"
           >
+            <span>Continue</span>
             <ArrowRight size={20} weight="bold" />
-            Continue
           </button>
         </div>
-      </div>
-
-      <div className="kiosk-back">
-        <button className="kiosk-btn kiosk-btn-ghost" onClick={() => navigate('/upload')} id="usb-back">
-          <ArrowLeft size={20} />
-          Back
-        </button>
       </div>
     </div>
   )

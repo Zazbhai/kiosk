@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft } from '@phosphor-icons/react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useKioskSiteUrl, getKioskSiteUrl, getKioskApiUrl } from '../utils/siteConfig'
 import TimerSvg from '../components/TimerSvg'
@@ -11,10 +10,9 @@ export default function QRUploadScreen() {
   const [timeLeft, setTimeLeft] = useState(5 * 60)
   const [sessionToken, setSessionToken] = useState<string>('')
   const [uniqueQrUrl, setUniqueQrUrl] = useState<string>('')
-  const [copiedUrl, setCopiedUrl] = useState<boolean>(false)
 
   const kioskId = localStorage.getItem('pb_kiosk_id') || import.meta.env.VITE_KIOSK_ID || 'PB-001'
-  const kioskName = localStorage.getItem('pb_kiosk_name') || import.meta.env.VITE_KIOSK_NAME || 'PrintBooth — Station 1'
+  const kioskName = localStorage.getItem('pb_kiosk_name') || import.meta.env.VITE_KIOSK_NAME || 'Station 1'
   const apiUrl = getKioskApiUrl()
   const { siteUrl } = useKioskSiteUrl(apiUrl, kioskId, sessionToken)
 
@@ -102,43 +100,47 @@ export default function QRUploadScreen() {
     return ''
   }, [uniqueQrUrl, sessionToken, siteUrl, kioskId])
 
-  const shortDisplayUrl = useMemo(() => {
-    try {
-      if (effectiveQr) {
-        const u = new URL(effectiveQr)
-        return `${u.host}${u.pathname}?id=${kioskId}`
-      }
-    } catch {}
-    const base = (siteUrl || getKioskSiteUrl() || 'https://printbooth.co.in').replace(/^https?:\/\//, '').replace(/\/+$/, '')
-    return `${base}/print?id=${kioskId}`
-  }, [effectiveQr, siteUrl, kioskId])
-
-  const handleCopyUrl = useCallback(() => {
-    if (!effectiveQr) return
-    if (navigator?.clipboard?.writeText) {
-      navigator.clipboard.writeText(effectiveQr).then(() => {
-        setCopiedUrl(true)
-        setTimeout(() => setCopiedUrl(false), 2000)
-      }).catch(() => {})
-    }
-  }, [effectiveQr])
-
   return (
     <div className="kiosk-screen">
       <div className="kiosk-bg-mesh" />
       <div className="kiosk-statusbar">
         <div className="statusbar__left">
-          <div className="statusbar__dot" />
-          <span className="statusbar__kiosk">{kioskId}</span>
-          <span>{kioskName}</span>
+          <button
+            type="button"
+            className="kiosk-nav-btn kiosk-nav-btn--back"
+            onClick={() => navigate('/upload')}
+            id="qr-nav-back"
+          >
+            <span>←</span>
+            <span>Back</span>
+          </button>
+        </div>
+        <div className="statusbar__center">
+          <div className="statusbar__pill">
+            <div className="statusbar__dot" />
+            <span className="statusbar__kiosk">{kioskId}</span>
+            <span>•</span>
+            <span>{kioskName}</span>
+          </div>
+        </div>
+        <div className="statusbar__right">
+          <button
+            type="button"
+            className="kiosk-nav-btn kiosk-nav-btn--cancel"
+            onClick={() => navigate('/')}
+            id="qr-nav-cancel"
+          >
+            <span>✕</span>
+            <span>Cancel</span>
+          </button>
         </div>
       </div>
 
-      <div className="kiosk-qr-screen kiosk-enter">
+      <div className="kiosk-qr-screen kiosk-enter" style={{ margin: 'auto auto', gap: 16 }}>
         <h1 className="kiosk-title" style={{ fontSize: '2rem' }}>Scan to Upload</h1>
-        <p className="kiosk-subtitle">Open phone camera or QR scanner to upload files to this station</p>
+        <p className="kiosk-subtitle" style={{ margin: 0 }}>Open your phone camera to scan this QR code and upload documents</p>
 
-        <div className="qr-display" style={{ background: '#ffffff', padding: '16px', borderRadius: '16px', display: 'inline-block', boxShadow: '0 8px 30px rgba(0,0,0,0.15)' }}>
+        <div className="qr-display" style={{ background: '#ffffff', padding: '16px', borderRadius: '16px', display: 'inline-block', boxShadow: '0 8px 30px rgba(0,0,0,0.12)' }}>
           {effectiveQr ? (
             <QRCodeSVG
               value={effectiveQr}
@@ -148,99 +150,22 @@ export default function QRUploadScreen() {
             />
           ) : (
             <div style={{ width: 220, height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span>Generating session…</span>
+              <span style={{ fontSize: 13, color: '#64748b', fontWeight: 600 }}>Generating secure session…</span>
             </div>
           )}
         </div>
 
-        <div className="kiosk-waiting" style={{ marginTop: '14px' }}>
-          <div className="kiosk-waiting__dot" />
-          <span>Awaiting document upload on mobile…</span>
-        </div>
-
-        {effectiveQr && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexWrap: 'wrap',
-            gap: 8,
-            background: 'rgba(255, 255, 255, 0.95)',
-            border: '1px solid #e2e8f0',
-            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.04)',
-            padding: '6px 14px',
-            borderRadius: 999,
-            marginTop: '10px',
-            fontSize: '0.82rem',
-            color: '#475569',
-          }}>
-            <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Direct Link:</span>
-            <a
-              href={effectiveQr}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                color: 'var(--clr-accent, #dc2626)',
-                fontWeight: 700,
-                textDecoration: 'underline',
-                fontFamily: 'monospace',
-              }}
-              title={effectiveQr}
-            >
-              {shortDisplayUrl}
-            </a>
-            <button
-              type="button"
-              onClick={handleCopyUrl}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                padding: '3px 8px',
-                borderRadius: 5,
-                fontSize: '0.72rem',
-                fontWeight: 700,
-                border: '1px solid #cbd5e1',
-                background: '#ffffff',
-                color: '#334155',
-                cursor: 'pointer',
-              }}
-            >
-              {copiedUrl ? 'Copied ✓' : 'Copy'}
-            </button>
-            <a
-              href={effectiveQr}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                padding: '3px 8px',
-                borderRadius: 5,
-                fontSize: '0.72rem',
-                fontWeight: 700,
-                border: '1px solid rgba(220, 38, 38, 0.25)',
-                background: 'rgba(220, 38, 38, 0.08)',
-                color: '#dc2626',
-                textDecoration: 'none',
-              }}
-            >
-              Open ↗
-            </a>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div className="kiosk-waiting" style={{ margin: 0 }}>
+            <div className="kiosk-waiting__dot" />
+            <span>Awaiting phone upload…</span>
           </div>
-        )}
 
-        <div className="kiosk-timer" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-          <TimerSvg size={28} />
-          <span>{minutes}:{seconds}</span>
+          <div className="kiosk-timer" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 999, fontSize: 12, fontWeight: 700, color: '#0f172a' }}>
+            <TimerSvg size={16} />
+            <span>{minutes}:{seconds}</span>
+          </div>
         </div>
-        <p style={{ fontSize: '0.8rem', color: 'var(--clr-text-3)' }}>Session active for {minutes}:{seconds}</p>
-      </div>
-
-      <div className="kiosk-back">
-        <button className="kiosk-btn kiosk-btn-ghost" onClick={() => navigate('/upload')} id="qr-back">
-          <ArrowLeft size={20} />
-          Back
-        </button>
       </div>
     </div>
   )
