@@ -57,6 +57,7 @@ class KioskWsClient:
         self.print_callbacks = []
         self.staged_jobs = {}  # Indexed by order_id and releasePin
         self.printed_orders = load_processed_orders()
+        self.active_printing_orders = set()  # Currently executing print orders to prevent concurrent multi-dispatch
         self._was_printer_online = False
         self._last_usb_connected: Optional[bool] = None
 
@@ -89,6 +90,20 @@ class KioskWsClient:
             headers["X-Kiosk-Secret"] = self.kiosk_secret
             headers["Authorization"] = f"Bearer {self.kiosk_secret}"
         return headers
+
+    def _is_order_busy_or_printed(self, order_id: str, aliases: Optional[List[str]] = None) -> bool:
+        """Atomically checks if an order is currently printing, already spooled, or marked processed."""
+        if not order_id:
+            return False
+        clean_aliases = [str(a).strip() for a in (aliases or []) if a and str(a).strip()]
+        all_ids = {str(order_id).strip()} | set(clean_aliases)
+        if any(i in self.printed_orders for i in all_ids):
+            return True
+        if any(i in self.active_printing_orders for i in all_ids):
+            return True
+        if is_order_processed(order_id, clean_aliases):
+            return True
+        return False
 
     async def connect(self):
         """Main connection and auto-reconnect loop with universal websockets library compatibility."""
@@ -292,13 +307,14 @@ class KioskWsClient:
                     for job in jobs:
                         order_id = job.get("orderId") or job.get("job_id")
                         order_number = job.get("orderNumber")
-                        aliases = [a for a in [order_number] if a and a != order_id]
+                        release_pin = job.get("releasePin") or job.get("otp") or job.get("pickupCode")
+                        aliases = [a for a in [order_number, release_pin] if a and a != order_id]
                         all_ids = {order_id} | set(aliases)
 
-                        if any(i in self.printed_orders for i in all_ids):
+                        if self._is_order_busy_or_printed(order_id, aliases):
                             continue
 
-                        if not self.cups.claim_order_for_spooling(order_id, aliases):
+                        if not self.cups.claim_order_for_spooling(order_id, aliases, force=False):
                             continue
 
                         print(f"[WSS Kiosk Client] 📥 Picked up pending paid job via HTTP poll: {order_id} ({job.get('filename')})")
@@ -432,11 +448,15 @@ class KioskWsClient:
 
                     # If order is flagged for immediate/autonomous printing, dispatch directly to CUPS without blocking on PIN
                     if payload.get("immediate") or payload.get("forceKioskPrint") or payload.get("isImmediate"):
-                        print(f"[WSS Kiosk Client] ⚡ Immediate print requested for Order {order_id}. Executing print job directly...")
                         aliases = [a for a in [order_number, release_pin] if a and a != order_id]
                         all_ids = {order_id} | set(aliases)
-                        if not any(i in self.printed_orders for i in all_ids):
-                            if self.cups.claim_order_for_spooling(order_id, aliases, force=True):
+                        if self._is_order_busy_or_printed(order_id, aliases):
+                            print(f"[WSS Kiosk Client] ℹ Order {order_id} already printing or spooled. Skipping duplicate PRINT_JOB_STAGED trigger.")
+                        else:
+                            if not self.cups.claim_order_for_spooling(order_id, aliases, force=False):
+                                print(f"[WSS Kiosk Client] ℹ Order {order_id} already claimed/spooled. Skipping duplicate PRINT_JOB_STAGED trigger.")
+                            else:
+                                print(f"[WSS Kiosk Client] ⚡ Immediate print requested for Order {order_id}. Executing print job directly...")
                                 self.printed_orders.update(all_ids)
                                 asyncio.create_task(self._handle_print_order(order_id, payload))
 
@@ -466,18 +486,18 @@ class KioskWsClient:
                         self.printed_orders = load_processed_orders()
                         continue
 
-                    if is_order_processed(order_id, aliases) or any(i in self.printed_orders for i in all_ids):
-                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already spooled. Skipping duplicate spool.")
+                    if self._is_order_busy_or_printed(order_id, aliases):
+                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already printing or spooled. Skipping duplicate spool.")
                         continue
 
-                    if not self.cups.claim_order_for_spooling(order_id, aliases):
+                    if not self.cups.claim_order_for_spooling(order_id, aliases, force=False):
                         print(f"[WSS Kiosk Client] ℹ Order {order_id} already claimed/spooled. Skipping duplicate spool.")
                         mark_order_processed(order_id, aliases)
                         self.printed_orders = load_processed_orders()
                         continue
 
                     mark_order_processed(order_id, aliases)
-                    self.printed_orders = load_processed_orders()
+                    self.printed_orders.update(all_ids)
                     merged_payload = {**staged_job, **payload}
                     asyncio.create_task(self._handle_print_order(order_id, merged_payload))
 
@@ -511,12 +531,12 @@ class KioskWsClient:
 
                     aliases = [a for a in [order_number, release_pin] if a and a != order_id]
                     all_ids = {order_id} | set(aliases)
-                    if any(i in self.printed_orders for i in all_ids):
-                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already spooled. Skipping duplicate spool.")
+                    if self._is_order_busy_or_printed(order_id, aliases):
+                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already printing or spooled. Skipping duplicate PAYMENT_CAPTURED.")
                         continue
 
-                    if not self.cups.claim_order_for_spooling(order_id, aliases):
-                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already claimed/spooled. Skipping duplicate spool.")
+                    if not self.cups.claim_order_for_spooling(order_id, aliases, force=False):
+                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already claimed/spooled. Skipping duplicate PAYMENT_CAPTURED.")
                         self.printed_orders.update(all_ids)
                         continue
 
@@ -531,13 +551,13 @@ class KioskWsClient:
                     aliases = [a for a in [order_number, release_pin] if a and a != order_id]
                     all_ids = {order_id} | set(aliases)
 
-                    force = bool(payload.get("forceKioskPrint") or payload.get("immediate"))
-                    if not force and any(i in self.printed_orders for i in all_ids):
-                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already spooled. Skipping duplicate spool.")
+                    force_reprint = bool(payload.get("forceReprint") or payload.get("adminForce"))
+                    if not force_reprint and self._is_order_busy_or_printed(order_id, aliases):
+                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already printing or spooled. Skipping duplicate PRINT_EXECUTE.")
                         continue
 
-                    if not self.cups.claim_order_for_spooling(order_id, aliases, force=force):
-                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already claimed/spooled. Skipping duplicate spool.")
+                    if not self.cups.claim_order_for_spooling(order_id, aliases, force=force_reprint):
+                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already claimed/spooled. Skipping duplicate PRINT_EXECUTE.")
                         self.printed_orders.update(all_ids)
                         continue
 
@@ -682,6 +702,27 @@ class KioskWsClient:
         if not order_id:
             return
 
+        order_number = payload.get("orderNumber")
+        release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")
+        aliases = [a for a in [order_number, release_pin] if a and a != order_id]
+        all_ids = {str(order_id).strip()} | {str(a).strip() for a in aliases if a}
+
+        # Concurrency Lock: Prevent simultaneous parallel executions for the same order
+        if any(i in self.active_printing_orders for i in all_ids):
+            print(f"[WSS Kiosk Client] ⚠️ Prevented concurrent duplicate execution: Order {order_id} is already actively printing!")
+            return
+
+        self.active_printing_orders.update(all_ids)
+        mark_order_processed(order_id, aliases)
+        self.printed_orders.update(all_ids)
+
+        try:
+            await self._execute_print_order_internal(order_id, payload, aliases, all_ids)
+        finally:
+            for i in all_ids:
+                self.active_printing_orders.discard(i)
+
+    async def _execute_print_order_internal(self, order_id: str, payload: dict, aliases: list, all_ids: set):
         # Build the list of jobs to print (handles multi-file orders with distinct settings)
         jobs_to_print = []
         if payload.get("subJobs") and isinstance(payload["subJobs"], list) and len(payload["subJobs"]) > 1:
@@ -709,14 +750,6 @@ class KioskWsClient:
                 })
         else:
             jobs_to_print = [payload]
-
-        order_number = payload.get("orderNumber")
-        release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")
-        aliases = [a for a in [order_number, release_pin] if a and a != order_id]
-        all_ids = {order_id} | set(aliases)
-
-        mark_order_processed(order_id, aliases)
-        self.printed_orders = load_processed_orders()
 
         for j_idx, job_payload in enumerate(jobs_to_print):
             job_order_id = job_payload.get("orderId") or f"{order_id}_sub_{j_idx + 1}"

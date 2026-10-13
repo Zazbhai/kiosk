@@ -1423,12 +1423,9 @@ class CupsController:
             out_doc = pymupdf.open()
             for page in doc:
                 pix = page.get_pixmap(colorspace=pymupdf.csGRAY, dpi=300)
-                img_data = pix.tobytes("png")
-                img_pdf = pymupdf.open(stream=img_data, filetype="png")
                 rect = page.rect
                 new_page = out_doc.new_page(width=rect.width, height=rect.height)
-                new_page.show_pdf_page(rect, img_pdf, 0)
-                img_pdf.close()
+                new_page.insert_image(rect, pixmap=pix)
             out_doc.save(str(dest_path))
             out_doc.close()
             doc.close()
@@ -1617,15 +1614,16 @@ class CupsController:
                                     grp_sub_path = mono_out
 
                         # Configure Brother hardware register for this group
-                        for br_bin in ["/usr/bin/brprintconf_dcpt420w", "/opt/brother/Printers/dcpt420w/lpd/brprintconf_dcpt420w"]:
-                            if os.path.exists(br_bin):
-                                try:
-                                    corm_arg = "FullColor" if is_grp_color else "Mono"
-                                    subprocess.run([br_bin, "-corm", corm_arg, "-copies", "1"], timeout=2, capture_output=True)
-                                    print(f"[CUPS] Brother hardware register set: {br_bin} -corm {corm_arg} -copies 1")
-                                except Exception as e:
-                                    print(f"[CUPS] Brother hardware config notice: {e}")
-                                break
+                        if self.check_usb_printer().get("isBrother"):
+                            for br_bin in ["/usr/bin/brprintconf_dcpt420w", "/opt/brother/Printers/dcpt420w/lpd/brprintconf_dcpt420w"]:
+                                if os.path.exists(br_bin):
+                                    try:
+                                        corm_arg = "FullColor" if is_grp_color else "Mono"
+                                        subprocess.run([br_bin, "-corm", corm_arg, "-copies", "1"], timeout=2, capture_output=True)
+                                        print(f"[CUPS] Brother hardware register set: {br_bin} -corm {corm_arg} -copies 1")
+                                    except Exception as e:
+                                        print(f"[CUPS] Brother hardware config notice: {e}")
+                                    break
 
                         grp_opts = self.build_cups_options(
                             copies=1,
