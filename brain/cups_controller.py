@@ -948,6 +948,30 @@ class CupsController:
                             f"[CUPS Controller] [CONVERT] Pre-processed image '{p_path.name}' "
                             f"({orig_w}x{orig_h} -> scaled {final_im.size[0]}x{final_im.size[1]} on {canvas_w}x{canvas_h} {orient_label} {norm_paper} canvas, {mode_label}) -> '{pdf_path.name}'"
                         )
+                        # On Linux, convert the PDF to clean PostScript Level 2 via Ghostscript
+                        # This completely bypasses fragile Poppler pdftops filters and feeds brother_lpdwrapper directly!
+                        if sys.platform != "win32" and shutil.which("gs"):
+                            try:
+                                ps_path = pdf_path.with_suffix(".ps")
+                                gs_cmd = [
+                                    "gs",
+                                    "-q",
+                                    "-dNOPAUSE",
+                                    "-dBATCH",
+                                    "-dSAFER",
+                                    "-sDEVICE=ps2write",
+                                    "-dLanguageLevel=2",
+                                ]
+                                if not is_color:
+                                    gs_cmd.extend(["-dColorConversionStrategy=Gray", "-dProcessColorModel=/DeviceGray"])
+                                gs_cmd.extend([f"-sOutputFile={ps_path}", str(pdf_path)])
+                                res = subprocess.run(gs_cmd, capture_output=True, timeout=25)
+                                if res.returncode == 0 and ps_path.exists() and ps_path.stat().st_size > 0:
+                                    print(f"[CUPS Controller] [CONVERT] Converted canvas to PS Level 2 -> '{ps_path.name}'")
+                                    return ps_path
+                            except Exception as gs_err:
+                                print(f"[CUPS Controller] Ghostscript PS conversion notice: {gs_err}")
+
                         return pdf_path
                 except Exception as e:
                     print(f"[CUPS Controller] Pillow image processing notice: {e}")
@@ -955,43 +979,49 @@ class CupsController:
             # Fallback for Linux if ImageMagick convert exists
             if sys.platform != "win32" and shutil.which("convert"):
                 try:
-                    pdf_name = f"{'color' if is_color else 'mono'}_{p_path.stem}.pdf"
-                    pdf_path = p_path.parent / pdf_name
+                    ps_name = f"{'color' if is_color else 'mono'}_{p_path.stem}.ps"
+                    ps_path = p_path.parent / ps_name
                     # Upscale or downscale to full A4 page
                     args = ["convert", str(p_path), "-page", "A4", "-gravity", "center", "-resize", "2400x3428"]
                     if not is_color:
                         args.extend(["-colorspace", "Gray"])
-                    args.append(str(pdf_path))
+                    args.append(str(ps_path))
                     subprocess.run(args, check=True, timeout=15)
-                    if pdf_path.exists() and pdf_path.stat().st_size > 0:
-                        print(f"[CUPS Controller] [CONVERT] ImageMagick converted image '{p_path.name}' -> '{pdf_path.name}'")
-                        return pdf_path
+                    if ps_path.exists() and ps_path.stat().st_size > 0:
+                        print(f"[CUPS Controller] [CONVERT] ImageMagick converted image '{p_path.name}' -> '{ps_path.name}'")
+                        return ps_path
                 except Exception:
                     pass
 
-        # 3. PDF Grayscale Conversion
-        elif suffix == ".pdf" and not is_color and convert_grayscale:
+        # 3. PDF Conversion for Linux: Convert to clean PostScript Level 2 to bypass Poppler pdftops
+        elif suffix == ".pdf" and sys.platform != "win32" and shutil.which("gs"):
             try:
-                mono_path = p_path.parent / f"mono_{p_path.name}"
-                gs_bin = shutil.which("gs") or ("/usr/bin/gs" if os.path.exists("/usr/bin/gs") else None)
-                if gs_bin:
-                    gs_cmd = [
-                        gs_bin,
-                        "-sDEVICE=pdfwrite",
+                ps_name = f"{'color' if is_color else 'mono'}_{p_path.stem}.ps"
+                ps_path = p_path.parent / ps_name
+                gs_cmd = [
+                    "gs",
+                    "-q",
+                    "-dNOPAUSE",
+                    "-dBATCH",
+                    "-dSAFER",
+                    "-sDEVICE=ps2write",
+                    "-dLanguageLevel=2",
+                ]
+                if not is_color:
+                    gs_cmd.extend([
                         "-dColorConversionStrategy=Gray",
                         "-dProcessColorModel=/DeviceGray",
-                        "-dCompatibilityLevel=1.4",
-                        "-dNOPAUSE",
-                        "-dBATCH",
-                        f"-sOutputFile={mono_path}",
-                        str(p_path),
-                    ]
-                    res = subprocess.run(gs_cmd, capture_output=True, timeout=25)
-                    if res.returncode == 0 and mono_path.exists() and mono_path.stat().st_size > 0:
-                        print(f"[CUPS Controller] [MONO] Pre-processed PDF '{p_path.name}' to pure DeviceGray via Ghostscript -> '{mono_path.name}'")
-                        return mono_path
+                    ])
+                gs_cmd.extend([
+                    f"-sOutputFile={ps_path}",
+                    str(p_path),
+                ])
+                res = subprocess.run(gs_cmd, capture_output=True, timeout=25)
+                if res.returncode == 0 and ps_path.exists() and ps_path.stat().st_size > 0:
+                    print(f"[CUPS Controller] [CONVERT] Converted PDF to PS Level 2 via Ghostscript -> '{ps_path.name}'")
+                    return ps_path
             except Exception as e:
-                print(f"[CUPS Controller] Ghostscript PDF grayscale conversion notice: {e}")
+                print(f"[CUPS Controller] Ghostscript PDF to PS conversion notice: {e}")
 
         return p_path
 
@@ -1047,10 +1077,11 @@ class CupsController:
         is_color = raw_c in ("COLOR", "COLOUR")
         if is_color:
             options["BRMonoColor"] = "FullColor"
-            options["print-color-mode"] = "color"
         else:
             options["BRMonoColor"] = "Mono"
-            options["print-color-mode"] = "monochrome"
+
+        # Instruct cups-filters to use Ghostscript instead of broken Poppler
+        options["pdftops-renderer"] = "gs"
 
         # Duplex / Double-Sided Configuration
         # ONLY apply duplex options if double-sided is explicitly requested.
@@ -1177,6 +1208,13 @@ class CupsController:
                     if job_id not in res.stdout:
                         elapsed = round(time.time() - start_time, 1)
                         print(f"[CUPS] ✓ Job '{job_id}' cleared CUPS filter queue ({elapsed}s)")
+                        if elapsed < 2.0:
+                            try:
+                                err_p = subprocess.run(["tail", "-n", "10", "/var/log/cups/error_log"], capture_output=True, text=True, timeout=2)
+                                if "error" in err_p.stdout.lower() or "shutting down" in err_p.stdout.lower():
+                                    print(f"[CUPS DIAGNOSTIC ERROR_LOG]:\n{err_p.stdout.strip()}")
+                            except Exception:
+                                pass
                         try:
                             p_stat = subprocess.run(["lpstat", "-p", printer], capture_output=True, text=True, timeout=3)
                             if "disabled" in p_stat.stdout.lower() or "paused" in p_stat.stdout.lower():
