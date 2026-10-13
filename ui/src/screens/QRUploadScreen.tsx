@@ -92,13 +92,20 @@ export default function QRUploadScreen() {
   const seconds = (timeLeft % 60).toString().padStart(2, '0')
 
   const effectiveQr = useMemo(() => {
-    if (uniqueQrUrl && uniqueQrUrl.includes('&session=')) return uniqueQrUrl
+    const base = 'https://printbooth.co.in'
+    if (uniqueQrUrl && uniqueQrUrl.includes('&session=')) {
+      try {
+        const u = new URL(uniqueQrUrl)
+        return `${base}${u.pathname}${u.search}`
+      } catch {
+        return uniqueQrUrl.replace(/^https?:\/\/[^/]+/, base)
+      }
+    }
     if (sessionToken) {
-      const base = (siteUrl || getKioskSiteUrl()).replace(/\/+$/, '')
       return `${base}/print?id=${encodeURIComponent(kioskId)}&session=${encodeURIComponent(sessionToken)}`
     }
-    return ''
-  }, [uniqueQrUrl, sessionToken, siteUrl, kioskId])
+    return `${base}/print?id=${encodeURIComponent(kioskId)}`
+  }, [uniqueQrUrl, sessionToken, kioskId])
 
   return (
     <div className="kiosk-screen">
