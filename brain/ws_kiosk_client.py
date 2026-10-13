@@ -15,7 +15,7 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Optional, Callable, List, Dict, Any, Set
 
 import websockets
 

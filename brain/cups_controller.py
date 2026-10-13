@@ -36,6 +36,9 @@ except Exception:
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 TEMP_JOBS_DIR.mkdir(parents=True, exist_ok=True)
 
+# Global lock to serialize PyMuPDF C-level operations across Python threads (Python 3.13 thread-safety)
+_MUPDF_LOCK = threading.Lock()
+
 
 def claim_order_for_spooling(order_id: str, aliases: Optional[List[str]] = None, force: bool = False) -> bool:
     """
@@ -925,6 +928,10 @@ class CupsController:
                         pdf_name = f"{'color' if is_color else 'mono'}_{p_path.stem}.pdf"
                         pdf_path = p_path.parent / pdf_name
 
+                        # If already converted and cached, reuse immediately
+                        if pdf_path.exists() and pdf_path.stat().st_size > 0:
+                            return pdf_path
+
                         # Composite transparent alpha onto pure white background
                         if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
                             bg = Image.new("RGB", im.size, (255, 255, 255))
@@ -995,13 +1002,6 @@ class CupsController:
 
                         # Save as single-page PDF with exact 300 DPI metadata
                         canvas.save(pdf_path, "PDF", resolution=300.0)
-                        mode_label = "COLOR" if is_color else "8-bit Monochrome"
-                        orient_label = "Landscape" if canvas_landscape else "Portrait"
-                        print(
-                            f"[CUPS Controller] [CONVERT] Pre-processed image '{p_path.name}' "
-                            f"({orig_w}x{orig_h} -> scaled {final_im.size[0]}x{final_im.size[1]} on {canvas_w}x{canvas_h} {orient_label} {norm_paper} canvas, {mode_label}) -> '{pdf_path.name}'"
-                        )
-                        # If B&W requested, ensure canvas is saved as pure 8-bit monochrome PDF
                         mode_label = "COLOR" if is_color else "8-bit Monochrome"
                         orient_label = "Landscape" if canvas_landscape else "Portrait"
                         print(
@@ -1394,6 +1394,15 @@ class CupsController:
     @staticmethod
     def _convert_pdf_to_monochrome(src_path: Path, dest_path: Path) -> bool:
         """Converts PDF pages into pure DeviceGray via Ghostscript or PyMuPDF rasterization."""
+        if not src_path.exists():
+            return False
+
+        # If already mono, avoid duplicate conversion
+        if src_path.name.startswith("mono_") and src_path == dest_path:
+            return True
+        if dest_path.exists() and dest_path.stat().st_size > 0 and dest_path != src_path:
+            return True
+
         # Method 1: Ghostscript DeviceGray
         gs_bin = shutil.which("gs") or ("/usr/bin/gs" if os.path.exists("/usr/bin/gs") else None)
         if gs_bin:
@@ -1416,19 +1425,20 @@ class CupsController:
             except Exception as e:
                 print(f"[CUPS] Ghostscript mono conversion notice: {e}")
 
-        # Method 2: PyMuPDF raster fallback
+        # Method 2: PyMuPDF raster fallback (serialized with global lock for Python 3.13 thread-safety)
         try:
-            import pymupdf  # type: ignore
-            doc = pymupdf.open(str(src_path))
-            out_doc = pymupdf.open()
-            for page in doc:
-                pix = page.get_pixmap(colorspace=pymupdf.csGRAY, dpi=300)
-                rect = page.rect
-                new_page = out_doc.new_page(width=rect.width, height=rect.height)
-                new_page.insert_image(rect, pixmap=pix)
-            out_doc.save(str(dest_path))
-            out_doc.close()
-            doc.close()
+            with _MUPDF_LOCK:
+                import pymupdf  # type: ignore
+                doc = pymupdf.open(str(src_path))
+                out_doc = pymupdf.open()
+                for page in doc:
+                    pix = page.get_pixmap(colorspace=pymupdf.csGRAY, dpi=300)
+                    rect = page.rect
+                    new_page = out_doc.new_page(width=rect.width, height=rect.height)
+                    new_page.insert_image(rect, pixmap=pix)
+                out_doc.save(str(dest_path))
+                out_doc.close()
+                doc.close()
             if dest_path.exists() and dest_path.stat().st_size > 0:
                 return True
         except Exception as e:
@@ -1688,7 +1698,7 @@ class CupsController:
                 effective_range = None  # PDF already contains ONLY the selected pages!
 
         # Enforce pure DeviceGray for B&W uniform prints so printer hardware CANNOT use color ink
-        if is_pdf and not is_color:
+        if is_pdf and not is_color and not target_path.name.startswith("mono_"):
             mono_target = p_path.parent / f"mono_devgray_{target_path.stem}.pdf"
             if self._convert_pdf_to_monochrome(target_path, mono_target):
                 print(f"[CUPS] ✓ Enforced pure DeviceGray grayscale PDF: '{mono_target.name}'")
