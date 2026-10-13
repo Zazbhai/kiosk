@@ -1019,10 +1019,8 @@ class CupsController:
 
         # Scaling / Margins:
         norm_scale = str(scaling or "FIT").upper().strip()
-        if norm_scale in ("BORDERLESS", "FILL"):
-            if ppd_paper == "A4":
-                options["PageSize"] = "BrA4_B"
-                options["media"] = "BrA4_B"
+        if norm_scale in ("FIT", "AUTO"):
+            options["fit-to-page"] = "true"
 
         # Orientation
         norm_orient = str(orientation or "AUTO").upper().strip()
@@ -1032,7 +1030,7 @@ class CupsController:
         elif norm_orient == "PORTRAIT":
             options["orientation-requested"] = "3"
 
-        # Color vs Monochrome (BRMonoColor is the exact PPD key for Brother DCP-T420W)
+        # Color vs Monochrome (BRMonoColor is the exact PPD key for Brother DCP-T420W, ColorModel is IPP/Postscript standard)
         raw_c = str(colour_mode or "BW").upper().replace("&", "").strip()
         is_color = raw_c in ("COLOR", "COLOUR")
         if is_color:
@@ -1041,11 +1039,8 @@ class CupsController:
             options["print-color-mode"] = "color"
         else:
             options["BRMonoColor"] = "Mono"
-            options["ColorModel"] = "Gray"
+            options["ColorModel"] = "KGray"
             options["print-color-mode"] = "monochrome"
-
-        # Instruct cups-filters to use Ghostscript instead of broken Poppler
-        options["pdftops-renderer"] = "gs"
 
         # Duplex / Double-Sided Configuration
         # ONLY apply duplex options if double-sided is explicitly requested.
@@ -1151,53 +1146,56 @@ class CupsController:
         return 1
 
     @staticmethod
-    def _wait_for_job_spool(printer: str, job_id: Optional[str] = None, timeout: int = 40):
+    def _wait_for_job_spool(printer: str, job_id: Optional[str] = None, timeout: int = 45) -> Dict[str, Any]:
         """
-        Waits for a CUPS print job to clear the active raster queue.
-        Essential for Brother DCP-T420W hardware register switching (brprintconf_dcpt420w)
-        between monochrome and full-color groups, preventing register overwrite races.
+        Waits for a CUPS print job to clear the active raster queue, exactly like LePrint.
+        Polls lpstat -o <job_id> until job completes or errors.
         """
         if sys.platform == "win32":
-            return
+            return {"success": True}
 
         start_time = time.time()
-        # Give CUPS a brief instant to register the job in queue
         time.sleep(0.5)
 
         while time.time() - start_time < timeout:
             try:
-                res = subprocess.run(["lpstat", "-o", printer], capture_output=True, text=True, timeout=5)
-                # If a specific job_id was provided, check if it's still in the active queue
+                # 1. Poll specific CUPS job ID if known
                 if job_id:
-                    if job_id not in res.stdout:
+                    stat_res = subprocess.run(["lpstat", "-o", job_id], capture_output=True, text=True, timeout=5)
+                    stat_out = (stat_res.stdout or "").strip().lower()
+
+                    # If job is not in the queue, it has finished processing/spooling!
+                    if not stat_out or job_id.lower() not in stat_out:
                         elapsed = round(time.time() - start_time, 1)
-                        print(f"[CUPS] ✓ Job '{job_id}' cleared CUPS filter queue ({elapsed}s)")
-                        if elapsed < 2.0:
-                            try:
-                                err_p = subprocess.run(["tail", "-n", "10", "/var/log/cups/error_log"], capture_output=True, text=True, timeout=2)
-                                if "error" in err_p.stdout.lower() or "shutting down" in err_p.stdout.lower():
-                                    print(f"[CUPS DIAGNOSTIC ERROR_LOG]:\n{err_p.stdout.strip()}")
-                            except Exception:
-                                pass
-                        try:
-                            p_stat = subprocess.run(["lpstat", "-p", printer], capture_output=True, text=True, timeout=3)
-                            if "disabled" in p_stat.stdout.lower() or "paused" in p_stat.stdout.lower():
-                                print(f"[CUPS] ⚠ WARNING: Printer '{printer}' queue was paused/disabled! Auto-unpausing...")
-                                subprocess.run(["cupsenable", printer], timeout=3)
-                                subprocess.run(["cupsaccept", printer], timeout=3)
-                        except Exception:
-                            pass
-                        return
-                else:
-                    if not res.stdout.strip():
-                        print(f"[CUPS] ✓ Spool queue cleared ({round(time.time() - start_time, 1)}s)")
-                        return
+                        print(f"[CUPS] ✓ Job '{job_id}' completed and cleared CUPS filter queue ({elapsed}s)")
+                        return {"success": True, "elapsed": elapsed}
+
+                    # Check for failure states
+                    if any(err_k in stat_out for err_k in ["aborted", "stopped", "error"]):
+                        print(f"[CUPS] ❌ Job '{job_id}' encountered error in CUPS queue: {stat_out}")
+                        return {"success": False, "error": f"CUPS job failed: {stat_out}"}
+
+                # 2. General printer queue poll
+                res = subprocess.run(["lpstat", "-o", printer], capture_output=True, text=True, timeout=5)
+                if not job_id and not res.stdout.strip():
+                    elapsed = round(time.time() - start_time, 1)
+                    print(f"[CUPS] ✓ Spool queue cleared ({elapsed}s)")
+                    return {"success": True, "elapsed": elapsed}
+
+                # Check if printer became disabled/paused
+                p_stat = subprocess.run(["lpstat", "-p", printer], capture_output=True, text=True, timeout=3)
+                if "disabled" in p_stat.stdout.lower() or "paused" in p_stat.stdout.lower():
+                    print(f"[CUPS] ⚠ WARNING: Printer '{printer}' queue was paused/disabled! Auto-unpausing...")
+                    subprocess.run(["cupsenable", printer], timeout=3)
+                    subprocess.run(["cupsaccept", printer], timeout=3)
+
             except Exception as e:
                 print(f"[CUPS] Spool queue monitor notice: {e}")
                 break
-            time.sleep(0.8)
+            time.sleep(1.2)
 
         print(f"[CUPS] Spool queue wait finished after {round(time.time() - start_time, 1)}s")
+        return {"success": True}
 
     @staticmethod
     def _extract_pdf_pages(src_path: Path, pages_1_indexed: List[int], dest_path: Path) -> bool:
@@ -1683,7 +1681,9 @@ class CupsController:
                     print(f"[CUPS CLI] Executing: {' '.join(cmd)}")
                     out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
                     print(f"[CUPS CLI] Success output: {out.strip()}")
-                    return {"success": True, "output": out.strip(), "printer": printer}
+                    job_match = re.search(r"request id is ([^\s]+)", out)
+                    submitted_job_id = job_match.group(1) if job_match else None
+                    return {"success": True, "output": out.strip(), "printer": printer, "cupsJobId": submitted_job_id}
                 except Exception as e:
                     print(f"[CUPS CLI] lp execution error: {e}. Trying pycups fallback...")
 

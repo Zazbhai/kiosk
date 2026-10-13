@@ -41,7 +41,7 @@ fi
 echo "[Start Kiosk] Waiting for display server ($DISPLAY) to become active on boot..."
 DISPLAY_READY=0
 for _i in {1..35}; do
-    if xset q >/dev/null 2>&1 || xdpyinfo >/dev/null 2>&1 || [ -n "$WAYLAND_DISPLAY" ]; then
+    if [ -e /tmp/.X11-unix/X0 ] || [ -e /tmp/.X11-unix/X1 ] || xset q >/dev/null 2>&1 || xdpyinfo >/dev/null 2>&1 || [ -n "$WAYLAND_DISPLAY" ]; then
         DISPLAY_READY=1
         echo "[Start Kiosk] Display server ($DISPLAY) is ready ✓"
         break

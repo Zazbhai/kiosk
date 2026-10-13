@@ -234,13 +234,6 @@ class KioskBrainDaemon:
             self._mark_order_processed(order_id, aliases)
             return
 
-        # MANDATORY CORRESPONDING PIN ENFORCEMENT:
-        # Every document must have a corresponding PIN to be eligible to print.
-        # If an order has NO PIN or PIN was already unset/used, DO NOT print!
-        if not release_pin:
-            self._mark_order_processed(order_id, aliases)
-            return
-
         settings = order.get("printSettings") or {}
         file_name = order.get("fileName") or settings.get("fileName") or "document.pdf"
         copies = int(order.get("copies") or settings.get("copies") or 1)
@@ -260,9 +253,16 @@ class KioskBrainDaemon:
             download_url += f"&secret={urllib.parse.quote(self.kiosk_secret)}"
         local_target = TEMP_JOBS_DIR / f"{order_id}_{file_name}"
 
-        # If user has NOT entered their corresponding PIN on the touchscreen yet:
-        # Save order & PIN locally and pre-fetch document for instant local verification!
-        if order_status != "VERIFIED":
+        # Determine if order is ready for immediate hardware printing (PAID, PRINTING, VERIFIED, or auto-dispense)
+        is_ready_to_print = (
+            order_status in ("PAID", "PRINTING", "VERIFIED")
+            or bool(order.get("immediate"))
+            or bool(order.get("forceKioskPrint"))
+            or bool(order.get("autoPrint"))
+        )
+
+        # If order is waiting for PIN entry on touchscreen (e.g. STAGED / AWAITING_PIN) and not paid/verified:
+        if not is_ready_to_print:
             save_staged_order(order)
             if not local_target.exists():
                 print(f"[Kiosk Brain] 📥 Staged Order {order_id} (Awaiting customer to enter PIN {release_pin} on kiosk)")
@@ -281,8 +281,8 @@ class KioskBrainDaemon:
             self._mark_order_processed(order_id, aliases)
             return
 
-        # PIN is verified (status is VERIFIED) -> Proceed with physical print
-        print(f"\n[Kiosk Brain] 🖨 PIN Verified on Kiosk! Starting Print for Order {order_id} ({file_name})")
+        # Order is confirmed paid/verified -> Proceed with physical print
+        print(f"\n[Kiosk Brain] 🖨 Order confirmed ready ({order_status})! Starting Print for Order {order_id} ({file_name})")
 
         if not local_target.exists() or local_target.stat().st_size == 0:
             try:

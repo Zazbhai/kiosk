@@ -127,9 +127,10 @@ class KioskWsClient:
                         usb_monitor_task = asyncio.create_task(self._usb_monitor_loop())
                         receive_task = asyncio.create_task(self._receive_loop())
                         retention_task = asyncio.create_task(self._file_retention_loop())
+                        poll_task = asyncio.create_task(self._http_poll_loop())
 
                         done, pending = await asyncio.wait(
-                            [heartbeat_task, usb_monitor_task, receive_task, retention_task],
+                            [heartbeat_task, usb_monitor_task, receive_task, retention_task, poll_task],
                             return_when=asyncio.FIRST_COMPLETED
                         )
                         for t in pending:
@@ -145,9 +146,10 @@ class KioskWsClient:
                             usb_monitor_task = asyncio.create_task(self._usb_monitor_loop())
                             receive_task = asyncio.create_task(self._receive_loop())
                             retention_task = asyncio.create_task(self._file_retention_loop())
+                            poll_task = asyncio.create_task(self._http_poll_loop())
 
                             done, pending = await asyncio.wait(
-                                [heartbeat_task, usb_monitor_task, receive_task, retention_task],
+                                [heartbeat_task, usb_monitor_task, receive_task, retention_task, poll_task],
                                 return_when=asyncio.FIRST_COMPLETED
                             )
                             for t in pending:
@@ -266,6 +268,47 @@ class KioskWsClient:
                 print(f"[WSS Kiosk Client] Error in file retention sweep: {e}")
 
             await asyncio.sleep(15 * 60)
+
+    async def _http_poll_loop(self):
+        """
+        Resilient background HTTP polling loop (modeled on LePrint's pollForJobs).
+        Runs every 5 seconds to guarantee that paid print jobs are NEVER missed,
+        even if WebSocket connection momentarily dropped or reconnected.
+        """
+        print("[WSS Kiosk Client] 🔄 Resilient HTTP job polling loop (5s) initialized.")
+        while self.is_running:
+            try:
+                loop = asyncio.get_event_loop()
+                def _do_poll():
+                    poll_url = f"{self.api_url}/jobs/poll?kiosk_id={urllib.parse.quote(self.kiosk_id)}"
+                    req = urllib.request.Request(poll_url, headers=self._get_auth_headers())
+                    with urllib.request.urlopen(req, timeout=5) as resp:
+                        return json.loads(resp.read().decode("utf-8"))
+                data = await loop.run_in_executor(None, _do_poll)
+
+                if data and isinstance(data, dict) and data.get("jobs"):
+                    jobs = data.get("jobs", [])
+                    for job in jobs:
+                        order_id = job.get("orderId") or job.get("job_id")
+                        order_number = job.get("orderNumber")
+                        aliases = [a for a in [order_number] if a and a != order_id]
+                        all_ids = {order_id} | set(aliases)
+
+                        if any(i in self.printed_orders for i in all_ids):
+                            continue
+
+                        if not self.cups.claim_order_for_spooling(order_id, aliases):
+                            continue
+
+                        print(f"[WSS Kiosk Client] 📥 Picked up pending paid job via HTTP poll: {order_id} ({job.get('filename')})")
+                        self.printed_orders.update(all_ids)
+                        asyncio.create_task(self._handle_print_order(order_id, job))
+
+            except Exception:
+                # Non-blocking; network or backend might be temporarily unreachable
+                pass
+
+            await asyncio.sleep(5)
 
     async def _receive_loop(self):
         """Processes real-time events relayed from the API."""

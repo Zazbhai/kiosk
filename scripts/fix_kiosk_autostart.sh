@@ -101,14 +101,15 @@ EOF
     fi
 fi
 
-# 6. Synchronize printbooth-display.service template with real paths
-echo "\n[5/5] Checking systemd display service..."
-if [ -f "/etc/systemd/system/printbooth-display.service" ]; then
-    echo "  Updating /etc/systemd/system/printbooth-display.service with real paths..."
+# 6. Install and synchronize systemd services with real user and paths
+echo -e "\n[5/5] Installing and updating systemd services (brain & display)..."
+if [ -f "$SCRIPT_DIR/install_services.sh" ]; then
+    bash "$SCRIPT_DIR/install_services.sh" || true
+else
     sudo sed -i -e "s|^User=.*|User=$CURRENT_USER|g" \
                 -e "s|/home/pi/printer_automation/kiosk|$KIOSK_ROOT|g" \
                 -e "s|/home/pi|$USER_HOME|g" \
-                /etc/systemd/system/printbooth-display.service 2>/dev/null || true
+                /etc/systemd/system/printbooth-display.service /etc/systemd/system/printbooth-brain.service 2>/dev/null || true
     sudo systemctl daemon-reload 2>/dev/null || true
 fi
 
