@@ -105,43 +105,45 @@ export function setKioskVariant(variant: 'pro' | 'lite') {
 }
 
 export function getKioskApiUrl(): string {
-  const isLan = typeof window !== 'undefined' && isLocalOrLanHost(window.location.hostname)
-
   if (typeof window !== 'undefined') {
+    // 1. Explicit query parameter override: ?api=... or ?apiUrl=...
     const search = new URLSearchParams(window.location.search)
     const paramApi = search.get('api') || search.get('apiUrl')
     if (paramApi && paramApi.trim()) {
       return paramApi.trim().replace(/\/+$/, '').replace(/\/api$/, '')
     }
+
+    // Purge any stale localhost/LAN IPs from localStorage to ensure perfect phone-to-kiosk cloud sync
+    try {
+      const stored = localStorage.getItem('pb_api_url')
+      if (stored && (stored.includes('192.168.') || stored.includes('localhost') || stored.includes('127.0.0.1') || stored.includes(':5000') || stored.includes(':5200'))) {
+        localStorage.removeItem('pb_api_url')
+      }
+    } catch {}
+
     const localApi = localStorage.getItem('pb_api_url')
     if (localApi && localApi.trim()) {
       const clean = localApi.trim().replace(/\/+$/, '').replace(/\/api$/, '')
-      if (clean.includes('192.168.1.4:') || (isLan && clean.includes('api.printbooth.co.in'))) {
-        try {
-          localStorage.removeItem('pb_api_url')
-        } catch {}
-      } else {
+      if (!clean.includes('192.168.') && !clean.includes('localhost') && !clean.includes('127.0.0.1')) {
         return clean
       }
     }
+
     const winApi = (window as any).__PRINTBOOTH_API_URL__
     if (winApi && typeof winApi === 'string' && winApi.trim()) {
       const clean = winApi.trim().replace(/\/+$/, '').replace(/\/api$/, '')
-      if (!clean.includes('192.168.1.4:') && !(isLan && clean.includes('api.printbooth.co.in'))) {
+      if (!clean.includes('192.168.') && !clean.includes('localhost') && !clean.includes('127.0.0.1')) {
         return clean
       }
     }
   }
+
   const envApi = import.meta.env.VITE_API_URL
-  if (envApi && typeof envApi === 'string' && envApi.trim()) {
+  if (envApi && typeof envApi === 'string' && envApi.trim() && !envApi.includes('192.168.') && !envApi.includes('localhost')) {
     return envApi.trim().replace(/\/+$/, '').replace(/\/api$/, '')
   }
-  if (typeof window !== 'undefined') {
-    const h = window.location.hostname
-    if (isLocalOrLanHost(h)) {
-      return `http://${h}:5000`
-    }
-  }
+
+  // Canonical production API used by customer phones and kiosk display
   return 'https://api.printbooth.co.in'
 }
 
