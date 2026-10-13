@@ -21,6 +21,8 @@ import {
   getKioskApiUrl,
   getKioskSiteUrl,
   getKioskQrUrl,
+  getKioskVariant,
+  setKioskVariant,
   loadKioskRuntimeConfig,
 } from '../utils/siteConfig'
 import {
@@ -28,6 +30,7 @@ import {
   parsePageRange,
 } from '../utils/printSettingsUtils'
 import KioskAdBackground from '../components/KioskAdBackground'
+import PrinterDispenseAnimation from '../components/PrinterDispenseAnimation'
 import './KioskSessionScreen.css'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -53,6 +56,18 @@ export interface DocumentPreviewPage {
   title?: string
 }
 
+export interface DocumentFileItem {
+  id?: string
+  fileName: string
+  fileSize?: number
+  fileType?: string
+  pageCount?: number
+  copies?: number
+  colour?: string
+  duplex?: string
+  previews?: DocumentPreviewPage[]
+}
+
 export interface DocumentData {
   fileName: string
   fileSize: number
@@ -62,6 +77,7 @@ export interface DocumentData {
   fileUrl?: string
   pages?: DocumentPreviewPage[]
   uploadedAt: number
+  files?: DocumentFileItem[]
 }
 
 export interface PrintSettingsData {
@@ -91,6 +107,7 @@ export interface LiveSession {
   state: SessionState
   phase?: string
   phaseStep?: number
+  kioskVariant?: 'pro' | 'lite'
   otp?: string
   orderId?: string
   fileName?: string
@@ -100,8 +117,10 @@ export interface LiveSession {
   amount?: number
   expiresAt: number
   createdAt: number
+  claimedAt?: number
   completedAt?: number
   document?: DocumentData
+  files?: DocumentFileItem[]
   settings?: PrintSettingsData
   progressData?: Record<string, any>
   upiQrValue?: string
@@ -109,6 +128,12 @@ export interface LiveSession {
   upiIntentUrl?: string
   merchantUpiId?: string
   gateway?: string
+  paymentError?: string
+  qrAmount?: number
+  lastPhoneActivityAt?: number
+  phoneDisconnected?: boolean
+  phoneDisconnectedAt?: number
+  phoneGraceRemainingSec?: number
 }
 
 // ─── Phase Metadata ──────────────────────────────────────────────────────────
@@ -130,65 +155,65 @@ const PHASES: Record<string, PhaseInfo> = {
     color: '#dc2626',
   },
   CLAIMED: {
-    label: 'Phone Connected',
+    label: 'Step 1: Phone Connected',
     sublabel: 'Smartphone connected to station • Choose files on phone',
     step: 1,
     icon: '📱',
     color: '#16a34a',
   },
   UPLOADING: {
-    label: 'Phone Connected',
+    label: 'Step 1: Uploading Files',
     sublabel: 'Selecting & uploading documents on mobile…',
     step: 1,
     icon: '📲',
     color: '#16a34a',
   },
   CONFIRMING: {
-    label: 'Confirm Doc',
+    label: 'Step 2: Confirm Doc',
     sublabel: 'Customer is reviewing document on mobile…',
     step: 2,
     icon: '📄',
     color: '#dc2626',
   },
   CONFIGURING: {
-    label: 'Settings',
+    label: 'Step 3: Settings',
     sublabel: 'Customer is configuring options on mobile…',
     step: 3,
     icon: '⚙',
     color: '#dc2626',
   },
   REVIEWING: {
-    label: 'Settings',
+    label: 'Step 4: Review Order',
     sublabel: 'Customer is reviewing order on mobile…',
-    step: 3,
+    step: 4,
     icon: '📋',
     color: '#dc2626',
   },
   PAYING: {
-    label: 'Payment',
+    label: 'Step 5: Payment',
     sublabel: 'Scan the UPI QR code below to complete your order',
-    step: 4,
+    step: 5,
     icon: '₹',
     color: '#dc2626',
   },
   OTP_READY: {
-    label: 'Enter OTP on Keypad',
+    label: 'Step 6: Enter OTP',
     sublabel: 'Your 4-digit code is shown below ↓',
-    step: 5,
+    step: 6,
     icon: '✓',
     color: '#16a34a',
   },
   PRINTING: {
-    label: 'Printing Document…',
+    label: 'Step 7: Printing',
     sublabel: 'Feeding pages into output tray below',
-    step: 6,
+    step: 7,
     icon: '🖨️',
     color: '#dc2626',
   },
   DONE: {
-    label: 'Print Complete!',
+    label: 'Complete!',
     sublabel: 'Thank you — please collect your pages from the tray',
-    step: 7,
+    step: 8,
     icon: '✓',
     color: '#16a34a',
   },
@@ -210,6 +235,7 @@ export default function KioskSessionScreen() {
       sessionId: `init-${kid}`,
       token: '',
       qrUrl: '',
+      kioskVariant: getKioskVariant(),
       state: 'QR_READY',
       phase: 'Scan QR to start uploading',
       phaseStep: 0,
@@ -218,10 +244,16 @@ export default function KioskSessionScreen() {
     }
   })
 
-  const [timeLeft, setTimeLeft] = useState(300)
+  const [_timeLeft, setTimeLeft] = useState(300)
   const [stateChanged, setStateChanged] = useState(false)
   const [isActionPending, setIsActionPending] = useState(false)
   const [activeStateOverride, setActiveStateOverride] = useState<SessionState | null>(null)
+  const [urlParamsCleared, setUrlParamsCleared] = useState(false)
+
+  // Hardware variant: PrintBooth Pro (Touch & Color) vs PrintBooth Lite (Zero-touch & Monochrome)
+  const kioskVariant: 'pro' | 'lite' = session?.kioskVariant || getKioskVariant()
+  const isLite = kioskVariant === 'lite'
+  const isPro = !isLite
 
   // Interactive UI Selection States on Touchscreen
   const [activePageIdx, setActivePageIdx] = useState(0)
@@ -230,18 +262,36 @@ export default function KioskSessionScreen() {
   const [selectedCopies, setSelectedCopies] = useState(1)
   const [selectedPageRange, setSelectedPageRange] = useState('ALL')
   const [printingProgress, setPrintingProgress] = useState(0)
+  const [touchModified, setTouchModified] = useState(false)
 
   // Enhanced & Per-Page Customization State
   const [settingsMode, setSettingsMode] = useState<'GLOBAL' | 'PER_PAGE'>('GLOBAL')
   const [nUpLayout, setNUpLayout] = useState<1 | 2 | 4>(1)
   const [duplexBinding, setDuplexBinding] = useState<'LONG_EDGE' | 'SHORT_EDGE'>('LONG_EDGE')
-  const [printDpi, setPrintDpi] = useState<'600' | '1200'>('600')
-  const [paperWeight, setPaperWeight] = useState<'75GSM' | '100GSM'>('75GSM')
+  const [failedPreviewUrls, setFailedPreviewUrls] = useState<Set<string>>(() => new Set())
+
+  useEffect(() => {
+    setFailedPreviewUrls(new Set())
+  }, [session?.sessionId, session?.document?.fileName])
+  const [_printDpi, setPrintDpi] = useState<'600' | '1200'>('600')
+  const [_paperWeight, setPaperWeight] = useState<'75GSM' | '100GSM'>('75GSM')
+  void _timeLeft
+  void _printDpi
+  void _paperWeight
   const [pageCustomizations, setPageCustomizations] = useState<Record<number, {
     colour: 'BW' | 'COLOUR'
     skipped: boolean
     orientation: 'PORTRAIT' | 'LANDSCAPE'
   }>>({})
+
+  // 5-second countdown when user goes back or exits on phone
+  const [phoneDisconnectCountdown, setPhoneDisconnectCountdown] = useState<number | null>(null)
+  const disconnectCountdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // 5-minute (300s) inactivity watchdog in each interactive section
+  const [inactivitySecondsLeft, setInactivitySecondsLeft] = useState<number>(300)
+  const lastSectionActivityTimeRef = useRef<number>(Date.now())
+  const lastActiveSectionRef = useRef<string | null>(null)
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const rotateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -303,10 +353,14 @@ export default function KioskSessionScreen() {
             resolvedQrUrl = getKioskQrUrl(kioskId, effectiveBaseUrl, resolvedToken)
           }
 
+          const resolvedVariant: 'pro' | 'lite' = s.kioskVariant || data.kioskVariant || getKioskVariant()
+          setKioskVariant(resolvedVariant)
+
           setSession({
             sessionId: s.sessionId || data.sessionId,
             token: resolvedToken,
             qrUrl: resolvedQrUrl,
+            kioskVariant: resolvedVariant,
             state: s.state || data.state || 'QR_READY',
             phase: s.phase || 'Scan QR to start uploading',
             phaseStep: s.phaseStep || 0,
@@ -327,6 +381,7 @@ export default function KioskSessionScreen() {
             upiIntentUrl: s.upiIntentUrl || data.upiIntentUrl,
             merchantUpiId: s.merchantUpiId || data.merchantUpiId,
             gateway: s.gateway || data.gateway,
+            lastPhoneActivityAt: s.lastPhoneActivityAt || data.lastPhoneActivityAt || Date.now(),
           })
           const remaining = Math.max(10, Math.floor(((data.expiresAt || (Date.now() + 300000)) - Date.now()) / 1000))
           setTimeLeft(remaining)
@@ -354,11 +409,17 @@ export default function KioskSessionScreen() {
   }, [apiUrl, kioskId, siteUrl])
 
   const clearUrlStateParam = useCallback(() => {
+    setUrlParamsCleared(true)
     if (typeof window !== 'undefined' && window.location.search) {
       const url = new URL(window.location.href)
-      if (url.searchParams.has('state') || url.searchParams.has('devState')) {
-        url.searchParams.delete('state')
-        url.searchParams.delete('devState')
+      let changed = false
+      for (const param of ['state', 'devState', 'devFiles', 'step']) {
+        if (url.searchParams.has(param)) {
+          url.searchParams.delete(param)
+          changed = true
+        }
+      }
+      if (changed) {
         window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''))
       }
     }
@@ -367,15 +428,33 @@ export default function KioskSessionScreen() {
   const handleCancelAndNewUpload = useCallback(async () => {
     clearUrlStateParam()
     setActiveStateOverride(null)
+    setPhoneDisconnectCountdown(null)
     setIsActionPending(true)
-    setSession(prev => prev ? {
-      ...prev,
+    setSession({
+      sessionId: `init-${kioskId}`,
+      token: '',
+      qrUrl: '',
+      kioskVariant: getKioskVariant(),
       state: 'QR_READY',
+      phase: 'Waiting for user to scan QR',
+      phaseStep: 0,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 300000,
       document: undefined,
       fileName: undefined,
       totalPages: undefined,
       settings: undefined,
-    } : null)
+      amount: undefined,
+      orderId: undefined,
+      otp: undefined,
+      upiQrValue: undefined,
+      paymentUrl: undefined,
+      upiIntentUrl: undefined,
+      merchantUpiId: undefined,
+      gateway: undefined,
+      phoneDisconnected: false,
+      phoneGraceRemainingSec: 0,
+    })
     setActivePageIdx(0)
     setSelectedCopies(1)
     setSelectedColour('BW')
@@ -384,15 +463,16 @@ export default function KioskSessionScreen() {
     setPrintingProgress(0)
 
     try {
-      if (session?.sessionId && !session.sessionId.startsWith('init-')) {
+      const curId = sessionRef.current?.sessionId
+      if (curId && !curId.startsWith('init-')) {
         try {
-          await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/cancel`, {
+          await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(curId)}/cancel`, {
             method: 'POST',
           })
         } catch {
           if (typeof window !== 'undefined' && window.location.origin !== apiUrl) {
             try {
-              await fetch(`/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/cancel`, {
+              await fetch(`/api/kiosk-sessions/${encodeURIComponent(curId)}/cancel`, {
                 method: 'POST',
               })
             } catch {}
@@ -403,7 +483,129 @@ export default function KioskSessionScreen() {
     } finally {
       setIsActionPending(false)
     }
-  }, [session?.sessionId, apiUrl, createSession, clearUrlStateParam])
+  }, [kioskId, apiUrl, createSession, clearUrlStateParam])
+
+  // ── 1-Minute Inactivity Auto-Reset Handler ───────────────────────────────
+  const handleInactivityExpireAndReset = useCallback(async () => {
+    clearUrlStateParam()
+    setActiveStateOverride(null)
+    setPhoneDisconnectCountdown(null)
+    setIsActionPending(true)
+    console.log('[KioskSession] ⏱️ 1-minute inactivity timeout reached in section. Expiring session and refreshing kiosk.')
+
+    const curId = sessionRef.current?.sessionId
+    if (curId && !curId.startsWith('init-')) {
+      try {
+        await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(curId)}/expire`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: '1_MIN_INACTIVITY_TIMEOUT' }),
+        }).catch(() => {})
+      } catch {}
+    }
+
+    setSession({
+      sessionId: `init-${kioskId}`,
+      token: '',
+      qrUrl: '',
+      kioskVariant: getKioskVariant(),
+      state: 'QR_READY',
+      phase: 'Waiting for user to scan QR',
+      phaseStep: 0,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 300000,
+      document: undefined,
+      fileName: undefined,
+      totalPages: undefined,
+      settings: undefined,
+      amount: undefined,
+      orderId: undefined,
+      otp: undefined,
+      upiQrValue: undefined,
+      paymentUrl: undefined,
+      upiIntentUrl: undefined,
+      merchantUpiId: undefined,
+      gateway: undefined,
+      phoneDisconnected: false,
+      phoneGraceRemainingSec: 0,
+    })
+    setActivePageIdx(0)
+    setSelectedCopies(1)
+    setSelectedColour('BW')
+    setSelectedDuplex('SINGLE')
+    setSelectedPageRange('ALL')
+    setPrintingProgress(0)
+
+    try {
+      await createSession(true)
+    } finally {
+      setIsActionPending(false)
+    }
+  }, [kioskId, apiUrl, createSession, clearUrlStateParam])
+
+  // Touch/pointer on kiosk screen resets the 1-minute timer and notifies backend
+  const recordKioskActivity = useCallback(() => {
+    lastSectionActivityTimeRef.current = Date.now()
+    setInactivitySecondsLeft(60)
+    const curId = sessionRef.current?.sessionId
+    if (curId && !curId.startsWith('init-')) {
+      fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(curId)}/activity`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'kiosk' }),
+      }).catch(() => {})
+    }
+  }, [apiUrl])
+
+  useEffect(() => {
+    window.addEventListener('pointerdown', recordKioskActivity, { passive: true })
+    window.addEventListener('keydown', recordKioskActivity, { passive: true })
+    return () => {
+      window.removeEventListener('pointerdown', recordKioskActivity)
+      window.removeEventListener('keydown', recordKioskActivity)
+    }
+  }, [recordKioskActivity])
+
+  // Reset section inactivity timer whenever state changes or updates arrive from phone
+  useEffect(() => {
+    if (!session) return
+    const curState = session.state
+    if (curState !== lastActiveSectionRef.current) {
+      lastActiveSectionRef.current = curState
+      lastSectionActivityTimeRef.current = Date.now()
+      setInactivitySecondsLeft(300)
+    } else {
+      lastSectionActivityTimeRef.current = Date.now()
+      setInactivitySecondsLeft(300)
+    }
+  }, [session?.state, session?.document, session?.settings, session?.lastPhoneActivityAt])
+
+  // Watchdog: 5-minute countdown in each interactive section
+  useEffect(() => {
+    const currentSectionState = session?.state
+    const isInteractiveSection =
+      currentSectionState === 'CLAIMED' ||
+      currentSectionState === 'UPLOADING' ||
+      currentSectionState === 'CONFIRMING' ||
+      currentSectionState === 'CONFIGURING' ||
+      currentSectionState === 'REVIEWING' ||
+      currentSectionState === 'PAYING'
+
+    if (!isInteractiveSection) return
+
+    const watchdog = setInterval(() => {
+      const elapsed = Date.now() - lastSectionActivityTimeRef.current
+      const remaining = Math.max(0, Math.ceil((300000 - elapsed) / 1000))
+      setInactivitySecondsLeft(remaining)
+
+      if (elapsed >= 300000) {
+        clearInterval(watchdog)
+        handleInactivityExpireAndReset()
+      }
+    }, 1000)
+
+    return () => clearInterval(watchdog)
+  }, [session?.state, handleInactivityExpireAndReset])
 
   const handleExecutePrint = useCallback(async () => {
     if (!session?.sessionId) return
@@ -445,6 +647,7 @@ export default function KioskSessionScreen() {
       if (rotateTimerRef.current) clearTimeout(rotateTimerRef.current)
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
       if (progressTimerRef.current) clearInterval(progressTimerRef.current)
+      if (disconnectCountdownTimerRef.current) clearInterval(disconnectCountdownTimerRef.current)
     }
   }, [createSession])
 
@@ -475,8 +678,42 @@ export default function KioskSessionScreen() {
           effectiveQrUrl = `${effectiveBaseUrl}/print?id=${encodeURIComponent(kioskId)}&session=${encodeURIComponent(effectiveToken)}`
         }
 
+        if (s.kioskVariant) {
+          setKioskVariant(s.kioskVariant)
+        }
+
+        if (s.state === 'QR_READY' || data.isInactiveTimeout || s.state === 'EXPIRED') {
+          setSession({
+            sessionId: s.sessionId || `init-${kioskId}`,
+            token: effectiveToken,
+            qrUrl: effectiveQrUrl || s.qrUrl || '',
+            kioskVariant: s.kioskVariant || getKioskVariant(),
+            state: 'QR_READY',
+            phase: s.phase || 'Waiting for user to scan QR',
+            phaseStep: 0,
+            createdAt: s.createdAt || Date.now(),
+            expiresAt: s.expiresAt || (Date.now() + 300000),
+            document: undefined,
+            fileName: undefined,
+            totalPages: undefined,
+            settings: undefined,
+            amount: undefined,
+            orderId: undefined,
+            otp: undefined,
+            upiQrValue: undefined,
+            paymentUrl: undefined,
+            upiIntentUrl: undefined,
+            merchantUpiId: undefined,
+            gateway: undefined,
+            phoneDisconnected: false,
+            phoneGraceRemainingSec: 0,
+          })
+          setPhoneDisconnectCountdown(null)
+          return
+        }
+
         setSession(prev => {
-          if (!prev) return { ...s, qrUrl: effectiveQrUrl, token: effectiveToken }
+          if (!prev) return { ...s, qrUrl: effectiveQrUrl, token: effectiveToken, kioskVariant: s.kioskVariant }
           if (prev.state !== s.state) {
             setStateChanged(true)
             setTimeout(() => setStateChanged(false), 500)
@@ -484,6 +721,10 @@ export default function KioskSessionScreen() {
           return {
             ...prev,
             ...s,
+            lastPhoneActivityAt: s.lastPhoneActivityAt || prev.lastPhoneActivityAt,
+            phoneDisconnected: s.phoneDisconnected !== undefined ? s.phoneDisconnected : prev.phoneDisconnected,
+            phoneGraceRemainingSec: s.phoneGraceRemainingSec !== undefined ? s.phoneGraceRemainingSec : prev.phoneGraceRemainingSec,
+            kioskVariant: s.kioskVariant || prev.kioskVariant,
             qrUrl: effectiveQrUrl || prev.qrUrl,
             token: effectiveToken || prev.token,
           }
@@ -498,12 +739,21 @@ export default function KioskSessionScreen() {
           }, 6000)
         }
 
-        if (s.state === 'CANCELLED') {
-          handleCancelAndNewUpload()
+        // Phone Disconnect handling: only count down if session has no document and phone truly left
+        const hasActiveDoc = Boolean(s.document)
+        const isDisconnected = Boolean(s.phoneDisconnected || data.phoneDisconnected) && !hasActiveDoc
+        const isPrePrint = s.state !== 'PRINTING' && s.state !== 'DONE' && s.state !== 'CANCELLED'
+
+        if (isPrePrint && isDisconnected) {
+          const remaining = Math.max(1, s.phoneGraceRemainingSec || data.phoneGraceRemainingSec || 15)
+          setPhoneDisconnectCountdown(prev => (prev === null ? remaining : Math.min(prev, remaining)))
+        } else if (!isDisconnected || hasActiveDoc || !data.phoneDisconnected) {
+          setPhoneDisconnectCountdown(null)
         }
 
-        if (data.isExpired && s.state === 'QR_READY') {
-          createSession(true)
+        if (s.state === 'CANCELLED' || data.isPhoneInactive || data.isPhoneDisconnectedExpired) {
+          setPhoneDisconnectCountdown(null)
+          handleCancelAndNewUpload()
         }
       } catch {}
     }
@@ -515,27 +765,81 @@ export default function KioskSessionScreen() {
     }
   }, [apiUrl, kioskId, siteUrl, createSession, handleCancelAndNewUpload])
 
-  // ── Countdown Timer ───────────────────────────────────────────────────────
-
+  // ── Phone Disconnect 5-Second Countdown Ticker ───────────────────────────
   useEffect(() => {
-    if (!session || session.state !== 'QR_READY') return
-    const t = setInterval(() => {
-      setTimeLeft(tl => Math.max(0, tl - 1))
-    }, 1000)
-    return () => clearInterval(t)
-  }, [session?.state])
-
-  useEffect(() => {
-    if (timeLeft === 0 && session?.state === 'QR_READY') {
-      createSession()
+    if (phoneDisconnectCountdown === null) {
+      if (disconnectCountdownTimerRef.current) {
+        clearInterval(disconnectCountdownTimerRef.current)
+        disconnectCountdownTimerRef.current = null
+      }
+      return
     }
-  }, [timeLeft, session?.state, createSession])
+
+    if (phoneDisconnectCountdown <= 0) {
+      console.log('[KioskSessionScreen] ⏱️ Phone disconnect 5s countdown elapsed. Resetting kiosk session.')
+      setPhoneDisconnectCountdown(null)
+      handleCancelAndNewUpload()
+      return
+    }
+
+    if (!disconnectCountdownTimerRef.current) {
+      disconnectCountdownTimerRef.current = setInterval(() => {
+        setPhoneDisconnectCountdown(prev => {
+          if (prev === null) return null
+          return Math.max(0, prev - 1)
+        })
+      }, 1000)
+    }
+
+    return () => {
+      if (disconnectCountdownTimerRef.current) {
+        clearInterval(disconnectCountdownTimerRef.current)
+        disconnectCountdownTimerRef.current = null
+      }
+    }
+  }, [phoneDisconnectCountdown, handleCancelAndNewUpload])
+
+  // ── Phone Inactivity Timer (1-minute timeout strictly from phone touch inactivity) ──
+  // Auto reverts to the "Print from your phone" QR upload page after user didn't touch
+  // anything on their phone for 1 minute (60 seconds).
+  // CRITICAL REQUIREMENT: Touching or tapping the kiosk display must NEVER reset or postpone
+  // this timer! Only user touch/interaction on the paired phone resets the timer.
+  useEffect(() => {
+    if (!session) return
+    const isPrePrintState = session.state !== 'QR_READY' &&
+                            session.state !== 'PRINTING' &&
+                            session.state !== 'DONE' &&
+                            session.state !== 'CANCELLED'
+    if (!isPrePrintState) return
+
+    const checkPhoneInactivity = () => {
+      const cur = sessionRef.current
+      if (!cur) return
+      const isStillPrePrint = cur.state !== 'QR_READY' &&
+                              cur.state !== 'PRINTING' &&
+                              cur.state !== 'DONE' &&
+                              cur.state !== 'CANCELLED'
+      if (!isStillPrePrint) return
+
+      const maxInactivityMs = 300000 // 5 minutes
+      const lastPhone = cur.lastPhoneActivityAt || cur.claimedAt || cur.createdAt
+      if (lastPhone && (Date.now() - lastPhone >= maxInactivityMs)) {
+        console.log(`[KioskSessionScreen] ⏱️ Session inactivity reached (5 min). Returning to upload from your phone page.`)
+        handleCancelAndNewUpload()
+      }
+    }
+
+    const timer = setInterval(checkPhoneInactivity, 1000)
+    return () => clearInterval(timer)
+  }, [session?.state, handleCancelAndNewUpload])
 
   // ── Sync Settings from Session ───────────────────────────────────────────
 
   useEffect(() => {
     if (session?.settings) {
-      if (session.settings.colour) setSelectedColour(session.settings.colour)
+      if (session.settings.colour) {
+        setSelectedColour(isLite ? 'BW' : session.settings.colour)
+      }
       if (session.settings.duplex) setSelectedDuplex(session.settings.duplex)
       if (session.settings.copies) setSelectedCopies(session.settings.copies)
       if (session.settings.pageRange) setSelectedPageRange(session.settings.pageRange)
@@ -546,9 +850,16 @@ export default function KioskSessionScreen() {
       if (session.settings.paperWeight) setPaperWeight(session.settings.paperWeight as any)
       if (session.settings.pageCustomizations) setPageCustomizations(session.settings.pageCustomizations as any)
     } else if (session?.colourMode) {
-      setSelectedColour(session.colourMode === 'COLOUR' ? 'COLOUR' : 'BW')
+      setSelectedColour(isLite ? 'BW' : (session.colourMode === 'COLOUR' ? 'COLOUR' : 'BW'))
     }
-  }, [session?.settings, session?.colourMode])
+  }, [session?.settings, session?.colourMode, isLite])
+
+  // Strictly enforce B&W monochrome on Lite kiosks
+  useEffect(() => {
+    if (isLite && selectedColour !== 'BW') {
+      setSelectedColour('BW')
+    }
+  }, [isLite, selectedColour])
 
   // ── Dynamic Pricing Calculation with Per-Page & Eco Savings ───────────────
 
@@ -591,20 +902,20 @@ export default function KioskSessionScreen() {
     const sheetsPerCopy = Math.max(1, Math.ceil(includedPages / pagesPerSheet))
     const totalSheets = sheetsPerCopy * selectedCopies
 
-    // Rates dynamically derived from live station pricing
+    // Rates dynamically derived from live station pricing matching customer mobile app
     const isDouble = selectedDuplex === 'DOUBLE'
-    const bwRate = isDouble ? (pricing.bwDouble / 2) : pricing.bwSingle
-    const colourRate = isDouble ? (pricing.colorDouble / 2) : pricing.colorSingle
+    let baseCost = 0
+    if (selectedColour === 'COLOUR') {
+      const sheets = isDouble ? Math.max(1, Math.ceil(includedPages / 2)) : includedPages
+      const rate = isDouble ? pricing.colorDouble : pricing.colorSingle
+      baseCost = sheets * rate
+    } else {
+      const sheets = isDouble ? Math.max(1, Math.ceil(includedPages / 2)) : includedPages
+      const rate = isDouble ? pricing.bwDouble : pricing.bwSingle
+      baseCost = sheets * rate
+    }
 
-    // Multipliers
-    const dpiMultiplier = printDpi === '1200' ? 1.2 : 1.0
-    const paperSurcharge = paperWeight === '100GSM' ? 1.0 : 0.0
-
-    // Subtotal
-    const baseCostPerCopy = (bwCount * bwRate) + (colourCount * colourRate)
-    const paperCostPerCopy = sheetsPerCopy * paperSurcharge
-    const subtotalPerCopy = (baseCostPerCopy * dpiMultiplier) + paperCostPerCopy
-    const calculatedTotal = Math.max(2, Math.round(subtotalPerCopy * selectedCopies))
+    const calculatedTotal = Math.max(1, Math.round(baseCost * selectedCopies * 100) / 100)
 
     // Sheets saved vs standard simplex 1-Up
     const standardSheets = includedPages * selectedCopies
@@ -621,25 +932,170 @@ export default function KioskSessionScreen() {
       calculatedTotal,
       savedSheets,
       savedPercentage,
-      bwRate,
-      colourRate,
+      bwRate: isDouble ? pricing.bwDouble : pricing.bwSingle,
+      colourRate: isDouble ? pricing.colorDouble : pricing.colorSingle,
       pricing,
     }
-  }, [pageCount, pageCustomizations, settingsMode, selectedColour, selectedDuplex, nUpLayout, selectedCopies, printDpi, paperWeight, selectedPageRange])
+  }, [pageCount, pageCustomizations, settingsMode, selectedColour, selectedDuplex, nUpLayout, selectedCopies, selectedPageRange])
 
-  const totalAmount = pageDetails.calculatedTotal
+  // Reset touch override whenever phone updates the session amount
+  useEffect(() => {
+    if (session?.amount || session?.settings?.totalAmount) {
+      setTouchModified(false)
+    }
+  }, [session?.amount, session?.settings?.totalAmount])
+
+  // Priority: Always honor the customer's phone order amount down to the exact paise unless actively changed on kiosk screen
+  const sessionSettingsAmount = (session?.settings as any)?.amount
+  const sessionReportedAmount = (typeof session?.amount === 'number' && session.amount > 0)
+    ? session.amount
+    : (typeof session?.settings?.totalAmount === 'number' && session.settings.totalAmount > 0)
+      ? session.settings.totalAmount
+      : (typeof sessionSettingsAmount === 'number' && sessionSettingsAmount > 0)
+        ? sessionSettingsAmount
+        : null
+
+  const totalAmount = (!touchModified && sessionReportedAmount !== null)
+    ? sessionReportedAmount
+    : pageDetails.calculatedTotal
   const calculatedSheets = pageDetails.sheetsPerCopy
+
+  // ── Progress Sync & Pro Touchscreen Handlers ────────────────────────────
+
+  const syncProgress = useCallback(async (updates: {
+    state?: SessionState
+    phase?: string
+    phaseStep?: number
+    settings?: any
+    copies?: number
+    colourMode?: string
+    amount?: number
+  }) => {
+    if (!session?.sessionId || session.sessionId.startsWith('init-')) return
+    try {
+      await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/progress`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+    } catch (err) {
+      console.warn('[KioskSession] Failed to sync progress:', err)
+    }
+  }, [session?.sessionId, apiUrl])
+
+  const handleProColourChange = useCallback((mode: 'BW' | 'COLOUR') => {
+    if (isLite) return
+    setTouchModified(true)
+    setSelectedColour(mode)
+    syncProgress({
+      colourMode: mode,
+      settings: {
+        ...session?.settings,
+        colour: mode,
+        duplex: selectedDuplex,
+        copies: selectedCopies,
+        totalAmount: pageDetails.calculatedTotal,
+      },
+    })
+  }, [isLite, selectedDuplex, selectedCopies, pageDetails.calculatedTotal, session?.settings, syncProgress])
+
+  const handleProDuplexChange = useCallback((duplex: 'SINGLE' | 'DOUBLE') => {
+    setTouchModified(true)
+    setSelectedDuplex(duplex)
+    syncProgress({
+      settings: {
+        ...session?.settings,
+        colour: selectedColour,
+        duplex,
+        copies: selectedCopies,
+        totalAmount: pageDetails.calculatedTotal,
+      },
+    })
+  }, [selectedColour, selectedCopies, pageDetails.calculatedTotal, session?.settings, syncProgress])
+
+  const handleProCopiesChange = useCallback((delta: number) => {
+    setTouchModified(true)
+    const next = Math.max(1, Math.min(50, selectedCopies + delta))
+    setSelectedCopies(next)
+    syncProgress({
+      copies: next,
+      settings: {
+        ...session?.settings,
+        colour: selectedColour,
+        duplex: selectedDuplex,
+        copies: next,
+        totalAmount: pageDetails.calculatedTotal,
+      },
+    })
+  }, [selectedCopies, selectedColour, selectedDuplex, pageDetails.calculatedTotal, session?.settings, syncProgress])
+
+  const handleProConfirmAndNext = useCallback(() => {
+    setActiveStateOverride(null)
+    setSession(prev => prev ? { ...prev, state: 'CONFIGURING' } : null)
+    syncProgress({
+      state: 'CONFIGURING',
+      phase: 'Print Settings on Touchscreen',
+      phaseStep: 3,
+    })
+  }, [syncProgress])
+
+  const handleProProceedToReview = useCallback(() => {
+    setActiveStateOverride(null)
+    setSession(prev => prev ? { ...prev, state: 'REVIEWING' } : null)
+    syncProgress({
+      state: 'REVIEWING',
+      phase: 'Reviewing Order on Touchscreen',
+      phaseStep: 3,
+      amount: totalAmount,
+      settings: {
+        ...session?.settings,
+        colour: selectedColour,
+        duplex: selectedDuplex,
+        copies: selectedCopies,
+        totalAmount,
+      },
+    })
+  }, [totalAmount, selectedColour, selectedDuplex, selectedCopies, session?.settings, syncProgress])
+
+  const handleProProceedToPayment = useCallback(() => {
+    setActiveStateOverride(null)
+    setSession(prev => prev ? { ...prev, state: 'PAYING' } : null)
+    syncProgress({
+      state: 'PAYING',
+      phase: `Scan UPI QR to Pay ₹${totalAmount.toFixed(2)}`,
+      phaseStep: 4,
+      amount: totalAmount,
+    })
+  }, [totalAmount, syncProgress])
+
+  const handleProBackToSettings = useCallback(() => {
+    setActiveStateOverride(null)
+    setSession(prev => prev ? { ...prev, state: 'CONFIGURING', upiQrValue: '', upiIntentUrl: '', paymentUrl: '', qrAmount: undefined } : null)
+    syncProgress({
+      state: 'CONFIGURING',
+      phase: 'Configuring Print Settings',
+      phaseStep: 3,
+    })
+  }, [syncProgress])
+
+  const handleProBackToDoc = useCallback(() => {
+    setActiveStateOverride(null)
+    setSession(prev => prev ? { ...prev, state: 'CONFIRMING', upiQrValue: '', upiIntentUrl: '', paymentUrl: '', qrAmount: undefined } : null)
+    syncProgress({
+      state: 'CONFIRMING',
+      phase: 'Confirming Document on Kiosk',
+      phaseStep: 2,
+    })
+  }, [syncProgress])
 
   // ── Derived State ────────────────────────────────────────────────────────
 
-  const searchParamState = typeof window !== 'undefined'
+  const searchParamState = typeof window !== 'undefined' && !urlParamsCleared
     ? (new URLSearchParams(window.location.search).get('devState') || new URLSearchParams(window.location.search).get('state')) as SessionState | null
     : null
   const rawState = activeStateOverride || searchParamState || session?.state || 'QR_READY'
-  // If document was uploaded, but backend state is still transitioning, show CONFIRMING
-  const state: SessionState = (rawState === 'CLAIMED' || rawState === 'UPLOADING') && session?.document
-    ? 'CONFIRMING'
-    : rawState
+  // Accurately mirror the mobile user's exact flow step without premature jumping
+  const state: SessionState = rawState
 
   const phase = PHASES[state || 'QR_READY'] || PHASES.QR_READY
   const isWaiting = state === 'QR_READY'
@@ -664,11 +1120,89 @@ export default function KioskSessionScreen() {
     return ''
   }, [session?.qrUrl, session?.token, siteUrl, kioskId])
 
+
   // Current document and previews
   const doc = session?.document
   const docFileName = doc?.fileName || session?.fileName || 'Document.pdf'
-  const docPages = doc?.pages || []
-  const activePageUrl = docPages[activePageIdx]?.url || docPages[0]?.url
+  const docFiles: DocumentFileItem[] = useMemo(() => {
+    if (doc?.files && doc.files.length > 0) return doc.files
+    if (session?.files && session.files.length > 0) return session.files
+    if (typeof window !== 'undefined' && !urlParamsCleared && new URLSearchParams(window.location.search).get('devFiles')) {
+      const count = Number(new URLSearchParams(window.location.search).get('devFiles')) || 2
+      return Array.from({ length: count }).map((_, i) => ({
+        id: `dev-file-${i + 1}`,
+        fileName: i === 0 ? 'Project_Report_Final.pdf' : i === 1 ? 'Presentation_Deck.pdf' : `Annexure_${i + 1}.pdf`,
+        fileSize: 1024 * 1024 * (i + 1),
+        fileType: 'pdf',
+        pageCount: (i + 1) * 2,
+      }))
+    }
+    return []
+  }, [doc?.files, session?.files, urlParamsCleared])
+  // Collect all available preview pages from document or sub-files
+  const docPages = useMemo(() => {
+    const resolveUrl = (u?: string) => {
+      if (!u || !u.trim()) return ''
+      return u.startsWith('/api') ? `${apiUrl}${u}` : u
+    }
+
+    // 1. Check doc.pages with valid URLs
+    const validDocPages = (doc?.pages || [])
+      .filter(p => p && typeof p.url === 'string' && p.url.trim().length > 0)
+      .map(p => ({
+        ...p,
+        url: resolveUrl(p.url),
+      }))
+
+    if (validDocPages.length > 0) {
+      return validDocPages
+    }
+
+    // 2. Fallback: check files array previews
+    if (docFiles && docFiles.length > 0) {
+      const collected: Array<{ pageNumber: number; url: string; title?: string }> = []
+      for (const f of docFiles) {
+        if (f.previews && f.previews.length > 0) {
+          for (const p of f.previews) {
+            if (p && typeof p.url === 'string' && p.url.trim().length > 0) {
+              collected.push({
+                ...p,
+                url: resolveUrl(p.url),
+              })
+            }
+          }
+        }
+      }
+      if (collected.length > 0) return collected
+    }
+
+    // 3. Fallback: if document has fileUrl or is an image file
+    const isImage = /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(docFileName) ||
+      Boolean(doc?.fileUrl && /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(doc.fileUrl))
+
+    if (isImage) {
+      const directUrl = doc?.fileUrl
+        ? resolveUrl(doc.fileUrl)
+        : (session?.sessionId && !session.sessionId.startsWith('init-') ? `${apiUrl}/api/kiosk-sessions/${session.sessionId}/file` : '')
+      if (directUrl) {
+        return [{ pageNumber: 1, url: directUrl, title: docFileName }]
+      }
+    }
+
+    // 4. If doc.pages exists but URLs were empty, preserve structure for page labels
+    if (doc?.pages && doc.pages.length > 0) {
+      return doc.pages.map((p, idx) => ({
+        pageNumber: p.pageNumber || idx + 1,
+        url: resolveUrl(p.url),
+        title: p.title || `Page ${idx + 1}`,
+      }))
+    }
+
+    return []
+  }, [doc?.pages, docFiles, doc?.fileUrl, docFileName, apiUrl, session?.sessionId])
+
+  const activePageUrl = docPages[activePageIdx]?.url || docPages[0]?.url || ''
+  const activePageTitle = docPages[activePageIdx]?.title || `Page ${activePageIdx + 1} of ${pageCount}`
 
   // Auto-cycle through document pages smoothly on zero-touch kiosk display
   useEffect(() => {
@@ -685,39 +1219,63 @@ export default function KioskSessionScreen() {
   // Dynamic UPI URL for payment QR code generated by merchant UPI Express key
   const effectiveOrderId = session?.orderId || `ORD-${Date.now().toString().slice(-6)}`
   const upiQrValue = useMemo(() => {
-    if (session?.upiQrValue) return session.upiQrValue
-    if (session?.upiIntentUrl) return session.upiIntentUrl
-    if (session?.paymentUrl) return session.paymentUrl
-    const vpa = session?.merchantUpiId || 'printbooth@okaxis'
-    return `upi://pay?pa=${encodeURIComponent(vpa)}&pn=${encodeURIComponent(kioskName)}&am=${totalAmount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(effectiveOrderId)}`
-  }, [session?.upiQrValue, session?.upiIntentUrl, session?.paymentUrl, session?.merchantUpiId, kioskName, totalAmount, effectiveOrderId])
-
-  // If in PAYING state but UPI Express QR is not yet populated, auto-request it
-  useEffect(() => {
-    if (state === 'PAYING' && session?.sessionId && !session?.upiQrValue && !session.sessionId.startsWith('init-')) {
-      fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(session.sessionId)}/pay`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: totalAmount }),
-      })
-        .then(r => r.json())
-        .then(data => {
-          if (data && data.success && (data.upiQrValue || data.session?.upiQrValue)) {
-            setSession(prev => prev ? {
-              ...prev,
-              orderId: data.orderId || prev.orderId,
-              otp: data.otp || prev.otp,
-              upiQrValue: data.upiQrValue || data.session?.upiQrValue,
-              paymentUrl: data.paymentUrl || data.session?.paymentUrl,
-              upiIntentUrl: data.upiIntentUrl || data.session?.upiIntentUrl,
-              merchantUpiId: data.merchantUpiId || data.session?.merchantUpiId,
-              gateway: data.session?.gateway || 'upiexpress',
-            } : null)
-          }
-        })
-        .catch(() => {})
+    // If previous QR was generated for an older amount and current totalAmount changed, invalidate it
+    if (session?.qrAmount && totalAmount && Math.abs(session.qrAmount - totalAmount) > 0.25) {
+      return ''
     }
-  }, [state, session?.sessionId, session?.upiQrValue, apiUrl, totalAmount])
+    // Strictly prioritize the dynamic upiintent string provided by UPI Express API without modifying it (matching test.py)
+    const intent = session?.upiIntentUrl || session?.upiQrValue
+    if (intent && typeof intent === 'string' && intent.trim().startsWith('upi://')) {
+      return intent.trim()
+    }
+    if (session?.paymentUrl && typeof session.paymentUrl === 'string' && session.paymentUrl.trim().startsWith('upi://')) {
+      return session.paymentUrl.trim()
+    }
+    // Return empty string so loading state renders until real UPI Express order is created
+    return ''
+  }, [session?.upiQrValue, session?.upiIntentUrl, session?.paymentUrl, session?.qrAmount, totalAmount])
+
+  // If in PAYING state, check if QR needs to be generated or regenerated (if amount changed)
+  useEffect(() => {
+    if (state === 'PAYING') {
+      const isQrValidForAmount = Boolean(upiQrValue) && Boolean(session?.qrAmount) && Math.abs((session?.qrAmount ?? 0) - totalAmount) <= 0.25
+      if (!isQrValidForAmount) {
+        const activeSessionId = session?.sessionId || `init-${kioskId}`
+        fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(activeSessionId)}/pay`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ amount: totalAmount, kioskId }),
+        })
+          .then(r => r.json())
+          .then(data => {
+            if (data && data.success) {
+              const rawIntent = data.upiIntentUrl || data.upiQrValue || data.session?.upiIntentUrl || data.session?.upiQrValue
+              setSession(prev => prev ? {
+                ...prev,
+                orderId: data.orderId || data.session?.orderId || prev.orderId,
+                otp: data.otp || data.session?.otp || prev.otp,
+                amount: data.amount ?? totalAmount,
+                qrAmount: data.amount ?? totalAmount,
+                upiQrValue: rawIntent,
+                paymentUrl: data.paymentUrl || data.session?.paymentUrl,
+                upiIntentUrl: rawIntent,
+                gateway: data.session?.gateway || data.gateway || 'upiexpress',
+                paymentError: undefined,
+              } : null)
+            } else if (data && data.error) {
+              setSession(prev => prev ? {
+                ...prev,
+                paymentError: data.error,
+                upiQrValue: '',
+                upiIntentUrl: '',
+                qrAmount: undefined,
+              } : null)
+            }
+          })
+          .catch(() => {})
+      }
+    }
+  }, [state, upiQrValue, session?.sessionId, session?.qrAmount, session?.amount, totalAmount, kioskId, apiUrl])
 
   // Automatically poll UPI Express order status every 2.5 seconds while customer pays
   useEffect(() => {
@@ -756,13 +1314,14 @@ export default function KioskSessionScreen() {
     }
   }, [state, effectiveOrderId, kioskId, apiUrl, handleExecutePrint, isActionPending])
 
-  const renderStepTabs = (currentStep: 'upload' | 'confirm' | 'settings' | 'payment') => {
+  const renderStepTabs = (currentStep: 'upload' | 'confirm' | 'settings' | 'review' | 'payment') => {
     const isStep1Connected = state === 'CLAIMED' || state === 'UPLOADING'
     const steps = [
-      { id: 'upload', num: 1, label: isStep1Connected ? 'Phone Connected' : 'Upload' },
+      { id: 'upload', num: 1, label: isStep1Connected ? 'Device Connected' : 'Upload' },
       { id: 'confirm', num: 2, label: 'Confirm Doc' },
       { id: 'settings', num: 3, label: 'Settings' },
-      { id: 'payment', num: 4, label: 'Payment' },
+      { id: 'review', num: 4, label: 'Review Order' },
+      { id: 'payment', num: 5, label: 'Payment' },
     ]
     const currentIdx = steps.findIndex(s => s.id === currentStep)
 
@@ -788,26 +1347,45 @@ export default function KioskSessionScreen() {
   const renderDocumentPreviewBox = () => (
     <div className="ks-flow-left">
       <div className="ks-preview-wrap">
-        {activePageUrl ? (
+        {activePageUrl && !failedPreviewUrls.has(activePageUrl) ? (
           <img
             src={activePageUrl}
-            alt={`Page ${activePageIdx + 1} of ${pageCount}`}
+            alt={activePageTitle}
             className="ks-preview-img"
+            onError={() => {
+              setFailedPreviewUrls(prev => new Set(prev).add(activePageUrl))
+            }}
           />
         ) : (
           <div className="ks-preview-canvas">
             <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', paddingBottom: 8 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: '#dc2626' }}>PRINTBOOTH VERIFIED</span>
-              <span style={{ fontSize: 11, color: '#64748b' }}>PAGE {activePageIdx + 1} OF {pageCount}</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 36 }}>📄</span>
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#09090b', textAlign: 'center', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {docFileName}
+              <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>
+                {docFiles.length > 1 ? `${docFiles.length} FILES • ${pageCount} PAGES` : `PAGE ${activePageIdx + 1} OF ${pageCount}`}
               </span>
             </div>
+            {docFiles.length > 1 ? (
+              <div className="ks-multifile-preview-list">
+                {docFiles.map((f, idx) => (
+                  <div key={idx} className="ks-multifile-preview-item">
+                    <span className="ks-multifile-preview-icon">📄</span>
+                    <div className="ks-multifile-preview-info">
+                      <span className="ks-multifile-preview-title" title={f.fileName}>{f.fileName}</span>
+                      <span className="ks-multifile-preview-meta">{f.pageCount || 1} {f.pageCount === 1 ? 'page' : 'pages'}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 36 }}>📄</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#09090b', textAlign: 'center', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {docFileName}
+                </span>
+              </div>
+            )}
             <div style={{ width: '100%', fontSize: 10, color: '#94a3b8', textAlign: 'center', borderTop: '1px solid #f1f5f9', paddingTop: 6 }}>
-              A4 Paper Size • Standard 75GSM
+              {docFiles.length > 1 ? `A4 Paper Size • Standard 75GSM • ${docFiles.length} Documents Selected` : 'A4 Paper Size • Standard 75GSM'}
             </div>
           </div>
         )}
@@ -815,29 +1393,65 @@ export default function KioskSessionScreen() {
         {/* Floating Page Badge */}
         <div className="ks-preview-page-badge">
           <span className="ks-auto-cycle-dot" />
-          <span>Page {activePageIdx + 1} of {pageCount}</span>
+          <span>{docPages[activePageIdx]?.title || (docFiles.length > 1 ? `${docFiles.length} Files • Page ${activePageIdx + 1} of ${pageCount}` : `Page ${activePageIdx + 1} of ${pageCount}`)}</span>
         </div>
       </div>
+
+      {/* Pro Touchscreen Navigation Bar */}
+      {isPro && pageCount > 1 && (
+        <div className="ks-preview-nav-bar">
+          <button
+            type="button"
+            className="ks-preview-nav-btn"
+            disabled={activePageIdx === 0}
+            onClick={() => setActivePageIdx(p => Math.max(0, p - 1))}
+          >
+            ◀ Prev
+          </button>
+          <span className="ks-preview-nav-text">Page {activePageIdx + 1} of {pageCount}</span>
+          <button
+            type="button"
+            className="ks-preview-nav-btn"
+            disabled={activePageIdx >= pageCount - 1}
+            onClick={() => setActivePageIdx(p => Math.min(pageCount - 1, p + 1))}
+          >
+            Next ▶
+          </button>
+        </div>
+      )}
 
       {/* Horizontal thumbnail gallery of all uploaded pages */}
       {pageCount > 1 && (
         <div className="ks-gallery-strip">
           {Array.from({ length: pageCount }).map((_, idx) => {
             const thumbUrl = docPages[idx]?.url
+            const pageTitle = docPages[idx]?.title || `Page ${idx + 1}`
             const isActive = idx === activePageIdx
             return (
               <div
                 key={idx}
                 className={`ks-gallery-thumb-item ${isActive ? 'ks-gallery-thumb-item--active' : ''}`}
+                onClick={isPro ? () => setActivePageIdx(idx) : undefined}
+                style={{ cursor: isPro ? 'pointer' : 'default' }}
+                title={isPro ? `Touch to view ${pageTitle}` : undefined}
               >
                 <div className="ks-gallery-thumb-img-wrap">
-                  {thumbUrl ? (
-                    <img src={thumbUrl} alt={`Page ${idx + 1}`} className="ks-gallery-thumb-img" />
+                  {thumbUrl && !failedPreviewUrls.has(thumbUrl) ? (
+                    <img
+                      src={thumbUrl}
+                      alt={pageTitle}
+                      className="ks-gallery-thumb-img"
+                      onError={() => {
+                        setFailedPreviewUrls(prev => new Set(prev).add(thumbUrl))
+                      }}
+                    />
                   ) : (
                     <span style={{ fontSize: 14 }}>📄</span>
                   )}
                 </div>
-                <span className="ks-gallery-thumb-num">P.{idx + 1}</span>
+                <span className="ks-gallery-thumb-num" title={pageTitle}>
+                  {docPages[idx]?.title && docPages[idx].title!.length <= 8 ? docPages[idx].title : `P.${idx + 1}`}
+                </span>
               </div>
             )
           })}
@@ -848,24 +1462,62 @@ export default function KioskSessionScreen() {
 
   return (
     <div className="ks-root">
+      {/* ── Kiosk Moving Advertisement Background (Strictly on upload from your phone page) ── */}
+      {isWaiting && <KioskAdBackground kioskId={kioskId} />}
+
       {/* Ambient Red & White Mesh Lighting */}
       <div className="ks-bg-mesh" />
+
+      {/* ── 5-Second Phone Disconnect Grace Warning Banner ── */}
+      {phoneDisconnectCountdown !== null && phoneDisconnectCountdown > 0 && !isWaiting && state !== 'PRINTING' && state !== 'DONE' && (
+        <aside className="ks-phone-disconnect-banner" role="alert" aria-live="assertive">
+          <div className="ks-phone-disconnect-content">
+            <div className="ks-phone-disconnect-badge">
+              <span className="ks-phone-disconnect-pulse" />
+              <span>📱 PHONE DISCONNECTED</span>
+            </div>
+            <div className="ks-phone-disconnect-message">
+              User exited on phone. Refreshing kiosk in{' '}
+              <strong className="ks-phone-disconnect-timer">{phoneDisconnectCountdown}s</strong>...
+            </div>
+            <div className="ks-phone-disconnect-actions">
+              <button
+                type="button"
+                className="ks-phone-disconnect-btn ks-phone-disconnect-btn--keep"
+                onClick={() => setPhoneDisconnectCountdown(null)}
+              >
+                Keep Session
+              </button>
+              <button
+                type="button"
+                className="ks-phone-disconnect-btn ks-phone-disconnect-btn--reset"
+                onClick={() => {
+                  setPhoneDisconnectCountdown(null)
+                  handleCancelAndNewUpload()
+                }}
+              >
+                Reset Now
+              </button>
+            </div>
+          </div>
+        </aside>
+      )}
 
       {/* Top Status Bar */}
       <header className="ks-topbar">
         <div className="ks-topbar-pill">
           <img src="/logo.png" alt="PrintBooth" style={{ width: 18, height: 18, objectFit: 'contain' }} />
           <span className="ks-topbar-dot" />
-          <span>{kioskId} • {kioskName}</span>
+          <span>{kioskName || kioskId}</span>
         </div>
-        {isConnectedOrAbove && (
-          <div className="ks-topbar-right-group">
+        <div className="ks-topbar-right-group" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {isConnectedOrAbove && (
             <div className="ks-topbar-pill ks-topbar-right">
               <span className="ks-topbar-state-dot" style={{ background: phase.color }} />
               <span style={{ color: phase.color, fontWeight: 700 }}>{phase.label}</span>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </header>
 
       {/* Main Container */}
@@ -874,7 +1526,6 @@ export default function KioskSessionScreen() {
         {/* ── STEP 0: IDLE QR Code Display (Scanner in Middle, Zero Buttons) ── */}
         {isWaiting && (
           <>
-            <KioskAdBackground kioskId={kioskId} />
             <div className="ks-qr-panel ks-qr-panel--centered">
               <div className="ks-qr-center-box">
                 <div className="ks-qr-header">
@@ -902,23 +1553,33 @@ export default function KioskSessionScreen() {
                   )}
                 </div>
 
-                {/* Unique Session Active verification badge */}
+                {/* Clean Scan Prompt */}
                 {session?.token && session.token !== 'init' && (
-                  <div style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '4px 12px',
-                    borderRadius: 999,
-                    background: 'rgba(22, 163, 74, 0.08)',
-                    border: '1px solid rgba(22, 163, 74, 0.2)',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: '#16a34a',
-                    marginTop: -6,
-                  }}>
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a' }} />
-                    <span>Unique Session Active</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '6px 16px',
+                      borderRadius: 999,
+                      background: 'rgba(255, 255, 255, 0.95)',
+                      border: '1px solid #e2e8f0',
+                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: '#0f172a',
+                      fontFamily: 'var(--ks-font)',
+                    }}>
+                      <span style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: '#16a34a',
+                        boxShadow: '0 0 6px #16a34a',
+                        display: 'inline-block',
+                      }} />
+                      <span>Scan with phone camera to start</span>
+                    </div>
                   </div>
                 )}
               </div>
@@ -926,97 +1587,89 @@ export default function KioskSessionScreen() {
           </>
         )}
 
-        {/* ── STEP 1: Phone Connected & Uploading State ── */}
-        {(state === 'CLAIMED' || state === 'UPLOADING') && !doc && (
-          <div className="ks-flow-panel" style={{ width: '100%', maxWidth: '820px' }}>
-            <div className="ks-interactive-panel" style={{ width: '100%' }}>
-              {renderStepTabs('upload')}
-              <div style={{ padding: '44px 28px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 20 }}>
-                {/* Connected Badge */}
-                <div style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '6px 16px',
-                  borderRadius: 999,
-                  background: 'rgba(22, 163, 74, 0.1)',
-                  border: '1px solid rgba(22, 163, 74, 0.25)',
-                  color: '#16a34a',
-                  fontSize: 13,
-                  fontWeight: 700,
-                  letterSpacing: '0.04em',
-                  textTransform: 'uppercase',
-                }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#16a34a', boxShadow: '0 0 10px #16a34a' }} />
-                  <span>Phone Connected • Station {kioskId}</span>
-                </div>
-
-                {/* Animated Graphic */}
-                <div className="ks-phase-icon-wrap" style={{
-                  background: 'linear-gradient(135deg, rgba(22, 163, 74, 0.12), rgba(220, 38, 38, 0.08))',
-                  border: '1.5px solid rgba(22, 163, 74, 0.25)',
-                  color: '#16a34a',
-                  width: 80,
-                  height: 80,
-                  borderRadius: 22,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 8px 24px rgba(22, 163, 74, 0.12)',
-                }}>
-                  <span style={{ fontSize: 40 }}>📱</span>
-                </div>
-
-                <div>
-                  <h2 style={{ fontSize: 28, fontWeight: 800, color: '#09090b', margin: '0 0 8px', letterSpacing: '-0.025em' }}>
-                    Phone Connected!
-                  </h2>
-                  <p style={{ fontSize: 15, color: '#475569', margin: 0, maxWidth: '44ch', lineHeight: 1.55 }}>
-                    Your mobile device is paired. Please select and upload your documents on your phone screen.
+        {/* ── STEP 1: Device Connected / Uploading State ── */}
+        {(state === 'CLAIMED' || state === 'UPLOADING') && (
+          <div className="ks-interactive-panel">
+            {renderStepTabs('upload')}
+            {!doc ? (
+              <div className="ks-connected-view" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div className="ks-connected-center">
+                  <div className="ks-connected-icon-wrap">
+                    <img
+                      src="/phone-connected.svg"
+                      alt="Device Connected"
+                      className="ks-connected-phone-svg"
+                    />
+                  </div>
+                  <h1 className="ks-connected-title">Device Connected</h1>
+                  <p className="ks-connected-sub" style={{ fontSize: 16, color: '#64748b', margin: '6px 0 0', fontWeight: 500 }}>
+                    Select your document on your phone to continue
                   </p>
-                </div>
-
-                {/* Live Companion Mirror Card */}
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 10,
-                  background: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: 14,
-                  padding: '16px 20px',
-                  maxWidth: '460px',
-                  width: '100%',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#334155' }}>
-                    <span className="ks-companion-dot" style={{ background: '#16a34a', boxShadow: '0 0 6px #16a34a' }} />
-                    <span>Zero-Touch Companion Display Active</span>
-                  </div>
-                  <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.45 }}>
-                    Document previews and print settings will automatically appear on this display once selected on your phone.
+                  <div className="ks-companion-status-pill" style={{ marginTop: 20 }}>
+                    <span className="ks-companion-dot" />
+                    <span>Step 1: Choose or upload documents on phone</span>
                   </div>
                 </div>
-
-                {/* Cancel / Start Over Button */}
-                <button
-                  type="button"
-                  onClick={handleCancelAndNewUpload}
-                  style={{
-                    background: 'transparent',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: 10,
-                    padding: '8px 18px',
-                    fontSize: 12.5,
-                    fontWeight: 600,
-                    color: '#64748b',
-                    cursor: 'pointer',
-                    marginTop: 4,
-                  }}
-                >
-                  Disconnect &amp; Scan Again
-                </button>
               </div>
-            </div>
+            ) : (
+              <div className="ks-flow-body">
+                {/* Left Column: Real Page Preview & Gallery */}
+                {renderDocumentPreviewBox()}
+
+                {/* Right Column: Upload Progress & Mobile Companion Status */}
+                <div className="ks-flow-right" style={{ justifyContent: 'space-between', gap: 16 }}>
+                  <div>
+                    <h3 className="ks-summary-title">Uploading Documents</h3>
+                    <div className="ks-summary-table">
+                      {docFiles.length > 1 ? (
+                        <div className="ks-summary-row ks-summary-row--multifile">
+                          <span>Documents ({docFiles.length})</span>
+                          <div className="ks-multifile-chip-group">
+                            {docFiles.map((f, i) => (
+                              <div key={i} className="ks-multifile-chip" title={`${f.fileName} (${f.pageCount || 1} pages)`}>
+                                <span className="ks-multifile-chip-name">{f.fileName}</span>
+                                <span className="ks-multifile-chip-badge">{f.pageCount || 1}p</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="ks-summary-row">
+                          <span>Document</span>
+                          <strong style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{docFileName}</strong>
+                        </div>
+                      )}
+                      <div className="ks-summary-row">
+                        <span>Total Pages</span>
+                        <strong>{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</strong>
+                      </div>
+                      <div className="ks-summary-row">
+                        <span>Paper Tray</span>
+                        <strong style={{ color: '#16a34a' }}>Ready (A4 75GSM)</strong>
+                      </div>
+                      <div className="ks-summary-row">
+                        <span>Current Stage</span>
+                        <strong style={{ color: '#16a34a' }}>Step 1: Selecting on Mobile</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="ks-companion-card">
+                    <div className="ks-companion-card-header">
+                      <div className="ks-companion-card-icon">📱</div>
+                      <div>
+                        <div className="ks-companion-card-title">Selecting Files on Mobile</div>
+                        <div className="ks-companion-card-sub">Add more files or tap "Review &amp; Continue" on your phone to confirm.</div>
+                      </div>
+                    </div>
+                    <div className="ks-companion-status-pill">
+                      <span className="ks-companion-dot" />
+                      <span>Step 1: Preparing documents on phone →</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1028,15 +1681,29 @@ export default function KioskSessionScreen() {
               {/* Left Column: Real Page Preview & Gallery */}
               {renderDocumentPreviewBox()}
 
-              {/* Right Column: Specs & Zero-Touch Companion Card */}
+              {/* Right Column: Specs & Companion/Touch Card */}
               <div className="ks-flow-right" style={{ justifyContent: 'space-between', gap: 16 }}>
                 <div>
                   <h3 className="ks-summary-title">Confirm Documents</h3>
                   <div className="ks-summary-table">
-                    <div className="ks-summary-row">
-                      <span>Document</span>
-                      <strong style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{docFileName}</strong>
-                    </div>
+                    {docFiles.length > 1 ? (
+                      <div className="ks-summary-row ks-summary-row--multifile">
+                        <span>Documents ({docFiles.length})</span>
+                        <div className="ks-multifile-chip-group">
+                          {docFiles.map((f, i) => (
+                            <div key={i} className="ks-multifile-chip" title={`${f.fileName} (${f.pageCount || 1} pages)`}>
+                              <span className="ks-multifile-chip-name">{f.fileName}</span>
+                              <span className="ks-multifile-chip-badge">{f.pageCount || 1}p</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="ks-summary-row">
+                        <span>Document</span>
+                        <strong style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{docFileName}</strong>
+                      </div>
+                    )}
                     <div className="ks-summary-row">
                       <span>Total Pages</span>
                       <strong>{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</strong>
@@ -1047,24 +1714,56 @@ export default function KioskSessionScreen() {
                     </div>
                     <div className="ks-summary-row">
                       <span>Colour Options</span>
-                      <strong>B&amp;W or Colour Available</strong>
+                      <strong>{isLite ? 'Black & White' : 'Black & White & Colour'}</strong>
                     </div>
                   </div>
                 </div>
 
-                <div className="ks-companion-card">
-                  <div className="ks-companion-card-header">
-                    <div className="ks-companion-card-icon">📱</div>
-                    <div>
-                      <div className="ks-companion-card-title">Confirming Documents on Mobile</div>
-                      <div className="ks-companion-card-sub">Please review and confirm pages on your phone screen. No touch required on this display.</div>
+                {isLite ? (
+                  <div className="ks-companion-card">
+                    <div className="ks-companion-card-header">
+                      <div className="ks-companion-card-icon">📱</div>
+                      <div>
+                        <div className="ks-companion-card-title">Confirming Documents on Mobile</div>
+                        <div className="ks-companion-card-sub">Review and confirm pages on your phone to continue.</div>
+                      </div>
+                    </div>
+                    <div className="ks-companion-status-pill">
+                      <span className="ks-companion-dot" />
+                      <span>Continue on phone to Settings →</span>
                     </div>
                   </div>
-                  <div className="ks-companion-status-pill">
-                    <span className="ks-companion-dot" />
-                    <span>Continue on phone to Settings →</span>
+                ) : (
+                  <div className="ks-pro-touch-card">
+                    <div className="ks-pro-touch-header">
+                      <div className="ks-pro-touch-title">
+                        <span>Confirm &amp; Proceed on Display</span>
+                      </div>
+                      <span className="ks-pro-touch-sub">Or review and continue on your paired phone screen</span>
+                    </div>
+                    <div className="ks-pro-actions-grid">
+                      <button
+                        type="button"
+                        onClick={handleProConfirmAndNext}
+                        className="ks-pro-btn ks-pro-btn--primary"
+                      >
+                        <span>Confirm Document &amp; Settings</span>
+                        <span className="ks-pro-arrow">→</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelAndNewUpload}
+                        className="ks-pro-btn ks-pro-btn--secondary"
+                      >
+                        Cancel / Disconnect
+                      </button>
+                    </div>
+                    <div className="ks-companion-status-pill" style={{ marginTop: 10 }}>
+                      <span className="ks-companion-dot" />
+                      <span>Step 2: Review on phone or touch display</span>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
@@ -1078,17 +1777,19 @@ export default function KioskSessionScreen() {
               {/* Left Column: Real Page Preview & Gallery */}
               {renderDocumentPreviewBox()}
 
-              {/* Right Column: Mirrored Settings & Specs */}
+              {/* Right Column: Mirrored Settings & Touch Controls */}
               <div className="ks-flow-right" style={{ justifyContent: 'space-between', gap: 16 }}>
                 <div>
                   <h3 className="ks-summary-title" style={{ marginBottom: 12 }}>Print Settings</h3>
                   <div className="ks-mirrored-grid">
                     <div className="ks-mirror-card">
                       <span className="ks-mirror-label">Color Mode</span>
-                      <strong className="ks-mirror-val" style={{ color: selectedColour === 'COLOUR' ? '#dc2626' : '#09090b' }}>
-                        {selectedColour === 'COLOUR' ? 'Full Colour' : 'Black & White'}
+                      <strong className="ks-mirror-val" style={{ color: !isLite && selectedColour === 'COLOUR' ? '#dc2626' : '#09090b' }}>
+                        {isLite ? 'Black & White' : (selectedColour === 'COLOUR' ? 'Full Colour' : 'Black & White')}
                       </strong>
-                      <span className="ks-mirror-sub">{selectedColour === 'COLOUR' ? 'High Quality' : 'Monochrome Laser'}</span>
+                      <span className="ks-mirror-sub">
+                        {selectedColour === 'COLOUR' ? 'High Quality Colour' : 'Standard Black & White'}
+                      </span>
                     </div>
                     <div className="ks-mirror-card">
                       <span className="ks-mirror-label">Sides</span>
@@ -1115,19 +1816,121 @@ export default function KioskSessionScreen() {
                   </div>
                 </div>
 
-                <div className="ks-companion-card">
-                  <div className="ks-companion-card-header">
-                    <div className="ks-companion-card-icon">⚙️</div>
-                    <div>
-                      <div className="ks-companion-card-title">Configuring Settings on Mobile</div>
-                      <div className="ks-companion-card-sub">Select copies, colours, and sides on your phone screen. Selections reflect here in real time.</div>
+                {isLite ? (
+                  <div className="ks-companion-card">
+                    <div className="ks-companion-card-header">
+                      <div className="ks-companion-card-icon">⚙️</div>
+                      <div>
+                        <div className="ks-companion-card-title">Configuring Settings on Mobile</div>
+                        <div className="ks-companion-card-sub">Select copies and duplex on your phone screen. Selections reflect here in real time.</div>
+                      </div>
+                    </div>
+                    <div className="ks-companion-status-pill">
+                      <span className="ks-companion-dot" />
+                      <span>Zero Touch • Continue on phone screen</span>
                     </div>
                   </div>
-                  <div className="ks-companion-status-pill">
-                    <span className="ks-companion-dot" />
-                    <span>Zero Touch • Continue on phone screen</span>
+                ) : (
+                  <div className="ks-pro-touch-card">
+                    <div className="ks-pro-touch-header">
+                      <div className="ks-pro-touch-title">
+                        <span className="ks-pro-touch-badge">👆 On-Screen Touch Controls</span>
+                        <span>Adjust Print Settings</span>
+                      </div>
+                      <span className="ks-pro-touch-sub">Touch below to modify or adjust on your phone screen</span>
+                    </div>
+
+                    <div className="ks-pro-settings-controls">
+                      {/* Colour Mode Selector */}
+                      <div className="ks-pro-control-group">
+                        <span className="ks-pro-control-label">Colour Mode</span>
+                        <div className="ks-pro-pill-toggle">
+                          <button
+                            type="button"
+                            className={`ks-pro-pill-opt ${selectedColour === 'BW' ? 'ks-pro-pill-opt--active' : ''}`}
+                            onClick={() => handleProColourChange('BW')}
+                          >
+                            <span>🖤 B&amp;W (₹{pageDetails.pricing.bwSingle}/p)</span>
+                          </button>
+                          <button
+                            type="button"
+                            className={`ks-pro-pill-opt ${selectedColour === 'COLOUR' ? 'ks-pro-pill-opt--active-red' : ''}`}
+                            onClick={() => handleProColourChange('COLOUR')}
+                          >
+                            <span>🎨 Full Colour (₹{pageDetails.pricing.colorSingle}/p)</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Sides Selector */}
+                      <div className="ks-pro-control-group">
+                        <span className="ks-pro-control-label">Sides</span>
+                        <div className="ks-pro-pill-toggle">
+                          <button
+                            type="button"
+                            className={`ks-pro-pill-opt ${selectedDuplex === 'SINGLE' ? 'ks-pro-pill-opt--active' : ''}`}
+                            onClick={() => handleProDuplexChange('SINGLE')}
+                          >
+                            <span>📄 1-Sided</span>
+                          </button>
+                          <button
+                            type="button"
+                            className={`ks-pro-pill-opt ${selectedDuplex === 'DOUBLE' ? 'ks-pro-pill-opt--active' : ''}`}
+                            onClick={() => handleProDuplexChange('DOUBLE')}
+                          >
+                            <span>📑 2-Sided</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Copies Stepper */}
+                      <div className="ks-pro-control-group">
+                        <span className="ks-pro-control-label">Copies</span>
+                        <div className="ks-pro-stepper">
+                          <button
+                            type="button"
+                            className="ks-pro-stepper-btn"
+                            disabled={selectedCopies <= 1}
+                            onClick={() => handleProCopiesChange(-1)}
+                          >
+                            −
+                          </button>
+                          <span className="ks-pro-stepper-val">{selectedCopies}</span>
+                          <button
+                            type="button"
+                            className="ks-pro-stepper-btn"
+                            disabled={selectedCopies >= 50}
+                            onClick={() => handleProCopiesChange(1)}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="ks-pro-actions-grid" style={{ marginTop: 12 }}>
+                      <button
+                        type="button"
+                        onClick={handleProProceedToReview}
+                        className="ks-pro-btn ks-pro-btn--primary"
+                      >
+                        <span>Review Order (₹{totalAmount.toFixed(2)})</span>
+                        <span className="ks-pro-arrow">→</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleProBackToDoc}
+                        className="ks-pro-btn ks-pro-btn--secondary"
+                      >
+                        ← Back to Document
+                      </button>
+                    </div>
+                    <div className="ks-companion-status-pill" style={{ marginTop: 10 }}>
+                      <span className="ks-companion-dot" />
+                      <span>Step 3: Modify settings on phone or touch display</span>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
@@ -1136,7 +1939,7 @@ export default function KioskSessionScreen() {
         {/* ── SECTION 3 (Sub): Review Order (REVIEWING) ── */}
         {state === 'REVIEWING' && (
           <div className="ks-interactive-panel">
-            {renderStepTabs('settings')}
+            {renderStepTabs('review')}
             <div className="ks-flow-body">
               {/* Left Column: Real Page Preview & Gallery */}
               {renderDocumentPreviewBox()}
@@ -1146,21 +1949,35 @@ export default function KioskSessionScreen() {
                 <div>
                   <h3 className="ks-summary-title">Review Order</h3>
                   <div className="ks-summary-table">
-                    <div className="ks-summary-row">
-                      <span>Document</span>
-                      <strong style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{docFileName}</strong>
-                    </div>
+                    {docFiles.length > 1 ? (
+                      <div className="ks-summary-row ks-summary-row--multifile">
+                        <span>Documents ({docFiles.length})</span>
+                        <div className="ks-multifile-chip-group">
+                          {docFiles.map((f, i) => (
+                            <div key={i} className="ks-multifile-chip" title={`${f.fileName} (${f.pageCount || 1} pages)`}>
+                              <span className="ks-multifile-chip-name">{f.fileName}</span>
+                              <span className="ks-multifile-chip-badge">{f.pageCount || 1}p</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="ks-summary-row">
+                        <span>Document</span>
+                        <strong style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{docFileName}</strong>
+                      </div>
+                    )}
                     <div className="ks-summary-row">
                       <span>Print Configuration</span>
-                      <strong>{selectedColour === 'COLOUR' ? 'Colour' : 'B&W'} • {selectedCopies} copy • {calculatedSheets * selectedCopies} sheets</strong>
+                      <strong>{selectedColour === 'COLOUR' ? 'Full Colour' : 'B&W'} • {selectedCopies} {selectedCopies === 1 ? 'copy' : 'copies'} • {calculatedSheets * selectedCopies} sheets</strong>
                     </div>
                     <div className="ks-summary-row">
                       <span>Paper</span>
                       <strong>A4 75GSM Plain Paper</strong>
                     </div>
                     <div className="ks-summary-row">
-                      <span>Station ID</span>
-                      <strong style={{ fontFamily: 'var(--ks-mono)' }}>{kioskId}</strong>
+                      <span>Station</span>
+                      <strong style={{ fontFamily: 'var(--ks-font)' }}>{kioskName || kioskId}</strong>
                     </div>
                   </div>
 
@@ -1170,19 +1987,51 @@ export default function KioskSessionScreen() {
                   </div>
                 </div>
 
-                <div className="ks-companion-card">
-                  <div className="ks-companion-card-header">
-                    <div className="ks-companion-card-icon">📋</div>
-                    <div>
-                      <div className="ks-companion-card-title">Reviewing Order on Mobile</div>
-                      <div className="ks-companion-card-sub">Please review the order details on your phone and tap Pay to show the payment QR code here.</div>
+                {isLite ? (
+                  <div className="ks-companion-card">
+                    <div className="ks-companion-card-header">
+                      <div className="ks-companion-card-icon">📋</div>
+                      <div>
+                        <div className="ks-companion-card-title">Reviewing Order on Mobile</div>
+                        <div className="ks-companion-card-sub">Please review order details on your phone and tap Pay to show payment QR code.</div>
+                      </div>
+                    </div>
+                    <div className="ks-companion-status-pill">
+                      <span className="ks-companion-dot" />
+                      <span>Awaiting continue from phone…</span>
                     </div>
                   </div>
-                  <div className="ks-companion-status-pill">
-                    <span className="ks-companion-dot" />
-                    <span>Awaiting continue from phone…</span>
+                ) : (
+                  <div className="ks-pro-touch-card">
+                    <div className="ks-pro-touch-header">
+                      <div className="ks-pro-touch-title">
+                        <span>Confirm Order &amp; Proceed to Pay</span>
+                      </div>
+                      <span className="ks-pro-touch-sub">Tap below or tap Pay on your mobile screen</span>
+                    </div>
+                    <div className="ks-pro-actions-grid">
+                      <button
+                        type="button"
+                        onClick={handleProProceedToPayment}
+                        className="ks-pro-btn ks-pro-btn--primary"
+                      >
+                        <span>Proceed to Pay ₹{totalAmount.toFixed(2)}</span>
+                        <span className="ks-pro-arrow">→</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleProBackToSettings}
+                        className="ks-pro-btn ks-pro-btn--secondary"
+                      >
+                        ← Modify Settings
+                      </button>
+                    </div>
+                    <div className="ks-companion-status-pill" style={{ marginTop: 10 }}>
+                      <span className="ks-companion-dot" />
+                      <span>Step 4: Confirm on phone or tap Proceed below</span>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
@@ -1202,10 +2051,24 @@ export default function KioskSessionScreen() {
                       <span>Order ID</span>
                       <strong style={{ fontFamily: 'var(--ks-mono)' }}>{effectiveOrderId}</strong>
                     </div>
-                    <div className="ks-summary-row">
-                      <span>Document</span>
-                      <strong style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{docFileName}</strong>
-                    </div>
+                    {docFiles.length > 1 ? (
+                      <div className="ks-summary-row ks-summary-row--multifile">
+                        <span>Documents ({docFiles.length})</span>
+                        <div className="ks-multifile-chip-group">
+                          {docFiles.map((f, i) => (
+                            <div key={i} className="ks-multifile-chip" title={`${f.fileName} (${f.pageCount || 1} pages)`}>
+                              <span className="ks-multifile-chip-name">{f.fileName}</span>
+                              <span className="ks-multifile-chip-badge">{f.pageCount || 1}p</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="ks-summary-row">
+                        <span>Document</span>
+                        <strong style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{docFileName}</strong>
+                      </div>
+                    )}
                     <div className="ks-summary-row">
                       <span>Prints</span>
                       <strong>{selectedColour === 'COLOUR' ? 'Colour' : 'B&W'} • {selectedCopies} copy • {calculatedSheets * selectedCopies} sheets</strong>
@@ -1224,9 +2087,30 @@ export default function KioskSessionScreen() {
                     <strong style={{ fontSize: 13, color: '#dc2626', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Automatic Print Dispense</strong>
                   </div>
                   <p style={{ margin: '6px 0 0', fontSize: 12, color: '#475569', lineHeight: 1.5 }}>
-                    The moment UPI payment is received via webhook, printing starts automatically on the laser printer below. No touch or PIN required!
+                    Printing begins automatically once payment is received. Collect your printed pages from the output tray below.
                   </p>
                 </div>
+
+                {/* Pro Touchscreen Action Buttons */}
+                {isPro && (
+                  <div className="ks-pro-paying-actions" style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+                    <button
+                      type="button"
+                      onClick={handleProBackToSettings}
+                      className="ks-pro-btn ks-pro-btn--secondary"
+                      style={{ flex: 1 }}
+                    >
+                      ← Modify Settings
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelAndNewUpload}
+                      className="ks-pro-btn ks-pro-btn--ghost"
+                    >
+                      Cancel Order
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Right Column: Large Dynamic UPI Payment QR Box */}
@@ -1249,6 +2133,12 @@ export default function KioskSessionScreen() {
                         fgColor="#09090b"
                         bgColor="#ffffff"
                       />
+                    ) : session?.paymentError ? (
+                      <div style={{ width: 230, height: 230, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 16, textAlign: 'center' }}>
+                        <span style={{ fontSize: 28 }}>⚠️</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>Payment Not Configured</span>
+                        <span style={{ fontSize: 11, color: '#64748b', lineHeight: 1.4 }}>{session.paymentError}</span>
+                      </div>
                     ) : (
                       <div style={{ width: 230, height: 230, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
                         <div className="ks-qr-spinner" />
@@ -1258,9 +2148,7 @@ export default function KioskSessionScreen() {
                   </div>
 
                   <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span>UPI Express Gateway</span>
-                    <span style={{ color: '#cbd5e1' }}>•</span>
-                    <span style={{ color: '#16a34a' }}>GPay • PhonePe • Paytm • Any UPI</span>
+                    <span style={{ color: '#16a34a', fontWeight: 700 }}>Accepted: GPay • PhonePe • Paytm • Any UPI App</span>
                   </div>
 
                   <div style={{
@@ -1275,7 +2163,7 @@ export default function KioskSessionScreen() {
                     fontWeight: 600,
                   }}>
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a', boxShadow: '0 0 6px #16a34a' }} />
-                    <span>Listening for payment confirmation…</span>
+                    <span>Awaiting payment confirmation…</span>
                   </div>
                 </div>
               </div>
@@ -1283,28 +2171,37 @@ export default function KioskSessionScreen() {
           </div>
         )}
 
-        {/* ── SECTION 4: Live Printing Progress (PRINTING) ── */}
-        {isPrinting && (
-          <div className="ks-printing-panel">
-            <div className="ks-printing-icon">
-              <svg width="68" height="68" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="6,9 6,2 18,2 18,9" />
-                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                <rect x="6" y="14" width="12" height="8" />
-              </svg>
-            </div>
-            <h2 className="ks-printing-title">Printing Your Document…</h2>
-            <p className="ks-printing-sub">Feeding pages into the output tray. Please wait while physical printing finishes.</p>
-            <div className="ks-file-pill" style={{ justifyContent: 'center', marginTop: 10 }}>
-              <span>📄</span>
-              <span>{docFileName}</span>
-              <span className="ks-file-pages">· {calculatedSheets * selectedCopies} sheets</span>
-              <span className="ks-file-pages" style={{ color: '#dc2626', fontWeight: 700 }}>· {printingProgress}%</span>
-            </div>
-            <div className="ks-progress-track" style={{ width: '100%', maxWidth: 440, marginTop: 16 }}>
-              <div className="ks-progress-fill" style={{ width: `${printingProgress}%`, background: '#dc2626' }} />
+        {/* ── SECTION 4 (Sub): Enter OTP on Hardware Keypad (OTP_READY) ── */}
+        {state === 'OTP_READY' && (
+          <div className="ks-interactive-panel" style={{ alignItems: 'center', justifyContent: 'center' }}>
+            <div className="ks-otp-panel">
+              <div className="ks-otp-badge">
+                <span>🔐</span>
+                <span>AUTHENTICATION PIN</span>
+              </div>
+              <h2 className="ks-otp-headline">Enter OTP on Hardware Keypad</h2>
+              <div className="ks-otp-digits">
+                {(session?.otp || '----').split('').map((digit, i) => (
+                  <div key={i} className="ks-otp-digit">{digit}</div>
+                ))}
+              </div>
+              <p className="ks-otp-hint">
+                Type this 4-digit code on the kiosk physical keypad to release your pages.
+              </p>
             </div>
           </div>
+        )}
+
+        {/* ── SECTION 4: Live Printing Progress (PRINTING) ── */}
+        {isPrinting && (
+          <PrinterDispenseAnimation
+            progress={printingProgress}
+            fileName={docFileName}
+            sheets={calculatedSheets}
+            copies={selectedCopies}
+            isComplete={false}
+            phaseMessage={session?.phase}
+          />
         )}
 
         {/* ── SECTION 5: Collection & Success (DONE) ── */}
@@ -1322,11 +2219,85 @@ export default function KioskSessionScreen() {
               <span>↻</span>
               <span>Screen resetting for next customer in 6s…</span>
             </div>
+            {isPro && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (rotateTimerRef.current) {
+                    clearTimeout(rotateTimerRef.current)
+                    rotateTimerRef.current = null
+                  }
+                  createSession(true)
+                }}
+                className="ks-pro-btn ks-pro-btn--primary"
+                style={{ marginTop: 16 }}
+              >
+                <span>Print Another Document</span>
+                <span className="ks-pro-arrow">→</span>
+              </button>
+            )}
           </div>
         )}
 
 
+        {/* ── Floating Inactivity Warning Alert (Zero layout shift, z-70) ── */}
+        {inactivitySecondsLeft <= 30 &&
+          (state === 'CLAIMED' ||
+            state === 'UPLOADING' ||
+            state === 'CONFIRMING' ||
+            state === 'CONFIGURING' ||
+            state === 'REVIEWING' ||
+            state === 'PAYING') && (
+            <div
+              className="ks-inactivity-toast"
+              style={{
+                position: 'fixed',
+                top: 24,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 70,
+                background: '#ffffff',
+                border: '1.5px solid #dc2626',
+                boxShadow: '0 8px 30px rgba(220, 38, 38, 0.22)',
+                borderRadius: 12,
+                padding: '10px 22px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                cursor: 'pointer',
+                animation: 'ks-fade-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) both',
+              }}
+              onClick={recordKioskActivity}
+            >
+              <span style={{ fontSize: 20 }}>⏱️</span>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#dc2626', fontFamily: 'var(--ks-font)' }}>
+                  Inactivity Timeout Warning
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
+                  Session resetting in <strong style={{ color: '#dc2626' }}>{inactivitySecondsLeft}s</strong> · Tap anywhere to continue session
+                </div>
+              </div>
+            </div>
+          )}
+
       </main>
+
+      {/* Cancel Button in Sharp Left Bottom (PrintBooth Pro only) */}
+      {(state === 'CLAIMED' || state === 'UPLOADING') && !doc && isPro && (
+        <button
+          type="button"
+          onClick={handleCancelAndNewUpload}
+          className="ks-sharp-cancel-btn"
+          id="kiosk-pro-cancel-btn"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+          <span>Cancel</span>
+        </button>
+      )}
     </div>
   )
 }

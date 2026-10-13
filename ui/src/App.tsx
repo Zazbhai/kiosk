@@ -31,7 +31,7 @@ export default function App() {
     import.meta.env.VITE_KIOSK_NAME ||
     'Station 1'
 
-  const { isOffline, reason, detail, checkNow } = usePrinterStatus(kioskId)
+  const { isOffline, reason, detail, recommendation, checkNow } = usePrinterStatus(kioskId)
   const [isNetworkOffline, setIsNetworkOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine)
 
   useEffect(() => {
@@ -77,6 +77,7 @@ export default function App() {
         title="PRINTER OFFLINE"
         reason={reason}
         detail={detail}
+        recommendation={recommendation}
         kioskId={kioskId}
         kioskName={kioskName}
       />

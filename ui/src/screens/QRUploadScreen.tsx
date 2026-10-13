@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft } from '@phosphor-icons/react'
 import { QRCodeSVG } from 'qrcode.react'
-import { useKioskSiteUrl, getKioskSiteUrl } from '../utils/siteConfig'
+import { useKioskSiteUrl, getKioskSiteUrl, getKioskApiUrl } from '../utils/siteConfig'
+import TimerSvg from '../components/TimerSvg'
 import './KioskScreens.css'
 
 export default function QRUploadScreen() {
@@ -10,11 +11,12 @@ export default function QRUploadScreen() {
   const [timeLeft, setTimeLeft] = useState(5 * 60)
   const [sessionToken, setSessionToken] = useState<string>('')
   const [uniqueQrUrl, setUniqueQrUrl] = useState<string>('')
+  const [copiedUrl, setCopiedUrl] = useState<boolean>(false)
 
   const kioskId = localStorage.getItem('pb_kiosk_id') || import.meta.env.VITE_KIOSK_ID || 'PB-001'
   const kioskName = localStorage.getItem('pb_kiosk_name') || import.meta.env.VITE_KIOSK_NAME || 'PrintBooth — Station 1'
-  const apiUrl = (localStorage.getItem('pb_api_url') || import.meta.env.VITE_API_URL || 'https://api.printbooth.co.in').replace(/\/api$/, '')
-  const { siteUrl, setSiteUrl } = useKioskSiteUrl(apiUrl, kioskId, sessionToken)
+  const apiUrl = getKioskApiUrl()
+  const { siteUrl } = useKioskSiteUrl(apiUrl, kioskId, sessionToken)
 
   const createSession = useCallback(async () => {
     try {
@@ -100,6 +102,27 @@ export default function QRUploadScreen() {
     return ''
   }, [uniqueQrUrl, sessionToken, siteUrl, kioskId])
 
+  const shortDisplayUrl = useMemo(() => {
+    try {
+      if (effectiveQr) {
+        const u = new URL(effectiveQr)
+        return `${u.host}${u.pathname}?id=${kioskId}`
+      }
+    } catch {}
+    const base = (siteUrl || getKioskSiteUrl() || 'https://printbooth.co.in').replace(/^https?:\/\//, '').replace(/\/+$/, '')
+    return `${base}/print?id=${kioskId}`
+  }, [effectiveQr, siteUrl, kioskId])
+
+  const handleCopyUrl = useCallback(() => {
+    if (!effectiveQr) return
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(effectiveQr).then(() => {
+        setCopiedUrl(true)
+        setTimeout(() => setCopiedUrl(false), 2000)
+      }).catch(() => {})
+    }
+  }, [effectiveQr])
+
   return (
     <div className="kiosk-screen">
       <div className="kiosk-bg-mesh" />
@@ -135,43 +158,81 @@ export default function QRUploadScreen() {
           <span>Awaiting document upload on mobile…</span>
         </div>
 
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 8,
-          background: 'rgba(255, 255, 255, 0.08)',
-          padding: '6px 14px',
-          borderRadius: 12,
-          marginTop: '10px',
-          fontSize: '0.8rem',
-          color: 'var(--clr-text-3)',
-        }}>
-          <span>Upload Link: <strong style={{ color: 'var(--clr-text-1)' }}>{effectiveQr}</strong></span>
-          <button
-            type="button"
-            onClick={() => {
-              const val = prompt('Enter custom site URL for phone uploads (e.g. https://your-site.com):', siteUrl)
-              if (val && val.trim()) {
-                setSiteUrl(val.trim())
-              }
-            }}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--clr-accent-light)',
-              fontWeight: 700,
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              textDecoration: 'underline',
-              padding: 0,
-            }}
-          >
-            Change
-          </button>
-        </div>
+        {effectiveQr && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+            gap: 8,
+            background: 'rgba(255, 255, 255, 0.95)',
+            border: '1px solid #e2e8f0',
+            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.04)',
+            padding: '6px 14px',
+            borderRadius: 999,
+            marginTop: '10px',
+            fontSize: '0.82rem',
+            color: '#475569',
+          }}>
+            <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Direct Link:</span>
+            <a
+              href={effectiveQr}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                color: 'var(--clr-accent, #dc2626)',
+                fontWeight: 700,
+                textDecoration: 'underline',
+                fontFamily: 'monospace',
+              }}
+              title={effectiveQr}
+            >
+              {shortDisplayUrl}
+            </a>
+            <button
+              type="button"
+              onClick={handleCopyUrl}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '3px 8px',
+                borderRadius: 5,
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                border: '1px solid #cbd5e1',
+                background: '#ffffff',
+                color: '#334155',
+                cursor: 'pointer',
+              }}
+            >
+              {copiedUrl ? 'Copied ✓' : 'Copy'}
+            </button>
+            <a
+              href={effectiveQr}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '3px 8px',
+                borderRadius: 5,
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                border: '1px solid rgba(220, 38, 38, 0.25)',
+                background: 'rgba(220, 38, 38, 0.08)',
+                color: '#dc2626',
+                textDecoration: 'none',
+              }}
+            >
+              Open ↗
+            </a>
+          </div>
+        )}
 
-        <div className="kiosk-timer">{minutes}:{seconds}</div>
+        <div className="kiosk-timer" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+          <TimerSvg size={28} />
+          <span>{minutes}:{seconds}</span>
+        </div>
         <p style={{ fontSize: '0.8rem', color: 'var(--clr-text-3)' }}>Session active for {minutes}:{seconds}</p>
       </div>
 

@@ -186,10 +186,19 @@ class PrinterController:
             options["HPColorMode"] = "grayscale"
 
         # Duplex
-        if duplex:
+        is_double = duplex if isinstance(duplex, bool) else str(duplex).strip().upper() in (
+            "DOUBLE", "DUPLEX", "TWO-SIDED", "2-SIDED", "TWO_SIDED", "2_SIDED", "TRUE", "1"
+        )
+        if is_double:
             options["sides"] = "two-sided-long-edge"
+            options["Duplex"] = "DuplexNoTumble"
+            options["BRDuplex"] = "DuplexNoTumble"
+            options["JCLDuplex"] = "DuplexNoTumble"
         else:
             options["sides"] = "one-sided"
+            options["Duplex"] = "None"
+            options["BRDuplex"] = "None"
+            options["JCLDuplex"] = "None"
 
         if page_range and page_range.upper() != "ALL":
             options["page-ranges"] = page_range

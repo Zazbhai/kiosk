@@ -9,9 +9,9 @@ export default defineConfig({
     port: 5175,
     proxy: {
       '/api': {
-        target: 'https://api.printbooth.co.in',
+        target: 'http://localhost:5000',
         changeOrigin: true,
-        secure: true,
+        secure: false,
       },
     },
   },

@@ -8,81 +8,235 @@
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
-  background: #ffffff;
+  background: #0f172a;
   contain: strict;
 }
 
-/* Moving Ad Layer (Balanced ambient visibility) */
+/* Moving Ad Layer (Vibrant, high-opacity ambient canvas) */
 .kiosk-ad-layer {
   position: absolute;
-  inset: -60px; /* Bleed for smooth panning without edge seams */
+  inset: -40px; /* Bleed for smooth panning without edge seams */
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
   will-change: transform, opacity;
   transform: translate3d(0, 0, 0);
-  transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1);
-  filter: saturate(0.95) brightness(1.02);
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  filter: saturate(1.18) contrast(1.08) brightness(1.04);
 }
 
-/* Soft Diffusion Overlay (Lets the ad image and ambient mesh shine through with clarity) */
+/* Subtle Depth Vignette (lets vivid ad artwork and punchy colors shine through clearly) */
 .kiosk-ad-vignette {
   position: absolute;
   inset: 0;
   background: radial-gradient(
-    ellipse 85% 75% at 50% 45%,
-    rgba(255, 255, 255, 0.30) 0%,
-    rgba(255, 255, 255, 0.44) 65%,
-    rgba(255, 255, 255, 0.60) 100%
+    ellipse 90% 80% at 50% 45%,
+    transparent 0%,
+    rgba(15, 23, 42, 0.06) 60%,
+    rgba(15, 23, 42, 0.24) 100%
   );
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
   pointer-events: none;
   z-index: 2;
 }
 
-/* Subtle Drift Motion */
+/* Smooth Subtle Drift Motion */
 .kiosk-ad-motion-drift {
-  animation: adDriftMotion 32s ease-in-out infinite alternate;
+  animation: adDriftMotion 36s ease-in-out infinite alternate;
 }
 
 @keyframes adDriftMotion {
   0% {
-    transform: translate3d(-25px, -15px, 0) scale(1.03);
+    transform: translate3d(-20px, -12px, 0) scale(1.03);
   }
   50% {
-    transform: translate3d(10px, 8px, 0) scale(1.06);
+    transform: translate3d(8px, 6px, 0) scale(1.06);
   }
   100% {
-    transform: translate3d(25px, 20px, 0) scale(1.08);
+    transform: translate3d(20px, 16px, 0) scale(1.08);
   }
 }
 
-/* ─── Bottom Moving Text (Transparent Background, No Box, Moving Left-to-Right) ─── */
+/* ─── Kiosk Background Brand Logo Stage (Default when 0 campaigns configured) ─── */
+.kiosk-bg-logo-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 1;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(220, 38, 38, 0.08) 0%,
+    rgba(248, 250, 252, 0.95) 50%,
+    #ffffff 80%
+  );
+  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+.kiosk-bg-logo-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  transform: translate3d(0, 0, 0);
+  animation: logoPulseAura 2.4s ease-in-out infinite alternate;
+}
+
+.kiosk-bg-logo-mark-wrap {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kiosk-bg-logo-aura {
+  position: absolute;
+  inset: -20px;
+  background: radial-gradient(circle, rgba(220, 38, 38, 0.24) 0%, rgba(220, 38, 38, 0) 72%);
+  border-radius: 50%;
+  filter: blur(14px);
+  animation: auraGlow 2.4s ease-in-out infinite alternate;
+}
+
+.kiosk-bg-logo-img {
+  width: 112px;
+  height: 112px;
+  object-fit: contain;
+  position: relative;
+  z-index: 2;
+  filter: drop-shadow(0 14px 28px rgba(220, 38, 38, 0.22));
+}
+
+.kiosk-bg-logo-typography {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.kiosk-bg-logo-wordmark {
+  font-family: var(--ks-font, 'Geist', 'Space Grotesk', -apple-system, sans-serif);
+  font-size: 2.1rem;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #09090b;
+  margin: 0;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.05);
+}
+
+.kiosk-bg-logo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.22);
+  color: #dc2626;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.10);
+}
+
+.kiosk-bg-logo-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #dc2626;
+  box-shadow: 0 0 8px #dc2626;
+  animation: dotPulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes logoPulseAura {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1.02); }
+}
+
+@keyframes auraGlow {
+  0% { opacity: 0.55; transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1.08); }
+}
+
+@keyframes dotPulse {
+  0% { opacity: 0.5; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1.25); }
+}
+
+/* ─── Bottom Full-Bleed Shiny Red Moving Ticker Bar (Edge-to-Edge, Zero Corners) ─── */
 .ks-ad-bottom-bar {
   position: fixed;
-  bottom: 8px;
+  bottom: 0;
   left: 0;
   right: 0;
-  height: 42px;
+  width: 100vw;
+  height: 44px;
   z-index: 60;
-  background: transparent !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  border-top: none !important;
-  box-shadow: none !important;
+  background: linear-gradient(90deg, #991b1b 0%, #b91c1c 20%, #dc2626 50%, #b91c1c 80%, #991b1b 100%) !important;
+  border-radius: 0 !important;
+  border-top: 1.5px solid rgba(255, 255, 255, 0.45) !important;
+  border-bottom: none !important;
+  border-left: none !important;
+  border-right: none !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55),
+              inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+              0 -4px 24px rgba(220, 38, 38, 0.60) !important;
   display: flex;
   align-items: center;
   overflow: hidden;
   user-select: none;
-  pointer-events: none;
+  pointer-events: auto;
   box-sizing: border-box;
-  transition: left 0.3s ease;
+  margin: 0 !important;
+  padding: 0;
 }
 
-body:has(.ks-screen-back-btn) .ks-ad-bottom-bar,
-body:has(.kwps-screen-back-btn) .ks-ad-bottom-bar {
-  left: 130px;
+/* Shiny moving light sweep reflection beam across the red bar */
+.ks-ad-shine-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.ks-ad-shine-overlay::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -80%;
+  width: 45%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.15) 25%,
+    rgba(255, 255, 255, 0.65) 50%,
+    rgba(255, 255, 255, 0.15) 75%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: skewX(-25deg);
+  animation: barShineSweep 3.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes barShineSweep {
+  0% {
+    left: -70%;
+  }
+  45% {
+    left: 150%;
+  }
+  100% {
+    left: 150%;
+  }
 }
 
 /* Marquee Viewport & Track */
@@ -93,83 +247,113 @@ body:has(.kwps-screen-back-btn) .ks-ad-bottom-bar {
   height: 100%;
   display: flex;
   align-items: center;
+  z-index: 2;
+  mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
 }
 
-/* Continuous movement from LEFT TO RIGHT */
-.ks-ad-ticker-track-ltr {
+/* Seamless Continuous Infinite Glide (Zero gap, zero jump across all loops) */
+.ks-ad-ticker-track {
   display: inline-flex;
   align-items: center;
+  gap: 0;
   white-space: nowrap;
   will-change: transform;
-  animation: tickerMoveLeftToRight 25s linear infinite;
+  animation: tickerInfiniteGlide 26s linear infinite;
 }
 
-@keyframes tickerMoveLeftToRight {
+.ks-ad-bottom-bar:hover .ks-ad-ticker-track {
+  animation-play-state: paused;
+}
+
+@keyframes tickerInfiniteGlide {
   0% {
-    transform: translate3d(-100%, 0, 0);
+    transform: translate3d(0, 0, 0);
   }
   100% {
-    transform: translate3d(100vw, 0, 0);
+    transform: translate3d(-25%, 0, 0);
   }
 }
 
 .ks-ad-ticker-segment {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
+  padding-right: 48px;
   flex-shrink: 0;
 }
 
-/* Sponsor Badge (Rounded Rectangle, NO CIRCLE/PILL) */
+/* Sponsor Badge with Pulsing Dot */
 .ks-ad-ticker-badge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  background: #dc2626;
-  color: #ffffff;
+  gap: 6px;
+  background: #ffffff;
+  color: #dc2626;
   font-family: var(--ks-font, 'Geist', sans-serif);
   font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
+  font-weight: 900;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: 4px 9px;
-  border-radius: 6px;
-  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.25);
+  padding: 3px 8px;
+  border-radius: 4px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
   flex-shrink: 0;
 }
 
+.ks-ad-ticker-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #dc2626;
+  box-shadow: 0 0 6px rgba(220, 38, 38, 0.8);
+  animation: badgeDotPulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes badgeDotPulse {
+  0% { opacity: 0.55; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1.25); }
+}
+
 .ks-ad-ticker-advertiser {
-  font-size: 0.88rem;
+  font-size: 0.90rem;
   font-weight: 800;
-  color: #dc2626;
+  color: #ffffff;
   letter-spacing: -0.01em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
 }
 
 .ks-ad-ticker-divider {
-  color: #94a3b8;
+  color: rgba(255, 255, 255, 0.65);
   font-size: 0.85rem;
+  font-weight: 600;
 }
 
 .ks-ad-ticker-text {
-  font-size: 0.88rem;
+  font-size: 0.90rem;
   font-weight: 700;
-  color: #0f172a;
+  color: #ffffff;
   letter-spacing: -0.01em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
 }
 
 .ks-ad-ticker-sub {
-  font-size: 0.84rem;
+  font-size: 0.85rem;
   font-weight: 600;
-  color: #475569;
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
-/* CTA Pill (Rounded Rectangle, NO CIRCLE/PILL) */
+/* Call-to-action Pill */
 .ks-ad-ticker-cta {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: #dc2626;
-  background: rgba(220, 38, 38, 0.07);
-  padding: 3px 8px;
-  border-radius: 6px;
-  border: 1px solid rgba(220, 38, 38, 0.22);
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #ffffff;
+  background: rgba(0, 0, 0, 0.28);
+  padding: 3px 9px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.50);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }

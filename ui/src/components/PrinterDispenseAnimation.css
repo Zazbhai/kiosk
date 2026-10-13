@@ -1,0 +1,254 @@
+/* ─── PrintBooth Custom Printer Dispense Animation ─────────────────────────── */
+
+.ks-printer-anim-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  text-align: center;
+  animation: ks-fade-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ks-printer-stage {
+  position: relative;
+  width: 260px;
+  height: 260px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+
+/* Ambient backlight glow */
+.ks-printer-ambient-glow {
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(67, 136, 204, 0.22) 0%, rgba(220, 38, 38, 0.08) 55%, transparent 75%);
+  pointer-events: none;
+  animation: ks-glow-pulse 2s ease-in-out infinite alternate;
+}
+
+@keyframes ks-glow-pulse {
+  0% { transform: scale(0.92); opacity: 0.6; }
+  100% { transform: scale(1.1); opacity: 1; }
+}
+
+/* Printer Body with subtle mechanical vibration */
+.ks-printer-body-wrap {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+}
+
+.ks-printer--active .ks-printer-body-wrap {
+  animation: ks-printer-hum 0.14s ease-in-out infinite alternate;
+}
+
+@keyframes ks-printer-hum {
+  0% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-0.8px) rotate(0.15deg); }
+  100% { transform: translateY(0.8px) rotate(-0.15deg); }
+}
+
+.ks-printer-graphic {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.12));
+}
+
+/* Status LEDs */
+.ks-printer-led {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.ks-printer-led--green {
+  top: 55%;
+  right: 18.5%;
+  width: 7px;
+  height: 7px;
+  background: #22c55e;
+  box-shadow: 0 0 8px #22c55e;
+  animation: ks-led-blink 0.8s ease-in-out infinite alternate;
+}
+
+.ks-printer-led--busy {
+  top: 61%;
+  right: 18.5%;
+  width: 7px;
+  height: 7px;
+  background: #3b82f6;
+  box-shadow: 0 0 8px #3b82f6;
+  animation: ks-led-blink 0.4s ease-in-out infinite alternate;
+}
+
+@keyframes ks-led-blink {
+  0% { opacity: 0.4; transform: scale(0.9); }
+  100% { opacity: 1; transform: scale(1.2); }
+}
+
+/* Paper Feed Slot (Top) */
+.ks-paper-input-slot {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90px;
+  height: 50px;
+  overflow: hidden;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.ks-printer--active .ks-paper-in-sheet {
+  width: 100%;
+  height: 60px;
+  background: #cbd5e1;
+  border: 1px solid #94a3b8;
+  border-radius: 3px 3px 0 0;
+  animation: ks-feed-in 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes ks-feed-in {
+  0% { transform: translateY(0); opacity: 1; }
+  70% { transform: translateY(35px); opacity: 0.8; }
+  100% { transform: translateY(50px); opacity: 0; }
+}
+
+/* Paper Output Tray (Bottom) */
+.ks-paper-output-tray {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 110px;
+  height: 65px;
+  overflow: hidden;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.ks-printer--active .ks-paper-dispensing-sheet {
+  width: 86px;
+  height: 52px;
+  margin: 0 auto;
+  background: #ffffff;
+  border: 1.5px solid #94a3b8;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  animation: ks-dispense-out 2.2s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+}
+
+@keyframes ks-dispense-out {
+  0% { transform: translateY(-38px) scale(0.85); opacity: 0; }
+  30% { transform: translateY(-15px) scale(0.92); opacity: 0.7; }
+  75% { transform: translateY(12px) scale(1); opacity: 1; }
+  90% { transform: translateY(16px) scale(1); opacity: 1; }
+  100% { transform: translateY(24px) scale(1.02); opacity: 0; }
+}
+
+.ks-paper-print-line {
+  height: 3px;
+  border-radius: 2px;
+  background: #0f172a;
+}
+
+.ks-line-header {
+  width: 45%;
+  height: 4px;
+  background: #dc2626;
+}
+
+.ks-line-body-1 {
+  width: 85%;
+  background: #334155;
+}
+
+.ks-line-body-2 {
+  width: 70%;
+  background: #475569;
+}
+
+/* ── Typography & Telemetry ───────────────────────────────────────────────── */
+.ks-printer-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.ks-printer-headline {
+  font-size: 2.1rem;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  color: #09090b;
+  margin: 0;
+  line-height: 1.15;
+}
+
+.ks-printer-caption {
+  font-size: 0.95rem;
+  color: #475569;
+  max-width: 36ch;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ks-printer-file-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: 999px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  font-size: 0.82rem;
+  color: #334155;
+  font-weight: 600;
+  font-family: var(--ks-mono, monospace);
+  margin-top: 4px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+}
+
+.ks-printer-file-pct {
+  color: #dc2626;
+  font-weight: 800;
+}
+
+/* ── Track & Progress Bar ─────────────────────────────────────────────────── */
+.ks-printer-progress-track {
+  width: 100%;
+  max-width: 440px;
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 8px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.ks-printer-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #dc2626, #ef4444);
+  box-shadow: 0 0 12px rgba(220, 38, 38, 0.4);
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}

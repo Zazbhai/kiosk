@@ -207,7 +207,16 @@ def save_staged_order(order: Dict[str, Any]):
 
                 # Index order by PIN, orderId, and orderNumber
                 if pin:
-                    staged[pin] = order
+                    existing = staged.get(pin)
+                    if existing and isinstance(existing, dict) and (existing.get("orderId") != order_id or existing.get("fileName") != order.get("fileName")):
+                        # Group multiple files / sub-jobs sharing the same PIN
+                        if not existing.get("subJobs"):
+                            existing["subJobs"] = [existing.copy()]
+                        if not any(sj.get("orderId") == order_id for sj in existing["subJobs"]):
+                            existing["subJobs"].append(order)
+                        staged[pin] = existing
+                    else:
+                        staged[pin] = order
                 if order_id:
                     staged[order_id] = order
                 order_num = str(order.get("orderNumber") or "").strip()
@@ -215,7 +224,7 @@ def save_staged_order(order: Dict[str, Any]):
                     staged[order_num] = order
 
                 STAGED_ORDERS_FILE.write_text(json.dumps(staged, indent=2), encoding="utf-8")
-                print(f"[Order Tracker] 💾 Staged order locally: Order {order_id} | PIN {pin}")
+                print(f"[Order Tracker] [STAGED] Staged order locally: Order {order_id} | PIN {pin}")
             finally:
                 _release_lock(lf)
     except Exception as e:
@@ -255,7 +264,20 @@ def remove_staged_order(pin: str, order_id: Optional[str] = None):
                 staged = json.loads(STAGED_ORDERS_FILE.read_text(encoding="utf-8"))
                 if not isinstance(staged, dict):
                     return
-                keys_to_del = [k for k, v in staged.items() if k == pin or (order_id and (k == order_id or (isinstance(v, dict) and v.get("orderId") == order_id)))]
+                keys_to_del = set()
+                if pin:
+                    keys_to_del.add(pin)
+                for k, v in list(staged.items()):
+                    if not isinstance(v, dict):
+                        continue
+                    if k == pin or v.get("releasePin") == pin or v.get("otp") == pin or v.get("pickupCode") == pin:
+                        keys_to_del.add(k)
+                    if order_id and (k == order_id or v.get("orderId") == order_id or v.get("masterOrderId") == order_id):
+                        keys_to_del.add(k)
+                    if v.get("subJobs"):
+                        for sj in v["subJobs"]:
+                            if sj.get("orderId"):
+                                keys_to_del.add(sj["orderId"])
                 for k in keys_to_del:
                     staged.pop(k, None)
                 STAGED_ORDERS_FILE.write_text(json.dumps(staged, indent=2), encoding="utf-8")

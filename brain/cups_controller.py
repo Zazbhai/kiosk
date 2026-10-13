@@ -1014,13 +1014,40 @@ class CupsController:
             options["BRMonoColor"] = "Mono"
             options["print-color-mode"] = "monochrome"
 
-        # Duplex
-        if duplex.upper() in ("DOUBLE", "DUPLEX", "TWO_SIDED_LONG"):
-            options["sides"] = "two-sided-long-edge"
-        elif duplex.upper() == "TWO_SIDED_SHORT":
-            options["sides"] = "two-sided-short-edge"
+        # Duplex / Double-Sided Configuration
+        is_double = False
+        is_short_edge = False
+        if isinstance(duplex, bool):
+            is_double = duplex
+        elif isinstance(duplex, str):
+            dup_str = duplex.strip().upper()
+            if dup_str in (
+                "DOUBLE", "DUPLEX", "TWO_SIDED", "TWO-SIDED", "2-SIDED", "2_SIDED",
+                "TWO_SIDED_LONG", "TWO-SIDED-LONG-EDGE", "LONG_EDGE", "VERTICAL", "TRUE", "1"
+            ):
+                is_double = True
+            elif dup_str in (
+                "TWO_SIDED_SHORT", "TWO-SIDED-SHORT-EDGE", "SHORT_EDGE", "HORIZONTAL"
+            ):
+                is_double = True
+                is_short_edge = True
+
+        if is_double:
+            if is_short_edge:
+                options["sides"] = "two-sided-short-edge"
+                options["Duplex"] = "DuplexTumble"
+                options["BRDuplex"] = "DuplexTumble"
+                options["JCLDuplex"] = "DuplexTumble"
+            else:
+                options["sides"] = "two-sided-long-edge"
+                options["Duplex"] = "DuplexNoTumble"
+                options["BRDuplex"] = "DuplexNoTumble"
+                options["JCLDuplex"] = "DuplexNoTumble"
         else:
             options["sides"] = "one-sided"
+            options["Duplex"] = "None"
+            options["BRDuplex"] = "None"
+            options["JCLDuplex"] = "None"
 
         # Page Ranges
         if page_range and page_range.upper() not in ("ALL", ""):
@@ -1407,14 +1434,34 @@ class CupsController:
 
         has_mixed_colors = is_pdf and len(selected_pages) > 1 and len(set(page_modes.values())) > 1
 
+        # Check if duplex (two-sided) printing is requested
+        is_duplex_job = False
+        if isinstance(duplex, bool):
+            is_duplex_job = duplex
+        elif isinstance(duplex, str):
+            is_duplex_job = duplex.strip().upper() in (
+                "DOUBLE", "DUPLEX", "TWO_SIDED", "TWO-SIDED", "2-SIDED", "2_SIDED",
+                "TWO_SIDED_LONG", "TWO-SIDED-LONG-EDGE", "TWO_SIDED_SHORT", "TWO-SIDED-SHORT-EDGE",
+                "SHORT_EDGE", "LONG_EDGE", "VERTICAL", "HORIZONTAL", "TRUE", "1"
+            )
+
+        # CRITICAL DUPLEX RULE:
+        # If double-sided printing is requested, we MUST NOT split pages into multiple sequential CUPS jobs!
+        # Multiple jobs force CUPS to eject the sheet and pull a new sheet of paper, destroying two-sided printing.
+        if is_duplex_job and has_mixed_colors:
+            print("[CUPS] ⚡ Duplex print requested with mixed colors: keeping in single unified job to preserve 2-sided sheet feeding.")
+            has_mixed_colors = False
+            if any(m == "COLOUR" for m in page_modes.values()):
+                colour_mode = "COLOUR"
+
         print(
             f"[CUPS] Print job '{p_path.name}' | Total pages: {total_pages} | "
-            f"Selected: {selected_pages} | Mixed colors: {has_mixed_colors}"
+            f"Selected: {selected_pages} | Mixed colors: {has_mixed_colors} | Duplex: {is_duplex_job}"
         )
 
         # ── Mixed Colour & Monochrome Pages (Raspberry Pi / Linux) ──
         # Brother hardware cannot switch between Mono and FullColor mid-spool in a single job.
-        # Partition contiguous pages into matching color mode groups and dispatch sequentially.
+        # Partition contiguous pages into matching color mode groups and dispatch sequentially (simplex only).
         if has_mixed_colors and sys.platform != "win32":
             groups = []
             for p in selected_pages:
@@ -1555,9 +1602,10 @@ class CupsController:
                     if os.path.exists(br_bin):
                         try:
                             corm_arg = "FullColor" if is_color else "Mono"
-                            # Set BOTH -corm (color mode) and -copies (exact copy count) on Brother hardware
-                            subprocess.run([br_bin, "-corm", corm_arg, "-copies", str(clean_copies)], timeout=2, capture_output=True)
-                            print(f"[CUPS] Brother hardware configured via {br_bin}: -corm {corm_arg} -copies {clean_copies}")
+                            dup_arg = "DuplexNoTumble" if is_duplex_job else "OFF"
+                            # Set -corm (color mode), -copies (exact copy count), and -duplex on Brother hardware
+                            subprocess.run([br_bin, "-corm", corm_arg, "-copies", str(clean_copies), "-duplex", dup_arg], timeout=2, capture_output=True)
+                            print(f"[CUPS] Brother hardware configured via {br_bin}: -corm {corm_arg} -copies {clean_copies} -duplex {dup_arg}")
                         except Exception as e:
                             print(f"[CUPS] Brother hardware config notice: {e}")
                         break

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import TimerSvg from '../components/TimerSvg'
 import './KioskScreens.css'
 
 export default function PaymentScreen() {
@@ -26,7 +27,10 @@ export default function PaymentScreen() {
       <div className="kiosk-bg-mesh" />
       <div className="kiosk-statusbar">
         <div className="statusbar__left"><div className="statusbar__dot" /><span className="statusbar__kiosk">PB-001</span></div>
-        <div className="statusbar__right"><span>Expires: {minutes}:{seconds}</span></div>
+        <div className="statusbar__right" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <TimerSvg size={18} />
+          <span>Expires: {minutes}:{seconds}</span>
+        </div>
       </div>
 
       <div className="kiosk-payment kiosk-enter" style={{ marginTop: 48 }}>

@@ -1,5 +1,5 @@
 {
-  "apiUrl": "https://api.printbooth.co.in/api",
+  "apiUrl": "http://localhost:5000/api",
   "kioskId": "PB-001",
   "kioskName": "PrintBooth — Station 1"
 }

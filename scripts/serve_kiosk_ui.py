@@ -131,68 +131,125 @@ def print_staged_order_in_background(order: dict):
         pin = str(order.get("releasePin") or order.get("otp") or order.get("pickupCode") or "")
         aliases = [a for a in [order_number, pin] if a and a != order_id]
 
-        settings = order.get("printSettings") or {}
-        file_name = str(order.get("fileName") or settings.get("fileName") or "document.pdf")
-        copies = max(1, int(order.get("copies") or settings.get("copies") or 1))
-        raw_c = str(order.get("colourMode") or order.get("colour") or settings.get("colourMode") or settings.get("colour") or "BW").upper().replace("&", "")
-        colour_mode = "COLOUR" if raw_c in ("COLOR", "COLOUR") else "BW"
-        duplex = str(order.get("duplex") or settings.get("duplex") or "SINGLE").upper()
-        paper_size = str(order.get("paperSize") or settings.get("paperSize") or "A4").upper()
-        page_range = str(order.get("pageRange") or order.get("pages") or settings.get("pageRange") or settings.get("pages") or "ALL").strip()
-        scaling = str(order.get("scaling") or settings.get("scaling") or "FIT").strip()
-        orientation = str(order.get("orientation") or settings.get("orientation") or "AUTO").upper().strip()
-        pages_per_sheet = int(order.get("pagesPerSheet") or settings.get("pagesPerSheet") or 1)
-        page_colours = order.get("pageColours") or settings.get("pageColours")
-        page_copies = order.get("pageCopies") or settings.get("pageCopies")
+        jobs_to_process = []
+        if order.get("subJobs") and isinstance(order["subJobs"], list) and len(order["subJobs"]) > 1:
+            jobs_to_process = order["subJobs"]
+        elif order.get("files") and isinstance(order["files"], list) and len(order["files"]) > 1:
+            for idx, f in enumerate(order["files"]):
+                f_id = f.get("orderId") or f"{order_id}_sub_{idx + 1}"
+                f_settings = f.get("settings") or {}
+                jobs_to_process.append({
+                    **order,
+                    **f,
+                    "orderId": f_id,
+                    "fileName": f.get("fileName") or f"Document_{idx + 1}.pdf",
+                    "copies": f_settings.get("copies") or f.get("copies") or order.get("copies") or 1,
+                    "colourMode": f_settings.get("colour") or f.get("colour") or order.get("colourMode") or "BW",
+                    "duplex": f_settings.get("duplex") or f.get("duplex") or order.get("duplex") or "SINGLE",
+                    "paperSize": f_settings.get("paperSize") or f.get("paperSize") or order.get("paperSize") or "A4",
+                    "pageRange": f_settings.get("pages") or f_settings.get("pageRange") or f.get("pageRange") or f.get("pages") or order.get("pageRange") or "ALL",
+                    "scaling": f_settings.get("scaling") or f.get("scaling") or order.get("scaling") or "FIT",
+                    "orientation": f_settings.get("orientation") or f.get("orientation") or order.get("orientation") or "AUTO",
+                    "pagesPerSheet": f_settings.get("pagesPerSheet") or f.get("pagesPerSheet") or order.get("pagesPerSheet") or 1,
+                    "pageColours": f_settings.get("pageColours") or f.get("pageColours") or order.get("pageColours"),
+                    "pageCopies": f_settings.get("pageCopies") or f.get("pageCopies") or order.get("pageCopies"),
+                })
+        else:
+            jobs_to_process = [order]
 
-        # Locate pre-fetched document file on disk
-        local_target = TEMP_JOBS_DIR / f"{order_id}_{file_name}"
-        if not local_target.exists():
-            matches = list(TEMP_JOBS_DIR.glob(f"*{order_id}*"))
-            if matches:
-                local_target = matches[0]
+        for j_idx, job_item in enumerate(jobs_to_process):
+            sub_id = str(job_item.get("orderId") or f"{order_id}_sub_{j_idx + 1}")
+            settings = job_item.get("printSettings") or job_item.get("settings") or {}
+            file_name = str(job_item.get("fileName") or settings.get("fileName") or f"document_{j_idx + 1}.pdf")
+            copies = max(1, int(job_item.get("copies") or settings.get("copies") or 1))
+            raw_c = str(job_item.get("colourMode") or job_item.get("colour") or settings.get("colourMode") or settings.get("colour") or "BW").upper().replace("&", "")
+            colour_mode = "COLOUR" if ("COLOR" in raw_c or "COLOUR" in raw_c) else "BW"
+            duplex = str(job_item.get("duplex") or settings.get("duplex") or "SINGLE").upper()
+            paper_size = str(job_item.get("paperSize") or settings.get("paperSize") or "A4").upper()
+            page_range = str(job_item.get("pageRange") or job_item.get("pages") or settings.get("pageRange") or settings.get("pages") or "ALL").strip()
+            scaling = str(job_item.get("scaling") or settings.get("scaling") or "FIT").strip()
+            orientation = str(job_item.get("orientation") or settings.get("orientation") or "AUTO").upper().strip()
+            pages_per_sheet = int(job_item.get("pagesPerSheet") or settings.get("pagesPerSheet") or 1)
+            page_colours = job_item.get("pageColours") or settings.get("pageColours")
+            page_copies = job_item.get("pageCopies") or settings.get("pageCopies")
 
-        # If not already on disk, perform direct download from backend
-        if not local_target.exists() or local_target.stat().st_size == 0:
-            print(f"[Kiosk Server] 📥 Downloading '{file_name}' for Order {order_id}...")
-            dl_url = f"{API_URL}/print/download/{order_id}?kioskId={urllib.parse.quote(KIOSK_ID)}"
-            if KIOSK_SECRET:
-                dl_url += f"&secret={urllib.parse.quote(KIOSK_SECRET)}"
-            headers = {
-                "User-Agent": "Mozilla/5.0 (X11; Linux armv7l) AppleWebKit/537.36 Chrome/120.0.0.0 PrintBooth-Kiosk/1.0",
-                "X-Kiosk-Id": KIOSK_ID,
-                "Accept": "*/*",
-            }
-            if KIOSK_SECRET:
-                headers["X-Kiosk-Secret"] = KIOSK_SECRET
-            req = urllib.request.Request(dl_url, headers=headers)
-            with urllib.request.urlopen(req, timeout=20) as resp, open(local_target, "wb") as f:
-                f.write(resp.read())
-            print(f"[Kiosk Server] ✓ Downloaded {file_name} ({local_target.stat().st_size} bytes)")
+            # Locate pre-fetched document file on disk
+            local_target = TEMP_JOBS_DIR / f"{sub_id}_{file_name}"
+            if not local_target.exists():
+                matches = list(TEMP_JOBS_DIR.glob(f"*{sub_id}*"))
+                if matches:
+                    local_target = matches[0]
 
-        if local_target.exists() and local_cups:
-            print(f"\n[Kiosk Server] 🖨 DISPATCHING PHYSICAL HARDWARE PRINT FOR ORDER {order_id} ({file_name})...")
-            print(f"  Settings: {copies} copies | {colour_mode} | {duplex} | {paper_size} | Pages: {page_range}")
-            if page_colours:
-                print(f"  Per-page colours: {page_colours}")
-            res = local_cups.print_file(
-                file_path=str(local_target),
-                copies=copies,
-                colour_mode=colour_mode,
-                duplex=duplex,
-                paper_size=paper_size,
-                page_range=page_range,
-                scaling=scaling,
-                pages_per_sheet=pages_per_sheet,
-                printer_name=PRINTER_NAME,
-                job_title=f"Order {order_id} - {file_name}",
-                orientation=orientation,
-                page_colours=page_colours,
-                page_copies=page_copies,
-            )
-            print(f"[Kiosk Server] CUPS print spool result: {res}")
-            if mark_order_processed:
-                mark_order_processed(order_id, aliases)
+            if not local_target.exists():
+                matches = list(TEMP_JOBS_DIR.glob(f"*{order_id}*"))
+                if matches:
+                    local_target = matches[0]
+
+            # If not already on disk, perform direct download from backend
+            if not local_target.exists() or local_target.stat().st_size == 0:
+                print(f"[Kiosk Server] 📥 Downloading '{file_name}' for Order {sub_id}...")
+                dl_url = f"{API_URL}/print/download/{sub_id}?kioskId={urllib.parse.quote(KIOSK_ID)}"
+                if KIOSK_SECRET:
+                    dl_url += f"&secret={urllib.parse.quote(KIOSK_SECRET)}"
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (X11; Linux armv7l) AppleWebKit/537.36 Chrome/120.0.0.0 PrintBooth-Kiosk/1.0",
+                    "X-Kiosk-Id": KIOSK_ID,
+                    "Accept": "*/*",
+                }
+                if KIOSK_SECRET:
+                    headers["X-Kiosk-Secret"] = KIOSK_SECRET
+                try:
+                    req = urllib.request.Request(dl_url, headers=headers)
+                    with urllib.request.urlopen(req, timeout=20) as resp, open(local_target, "wb") as f:
+                        f.write(resp.read())
+                    print(f"[Kiosk Server] ✓ Downloaded {file_name} ({local_target.stat().st_size} bytes)")
+                except Exception as dl_err:
+                    print(f"[Kiosk Server] Download for {sub_id} failed, trying master {order_id}: {dl_err}")
+                    dl_url = f"{API_URL}/print/download/{order_id}?kioskId={urllib.parse.quote(KIOSK_ID)}"
+                    req = urllib.request.Request(dl_url, headers=headers)
+                    with urllib.request.urlopen(req, timeout=20) as resp, open(local_target, "wb") as f:
+                        f.write(resp.read())
+
+            if local_target.exists() and local_cups:
+                # Office conversion for PPT and DOCX documents
+                is_ppt = local_target.suffix.lower() in (".pptx", ".ppt", ".ppsx") or bool(re.search(r"\.(pptx?|ppsx?)$", file_name, re.I))
+                is_docx = local_target.suffix.lower() in (".docx", ".doc") or bool(re.search(r"\.(docx?|doc)$", file_name, re.I))
+                if is_ppt or is_docx:
+                    phase_msg = "Processing PPT into print PDF…" if is_ppt else "Processing DOCX into print PDF…"
+                    print(f"[Kiosk Server] 📄 {phase_msg} for Order {sub_id} ({file_name})...")
+                    try:
+                        converted = local_cups._convert_office_to_pdf(local_target)
+                        if converted and Path(converted).exists() and Path(converted).suffix.lower() == ".pdf":
+                            local_target = Path(converted)
+                            print(f"[Kiosk Server] ✓ Successfully converted {file_name} -> {local_target.name}")
+                    except Exception as conv_err:
+                        print(f"[Kiosk Server] Office conversion notice: {conv_err}")
+
+                print(f"\n[Kiosk Server] 🖨 DISPATCHING PHYSICAL HARDWARE PRINT [{j_idx + 1}/{len(jobs_to_process)}] FOR ORDER {sub_id} ({file_name})...")
+                print(f"  Exact Settings: {copies} copies | {colour_mode} | {duplex} | {paper_size} | Pages: {page_range}")
+                if page_colours:
+                    print(f"  Per-page colours: {page_colours}")
+                res = local_cups.print_file(
+                    file_path=str(local_target),
+                    copies=copies,
+                    colour_mode=colour_mode,
+                    duplex=duplex,
+                    paper_size=paper_size,
+                    page_range=page_range,
+                    scaling=scaling,
+                    pages_per_sheet=pages_per_sheet,
+                    printer_name=PRINTER_NAME,
+                    job_title=f"Order {sub_id} - {file_name}",
+                    orientation=orientation,
+                    page_colours=page_colours,
+                    page_copies=page_copies,
+                )
+                print(f"[Kiosk Server] CUPS print spool result for [{j_idx + 1}/{len(jobs_to_process)}]: {res}")
+                if mark_order_processed:
+                    mark_order_processed(sub_id, aliases)
+
+        if mark_order_processed:
+            mark_order_processed(order_id, aliases)
 
             # Notify remote API in background that print was released
             try:

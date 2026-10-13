@@ -14,7 +14,7 @@ export default function PrinterOfflineScreen() {
     import.meta.env.VITE_KIOSK_ID ||
     'PB-001'
 
-  const { isOffline, reason, detail } = usePrinterStatus(kioskId)
+  const { isOffline, reason, detail, recommendation } = usePrinterStatus(kioskId)
 
   // Polling to see if printer & network recover, then smoothly navigate back to kiosk home
   useEffect(() => {
@@ -31,6 +31,7 @@ export default function PrinterOfflineScreen() {
         title="PRINTER OFFLINE"
         reason={reason || 'Station is offline or network connection interrupted.'}
         detail={detail || 'PrintBooth is reconnecting and will resume automatically once connection is restored.'}
+        recommendation={recommendation}
         kioskId={kioskId}
       />
     </div>

@@ -5,16 +5,26 @@ export interface PrinterStatusInfo {
   printerStatus: string
   reason: string
   detail: string
+  recommendation?: string
   checkNow: () => void
 }
 
 export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: string): PrinterStatusInfo {
   const urlParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
   const forceOffline = urlParams.get('offline') === '1' || urlParams.get('error') === '1'
-  const [isOffline, setIsOffline] = useState(forceOffline)
+  const forceOnline =
+    urlParams.get('online') === '1' ||
+    urlParams.get('forceOnline') === '1' ||
+    urlParams.get('mock') === '1' ||
+    urlParams.get('test') === '1' ||
+    urlParams.get('devState') !== null ||
+    import.meta.env.VITE_PRINT_MODE === 'test'
+
+  const [isOffline, setIsOffline] = useState(forceOffline ? true : (forceOnline ? false : false))
   const [printerStatus, setPrinterStatus] = useState(forceOffline ? 'OFFLINE' : 'READY')
   const [reason, setReason] = useState('Printer is currently offline or rebooting after a power cycle.')
   const [detail, setDetail] = useState('The station is auto-recovering and will resume automatically as soon as the printer is ready.')
+  const [recommendation, setRecommendation] = useState('')
 
   const apiUrl = (
     customApiUrl ||
@@ -53,12 +63,22 @@ export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: stri
       return
     }
 
+    if (forceOnline) {
+      setIsOffline(false)
+      setPrinterStatus('READY')
+      setReason('')
+      setDetail('')
+      setRecommendation('')
+      return
+    }
+
     // 0. Immediate hardware / network check
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       setIsOffline(true)
       setPrinterStatus('OFFLINE')
       setReason('Station is offline or network connection interrupted.')
       setDetail('PrintBooth is waiting for network reconnection and will resume automatically once connected.')
+      setRecommendation('')
       return
     }
 
@@ -85,12 +105,14 @@ export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: stri
             setIsOffline(true)
             setReason('The printer is currently offline or disconnected.')
             setDetail('The station is auto-recovering and will resume automatically as soon as the printer is ready.')
+            setRecommendation('')
             return
           } else {
             // Local printer is physically confirmed ready
             successStreakRef.current += 1
             failureStreakRef.current = 0
             setIsOffline(false)
+            setRecommendation('')
             return
           }
         }
@@ -110,12 +132,21 @@ export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: stri
         if (netRes.ok) {
           const netData = await netRes.json()
           const k = netData.data || netData
+          const hw = k.hardwareDetails
+          const isKioskTestMode = Boolean(
+            k.isTestMode ||
+            hw?.isTestMode ||
+            (import.meta.env.VITE_PRINT_MODE || '').toLowerCase() === 'test' ||
+            (typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('test') === '1' || new URLSearchParams(window.location.search).get('mock') === '1'))
+          )
           const kStatus = String(k.status || '').toUpperCase()
           const pStatus = String(k.printerStatus || '').toUpperCase()
-          const hw = k.hardwareDetails
+          const mError = k.merchantError
+          const mRec = k.merchantRecommendation
 
-          const isProblem =
+          const isProblem = !isKioskTestMode && (
             Boolean(k.isOffline) ||
+            Boolean(mError) ||
             kStatus === 'OFFLINE' ||
             kStatus === 'DISCONNECTED' ||
             pStatus === 'OFFLINE' ||
@@ -124,24 +155,33 @@ export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: stri
             pStatus === 'DISCONNECTED' ||
             (hw && (hw.isOnline === false || hw.isAvailable === false || hw.isHardwareReady === false)) ||
             (pStatus && !['READY', 'IDLE', 'PRINTING'].includes(pStatus))
+          )
 
           if (isProblem) {
             failureStreakRef.current += 1
             successStreakRef.current = 0
             setIsOffline(true)
             setPrinterStatus(pStatus || 'OFFLINE')
-            setReason(
-              pStatus === 'OFFLINE' || pStatus === 'DISCONNECTED'
-                ? 'Printer is offline or disconnected.'
-                : 'Printing station is currently unavailable.'
-            )
-            setDetail(`Station ${k.name || effectiveKioskId} is auto-recovering hardware connection.`)
+            if (mError) {
+              setReason(mError)
+              setDetail(mRec || `Station ${k.name || effectiveKioskId} is paused due to a payment service issue.`)
+              setRecommendation(mRec || '')
+            } else {
+              setReason(
+                pStatus === 'OFFLINE' || pStatus === 'DISCONNECTED'
+                  ? 'Printer is offline or disconnected.'
+                  : 'Printing station is currently unavailable.'
+              )
+              setDetail(`Station ${k.name || effectiveKioskId} is auto-recovering hardware connection.`)
+              setRecommendation('')
+            }
             return
           } else {
             successStreakRef.current += 1
             failureStreakRef.current = 0
             setIsOffline(false)
             setPrinterStatus(pStatus || 'READY')
+            setRecommendation('')
             return
           }
         }
@@ -215,6 +255,7 @@ export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: stri
     printerStatus,
     reason,
     detail,
+    recommendation,
     checkNow: checkStatus,
   }
 }

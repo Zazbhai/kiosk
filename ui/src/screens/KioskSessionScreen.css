@@ -229,6 +229,93 @@
     0 2px 8px rgba(220, 38, 38, 0.04);
 }
 
+/* ── URL Link Strip under QR code ─────────────────────────────────────────── */
+.ks-qr-url-strip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  width: auto;
+  max-width: 100%;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+  margin-top: 4px;
+  box-sizing: border-box;
+}
+
+.ks-qr-url-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ks-qr-url-link {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--ks-red, #dc2626);
+  font-family: var(--ks-mono, monospace);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+}
+
+.ks-qr-url-link:hover {
+  color: #b91c1c;
+}
+
+.ks-qr-url-copy-btn,
+.ks-qr-url-open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.ks-qr-url-copy-btn:hover,
+.ks-qr-url-open-btn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.ks-qr-url-copy-btn:active,
+.ks-qr-url-open-btn:active {
+  transform: scale(0.96);
+}
+
+.ks-qr-url-open-btn {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.25);
+  color: var(--ks-red, #dc2626);
+}
+
+.ks-qr-url-open-btn:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
 /* Switch to PIN Keypad button (Rectangular Rounded, NO CIRCLE/PILL) */
 .ks-pin-switch-btn {
   display: inline-flex;
@@ -2416,4 +2503,716 @@
   padding: 14px;
   margin-top: 14px;
 }
+
+/* ── Hardware Variant Status Pills ─────────────────────────────────────────── */
+.ks-variant-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-family: var(--ks-mono);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: all 0.25s var(--ks-ease);
+}
+
+.ks-variant-pill--pro {
+  background: rgba(220, 38, 38, 0.08);
+  border: 1.5px solid rgba(220, 38, 38, 0.28);
+  color: #dc2626;
+}
+
+.ks-variant-pill--pro .ks-variant-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #dc2626;
+  box-shadow: 0 0 8px rgba(220, 38, 38, 0.6);
+  animation: ks-pulse-dot 2s infinite ease-in-out;
+}
+
+.ks-variant-pill--lite {
+  background: rgba(71, 85, 105, 0.08);
+  border: 1.5px solid rgba(100, 116, 139, 0.25);
+  color: #475569;
+}
+
+.ks-variant-pill--lite .ks-variant-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #64748b;
+}
+
+/* ── Pro Page Preview Navigation Bar ───────────────────────────────────────── */
+.ks-preview-nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-top: 8px;
+  box-sizing: border-box;
+}
+
+.ks-preview-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 14px;
+  min-height: 36px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #0f172a;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s var(--ks-ease);
+}
+
+.ks-preview-nav-btn:hover:not(:disabled) {
+  border-color: #dc2626;
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+.ks-preview-nav-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.ks-preview-nav-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.ks-preview-nav-text {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #475569;
+  font-family: var(--ks-mono);
+}
+
+/* ── Pro Touchscreen Cards & Action Blocks ─────────────────────────────────── */
+.ks-pro-touch-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #ffffff;
+  border: 1.5px solid rgba(220, 38, 38, 0.22);
+  border-radius: 16px;
+  padding: 16px 18px;
+  box-shadow: 0 6px 20px rgba(220, 38, 38, 0.06), 0 2px 6px rgba(0, 0, 0, 0.03);
+}
+
+.ks-pro-touch-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ks-pro-touch-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #09090b;
+}
+
+.ks-pro-touch-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.22);
+  color: #dc2626;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.ks-pro-touch-sub {
+  font-size: 0.78rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+/* ── Pro Touch Settings Selectors ─────────────────────────────────────────── */
+.ks-pro-settings-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.ks-pro-control-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ks-pro-control-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-family: var(--ks-mono);
+  min-width: 80px;
+}
+
+.ks-pro-pill-toggle {
+  display: flex;
+  align-items: center;
+  background: #e2e8f0;
+  padding: 3px;
+  border-radius: 10px;
+  gap: 3px;
+  flex: 1;
+}
+
+.ks-pro-pill-opt {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  min-height: 38px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s var(--ks-ease);
+}
+
+.ks-pro-pill-opt--active {
+  background: #ffffff;
+  color: #09090b;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.ks-pro-pill-opt--active-red {
+  background: #dc2626;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.35);
+}
+
+.ks-pro-stepper {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.ks-pro-stepper-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 40px;
+  background: #f8fafc;
+  border: none;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+  cursor: pointer;
+  transition: background 0.15s var(--ks-ease);
+}
+
+.ks-pro-stepper-btn:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #dc2626;
+}
+
+.ks-pro-stepper-btn:active:not(:disabled) {
+  background: #e2e8f0;
+}
+
+.ks-pro-stepper-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.ks-pro-stepper-val {
+  min-width: 46px;
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #09090b;
+  font-family: var(--ks-mono);
+}
+
+/* ── Pro Actions Grid & Base Buttons ───────────────────────────────────────── */
+.ks-pro-actions-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.ks-pro-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 20px;
+  min-height: 46px;
+  border-radius: 12px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s var(--ks-ease);
+  box-sizing: border-box;
+  text-decoration: none;
+}
+
+.ks-pro-btn:active {
+  transform: scale(0.98);
+}
+
+.ks-pro-btn--primary {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  border: 1.5px solid #dc2626;
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.28), 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.ks-pro-btn--primary:hover {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  box-shadow: 0 6px 18px rgba(220, 38, 38, 0.38);
+}
+
+.ks-pro-btn--secondary {
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  color: #334155;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+}
+
+.ks-pro-btn--secondary:hover {
+  border-color: #94a3b8;
+  background: #f8fafc;
+  color: #09090b;
+}
+
+.ks-pro-btn--ghost {
+  background: transparent;
+  border: 1.5px solid #e2e8f0;
+  color: #64748b;
+}
+
+.ks-pro-btn--ghost:hover {
+  border-color: #cbd5e1;
+  color: #09090b;
+  background: #f8fafc;
+}
+
+.ks-pro-btn--outline {
+  background: #ffffff;
+  border: 1.5px solid rgba(220, 38, 38, 0.4);
+  color: #dc2626;
+}
+
+.ks-pro-btn--outline:hover {
+  background: #fef2f2;
+  border-color: #dc2626;
+}
+
+.ks-pro-arrow {
+  font-size: 1.05rem;
+  transition: transform 0.2s var(--ks-ease);
+}
+
+.ks-pro-btn:hover .ks-pro-arrow {
+  transform: translateX(3px);
+}
+
+/* ── Phone Connected Minimalist View ────────────────────────────────────────── */
+.ks-connected-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: calc(100vh - 120px);
+  position: relative;
+  animation: ks-fade-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ks-connected-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 24px;
+}
+
+.ks-connected-icon-wrap {
+  width: 140px;
+  height: 140px;
+  border-radius: 36px;
+  background: #ffffff;
+  border: 1.5px solid rgba(22, 163, 74, 0.20);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #16a34a;
+  box-shadow: 0 20px 48px -10px rgba(22, 163, 74, 0.20), 0 4px 16px rgba(0, 0, 0, 0.04);
+  position: relative;
+  animation: ks-scale-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ks-connected-icon-wrap--processing {
+  border-color: rgba(234, 88, 12, 0.25);
+  box-shadow: 0 20px 48px -10px rgba(234, 88, 12, 0.20), 0 4px 16px rgba(0, 0, 0, 0.04);
+}
+
+.ks-connected-icon-wrap::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #16a34a;
+  border: 4px solid #ffffff;
+  box-shadow: 0 0 14px rgba(22, 163, 74, 0.85);
+}
+
+.ks-connected-icon-wrap--processing::after {
+  background: #ea580c;
+  box-shadow: 0 0 14px rgba(234, 88, 12, 0.85);
+}
+
+.ks-converting-spinner-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.ks-connected-phone-svg {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  display: block;
+}
+
+.ks-connected-title {
+  font-size: 2.6rem;
+  font-weight: 800;
+  color: #09090b;
+  letter-spacing: -0.035em;
+  margin: 0;
+  line-height: 1.1;
+  font-family: var(--ks-font);
+}
+
+/* Sharp Cancel Button (Bottom-Left on PrintBooth Pro) */
+.ks-sharp-cancel-btn {
+  position: fixed;
+  bottom: 28px;
+  left: 28px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: #ffffff;
+  color: #dc2626;
+  border: 1.5px solid #dc2626;
+  border-radius: 4px; /* sharp aesthetic */
+  font-family: var(--ks-mono);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.1);
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.ks-sharp-cancel-btn:hover {
+  background: #dc2626;
+  color: #ffffff;
+  box-shadow: 0 6px 20px rgba(220, 38, 38, 0.28);
+  transform: translateY(-1px);
+}
+
+.ks-sharp-cancel-btn:active {
+  transform: translateY(1px);
+}
+
+/* ── 5-Second Phone Disconnect Grace Warning Banner (Zero Layout Shift) ── */
+.ks-phone-disconnect-banner {
+  position: fixed;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 70;
+  width: min(92vw, 680px);
+  background: rgba(21, 21, 23, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(220, 38, 38, 0.35);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45), 0 0 30px rgba(220, 38, 38, 0.18);
+  border-radius: 14px;
+  padding: 14px 20px;
+  animation: ks-disconnect-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  pointer-events: auto;
+}
+
+@keyframes ks-disconnect-slide-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+.ks-phone-disconnect-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ks-phone-disconnect-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--ks-mono, monospace);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #f87171;
+  background: rgba(220, 38, 38, 0.16);
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(220, 38, 38, 0.28);
+  white-space: nowrap;
+}
+
+.ks-phone-disconnect-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 10px #ef4444;
+  animation: ks-disconnect-dot-pulse 1s infinite alternate ease-in-out;
+}
+
+@keyframes ks-disconnect-dot-pulse {
+  from { opacity: 0.4; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1.2); }
+}
+
+.ks-phone-disconnect-message {
+  font-size: 13.5px;
+  color: #f1f5f9;
+  font-weight: 500;
+  line-height: 1.4;
+  flex: 1;
+}
+
+.ks-phone-disconnect-timer {
+  color: #c8ff00; /* Capitalio synthetic lime accent */
+  font-family: var(--ks-mono, monospace);
+  font-size: 16px;
+  font-weight: 800;
+  padding: 2px 6px;
+  background: rgba(200, 255, 0, 0.12);
+  border-radius: 4px;
+}
+
+.ks-phone-disconnect-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ks-phone-disconnect-btn {
+  font-family: var(--ks-mono, monospace);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  border: none;
+}
+
+.ks-phone-disconnect-btn--keep {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.ks-phone-disconnect-btn--keep:hover {
+  background: rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px);
+}
+
+.ks-phone-disconnect-btn--reset {
+  background: #dc2626;
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.3);
+}
+
+.ks-phone-disconnect-btn--reset:hover {
+  background: #b91c1c;
+  transform: translateY(-1px);
+}
+
+.ks-phone-disconnect-btn:active {
+  transform: translateY(1px);
+}
+
+/* ── Multi-File Display & Chips ────────────────────────────────────────────── */
+.ks-multifile-preview-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 6px 2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(220, 38, 38, 0.25) transparent;
+}
+
+.ks-multifile-preview-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.ks-multifile-preview-list::-webkit-scrollbar-thumb {
+  background: rgba(220, 38, 38, 0.28);
+  border-radius: 4px;
+}
+
+.ks-multifile-preview-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  transition: border-color 0.18s var(--ks-ease);
+}
+
+.ks-multifile-preview-item:hover {
+  border-color: rgba(220, 38, 38, 0.3);
+}
+
+.ks-multifile-preview-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.ks-multifile-preview-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.ks-multifile-preview-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ks-text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ks-multifile-preview-meta {
+  font-size: 11px;
+  font-family: var(--ks-mono);
+  font-weight: 600;
+  color: var(--ks-text-3);
+}
+
+.ks-summary-row--multifile {
+  align-items: flex-start !important;
+}
+
+.ks-multifile-chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  max-width: 240px;
+}
+
+.ks-multifile-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  max-width: 220px;
+  box-sizing: border-box;
+}
+
+.ks-multifile-chip-name {
+  color: var(--ks-text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+}
+
+.ks-multifile-chip-badge {
+  font-family: var(--ks-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--ks-red);
+  background: rgba(220, 38, 38, 0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
 

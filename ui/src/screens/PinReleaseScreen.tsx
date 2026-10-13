@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
 import { QrCode, Printer } from '@phosphor-icons/react'
 import ParticleBackground from '../components/ParticleBackground'
-import { useKioskSiteUrl } from '../utils/siteConfig'
+import { useKioskSiteUrl, getKioskApiUrl } from '../utils/siteConfig'
 import { parsePageRange } from '../utils/pageRange'
 import './PinReleaseScreen.css'
 
@@ -45,11 +45,7 @@ export default function PinReleaseScreen() {
 
   const initialApi = (
     paramApi ||
-    localStorage.getItem('pb_api_url') ||
-    (window as any).__PRINTBOOTH_API_URL__ ||
-    import.meta.env.VITE_PRINTBOOTH_API_URL ||
-    import.meta.env.VITE_API_URL ||
-    'https://api.printbooth.co.in'
+    getKioskApiUrl()
   ).replace(/\/api$/, '')
 
   const initialId =

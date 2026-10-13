@@ -116,10 +116,6 @@ export default function KioskWebPrintSettings({
     return selectedPagesList.length * Math.max(1, settings.copies)
   }, [selectedPagesList, settings.pageCopies, settings.copies])
 
-  const isCustomColour =
-    selectedPagesList.length > 1 &&
-    Boolean(settings.pageColours && Object.keys(settings.pageColours).length > 0)
-
   const pricePerPage = useMemo(() => {
     if (settings.colour === 'BW' && settings.duplex === 'SINGLE') return prices.BW_SINGLE
     if (settings.colour === 'BW' && settings.duplex === 'DOUBLE') return prices.BW_DOUBLE
@@ -128,20 +124,10 @@ export default function KioskWebPrintSettings({
   }, [settings.colour, settings.duplex, prices])
 
   const colourCardValue = useMemo(() => {
-    if (isCustomColour && settings.pageColours) {
-      let col = 0
-      let mono = 0
-      selectedPagesList.forEach((p) => {
-        const mode = settings.pageColours?.[String(p)] ?? settings.colour ?? 'BW'
-        if (mode === 'COLOUR') col++
-        else mono++
-      })
-      return `Custom (${col} Col, ${mono} B&W)`
-    }
     return settings.colour === 'BW'
       ? `B&W · ₹${prices.BW_SINGLE}/pg`
       : `Colour · ₹${prices.COLOUR_SINGLE}/pg`
-  }, [isCustomColour, settings.pageColours, settings.colour, selectedPagesList, prices])
+  }, [settings.colour, prices])
 
   const totalSheets = useMemo(() => {
     return calcFileTotalSheets(
@@ -262,9 +248,9 @@ export default function KioskWebPrintSettings({
         <CustomColourControl
           selectedPages={selectedPagesList}
           globalColour={settings.colour}
-          pageColours={settings.pageColours}
-          onGlobalColourChange={(newVal) => patchSettings({ colour: newVal })}
-          onPageColoursChange={(newMap) => patchSettings({ pageColours: newMap })}
+          pageColours={undefined}
+          onGlobalColourChange={(newVal) => patchSettings({ colour: newVal, pageColours: undefined })}
+          onPageColoursChange={() => patchSettings({ pageColours: undefined })}
         />
       ),
     },

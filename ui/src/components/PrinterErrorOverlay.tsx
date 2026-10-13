@@ -8,6 +8,7 @@ export interface PrinterErrorOverlayProps {
   title?: string
   reason?: string
   detail?: string
+  recommendation?: string
   kioskId?: string
   kioskName?: string
   onDismiss?: () => void
@@ -16,6 +17,9 @@ export interface PrinterErrorOverlayProps {
 export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
   isOpen,
   title,
+  reason,
+  detail,
+  recommendation,
 }) => {
   const tapCountRef = React.useRef(0)
   const tapTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -132,6 +136,54 @@ export const PrinterErrorOverlay: React.FC<PrinterErrorOverlayProps> = ({
           <span id="oopss-title" className="oopss-title" onClick={handleTap}>
             {displayTitle}
           </span>
+
+          {(reason || detail) && (
+            <p
+              className="p-a"
+              style={{
+                marginTop: '16px',
+                fontSize: '1.15rem',
+                opacity: 0.92,
+                maxWidth: '540px',
+                lineHeight: 1.5,
+                fontWeight: 500,
+              }}
+            >
+              {reason || detail}
+            </p>
+          )}
+
+          {recommendation && (
+            <div
+              style={{
+                marginTop: '16px',
+                padding: '14px 22px',
+                borderRadius: '14px',
+                background: 'rgba(255, 255, 255, 0.12)',
+                border: '1px solid rgba(255, 255, 255, 0.28)',
+                color: '#ffffff',
+                fontSize: '0.95rem',
+                lineHeight: 1.5,
+                maxWidth: '540px',
+                textAlign: 'left',
+                backdropFilter: 'blur(10px)',
+              }}
+            >
+              <div
+                style={{
+                  fontWeight: 800,
+                  fontSize: '0.8rem',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  marginBottom: '4px',
+                  opacity: 0.9,
+                }}
+              >
+                Action Required
+              </div>
+              <div style={{ opacity: 0.95, whiteSpace: 'pre-line' }}>{recommendation}</div>
+            </div>
+          )}
         </div>
       </motion.div>
     </AnimatePresence>,

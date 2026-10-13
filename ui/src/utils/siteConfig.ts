@@ -12,7 +12,20 @@ import { useState, useEffect, useCallback } from 'react'
  * 5. Fallback: http://localhost:5200
  */
 
+export function isLocalOrLanHost(hostname: string): boolean {
+  if (!hostname) return false
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    /^192\.168\./.test(hostname) ||
+    /^10\./.test(hostname) ||
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname)
+  )
+}
+
 export function getKioskSiteUrl(): string {
+  const isLan = typeof window !== 'undefined' && isLocalOrLanHost(window.location.hostname)
+
   if (typeof window !== 'undefined') {
     const search = new URLSearchParams(window.location.search)
     const paramUrl = search.get('siteUrl') || search.get('webUrl') || search.get('clientWebUrl')
@@ -21,19 +34,38 @@ export function getKioskSiteUrl(): string {
     }
 
     const localUrl = localStorage.getItem('pb_site_url') || localStorage.getItem('pb_web_url')
-    if (localUrl && localUrl.trim() && !localUrl.includes('localhost:5200') && !localUrl.includes('127.0.0.1:5200')) {
-      return localUrl.trim().replace(/\/+$/, '')
+    if (localUrl && localUrl.trim()) {
+      const clean = localUrl.trim().replace(/\/+$/, '')
+      // If we are on LAN/local environment, purge stale cloud domain overrides
+      if (isLan && clean.includes('printbooth.co.in')) {
+        try {
+          localStorage.removeItem('pb_site_url')
+          localStorage.removeItem('pb_web_url')
+        } catch {}
+      } else {
+        return clean
+      }
     }
 
     const winUrl = (window as any).__PRINTBOOTH_SITE_URL__ || (window as any).__PRINTBOOTH_WEB_URL__
-    if (winUrl && typeof winUrl === 'string' && winUrl.trim() && !winUrl.includes('localhost:5200')) {
-      return winUrl.trim().replace(/\/+$/, '')
+    if (winUrl && typeof winUrl === 'string' && winUrl.trim()) {
+      const clean = winUrl.trim().replace(/\/+$/, '')
+      if (!(isLan && clean.includes('printbooth.co.in'))) {
+        return clean
+      }
     }
   }
 
   const envUrl = import.meta.env.VITE_CLIENT_WEB_URL || import.meta.env.VITE_SITE_URL
-  if (envUrl && typeof envUrl === 'string' && envUrl.trim() && !envUrl.includes('localhost:5200')) {
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
     return envUrl.trim().replace(/\/+$/, '')
+  }
+
+  if (typeof window !== 'undefined') {
+    const h = window.location.hostname
+    if (isLocalOrLanHost(h)) {
+      return h === 'localhost' || h === '127.0.0.1' ? 'http://192.168.1.4:5200' : `http://${h}:5200`
+    }
   }
 
   return 'https://printbooth.co.in'
@@ -65,7 +97,39 @@ export function getKioskName(): string {
   return import.meta.env.VITE_KIOSK_NAME || 'PrintBooth — Station 1'
 }
 
+export function getKioskVariant(): 'pro' | 'lite' {
+  if (typeof window !== 'undefined') {
+    const search = new URLSearchParams(window.location.search)
+    const paramVariant = search.get('variant') || search.get('kioskVariant') || search.get('model')
+    if (paramVariant && paramVariant.trim()) {
+      return paramVariant.trim().toLowerCase().includes('lite') ? 'lite' : 'pro'
+    }
+    const localVariant = localStorage.getItem('pb_kiosk_variant')
+    if (localVariant && localVariant.trim()) {
+      return localVariant.trim().toLowerCase().includes('lite') ? 'lite' : 'pro'
+    }
+    const winVariant = (window as any).__PRINTBOOTH_KIOSK_VARIANT__
+    if (winVariant && typeof winVariant === 'string' && winVariant.trim()) {
+      return winVariant.trim().toLowerCase().includes('lite') ? 'lite' : 'pro'
+    }
+  }
+  const envVariant = import.meta.env.VITE_KIOSK_VARIANT || import.meta.env.VITE_VARIANT
+  if (envVariant && typeof envVariant === 'string' && envVariant.trim()) {
+    return envVariant.trim().toLowerCase().includes('lite') ? 'lite' : 'pro'
+  }
+  return 'pro'
+}
+
+export function setKioskVariant(variant: 'pro' | 'lite') {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('pb_kiosk_variant', variant)
+    window.dispatchEvent(new CustomEvent('pb_kiosk_variant_changed', { detail: variant }))
+  }
+}
+
 export function getKioskApiUrl(): string {
+  const isLan = typeof window !== 'undefined' && isLocalOrLanHost(window.location.hostname)
+
   if (typeof window !== 'undefined') {
     const search = new URLSearchParams(window.location.search)
     const paramApi = search.get('api') || search.get('apiUrl')
@@ -74,20 +138,32 @@ export function getKioskApiUrl(): string {
     }
     const localApi = localStorage.getItem('pb_api_url')
     if (localApi && localApi.trim()) {
-      if (localApi.includes('localhost:5000') || localApi.includes('127.0.0.1:5000')) {
-        localStorage.setItem('pb_api_url', 'https://api.printbooth.co.in/api')
-        return 'https://api.printbooth.co.in'
+      const clean = localApi.trim().replace(/\/+$/, '').replace(/\/api$/, '')
+      if (isLan && clean.includes('api.printbooth.co.in')) {
+        try {
+          localStorage.removeItem('pb_api_url')
+        } catch {}
+      } else {
+        return clean
       }
-      return localApi.trim().replace(/\/+$/, '').replace(/\/api$/, '')
     }
     const winApi = (window as any).__PRINTBOOTH_API_URL__
     if (winApi && typeof winApi === 'string' && winApi.trim()) {
-      return winApi.trim().replace(/\/+$/, '').replace(/\/api$/, '')
+      const clean = winApi.trim().replace(/\/+$/, '').replace(/\/api$/, '')
+      if (!(isLan && clean.includes('api.printbooth.co.in'))) {
+        return clean
+      }
     }
   }
   const envApi = import.meta.env.VITE_API_URL
   if (envApi && typeof envApi === 'string' && envApi.trim()) {
     return envApi.trim().replace(/\/+$/, '').replace(/\/api$/, '')
+  }
+  if (typeof window !== 'undefined') {
+    const h = window.location.hostname
+    if (isLocalOrLanHost(h)) {
+      return `http://${h}:5000`
+    }
   }
   return 'https://api.printbooth.co.in'
 }
@@ -136,7 +212,8 @@ export async function loadKioskRuntimeConfig(): Promise<{ apiUrl?: string; kiosk
  */
 export async function fetchRemoteSiteConfig(apiUrl: string, kioskId: string = 'PB-001'): Promise<string | null> {
   try {
-    const cleanApi = apiUrl.replace(/\/api$/, '')
+    const isLan = typeof window !== 'undefined' && isLocalOrLanHost(window.location.hostname)
+    const cleanApi = (apiUrl || getKioskApiUrl()).replace(/\/api$/, '')
     // Try kiosk-specific config first, then global /api/config
     let res = await fetch(`${cleanApi}/api/kiosks/${encodeURIComponent(kioskId)}/config`).catch(() => null)
     if (!res || !res.ok) {
@@ -145,11 +222,16 @@ export async function fetchRemoteSiteConfig(apiUrl: string, kioskId: string = 'P
 
     if (res && res.ok) {
       const data = await res.json()
+      if (data.kioskVariant || data.variant) {
+        setKioskVariant((data.kioskVariant || data.variant).toLowerCase().includes('lite') ? 'lite' : 'pro')
+      }
       const resolved = data.siteUrl || data.webUrl || data.clientWebUrl
       if (resolved && typeof resolved === 'string' && resolved.trim()) {
         const clean = resolved.trim().replace(/\/+$/, '')
-        setKioskSiteUrl(clean)
-        return clean
+        if (!(isLan && clean.includes('printbooth.co.in'))) {
+          setKioskSiteUrl(clean)
+          return clean
+        }
       }
     }
   } catch (err) {
@@ -161,7 +243,7 @@ export async function fetchRemoteSiteConfig(apiUrl: string, kioskId: string = 'P
 /**
  * React Hook that keeps the site URL and QR code URL reactively updated
  */
-export function useKioskSiteUrl(apiUrl: string = 'https://api.printbooth.co.in', kioskId: string = 'PB-001', sessionToken?: string) {
+export function useKioskSiteUrl(apiUrl: string = getKioskApiUrl(), kioskId: string = 'PB-001', sessionToken?: string) {
   const [siteUrl, setSiteUrlState] = useState<string>(() => getKioskSiteUrl())
   const [qrUrl, setQrUrl] = useState<string>(() => getKioskQrUrl(kioskId, siteUrl, sessionToken))
 

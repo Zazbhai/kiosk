@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Clock } from '@phosphor-icons/react'
+import TimerSvg from '../components/TimerSvg'
 import KioskWebPrintSettings from '../components/KioskWebPrintSettings'
 import {
   parsePageRange,
@@ -158,7 +158,7 @@ export default function PrintSettingsScreen() {
         <div className="ks-inactivity-modal-backdrop" onClick={resetInactivity}>
           <div className="ks-inactivity-modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="ks-inactivity-icon-pulse">
-              <Clock size={44} weight="fill" color="#dc2626" />
+              <TimerSvg size={56} />
             </div>
             <div className="ks-inactivity-countdown-badge">{inactivityRemaining}</div>
             <h3 className="ks-inactivity-title">Are you still there?</h3>

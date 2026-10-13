@@ -366,13 +366,25 @@ class KioskWsClient:
                     if order_number:
                         self.staged_jobs[order_number] = payload
                     if release_pin:
-                        self.staged_jobs[release_pin] = payload
+                        existing = self.staged_jobs.get(release_pin)
+                        if existing and isinstance(existing, dict) and (existing.get("orderId") != order_id or existing.get("fileName") != payload.get("fileName")):
+                            if not existing.get("subJobs"):
+                                existing["subJobs"] = [existing.copy()]
+                            if not any(sj.get("orderId") == order_id for sj in existing["subJobs"]):
+                                existing["subJobs"].append(payload)
+                            self.staged_jobs[release_pin] = existing
+                        else:
+                            self.staged_jobs[release_pin] = payload
 
                     # Persist locally so serve_kiosk_ui.py can verify PIN 100% locally
                     save_staged_order(payload)
 
                     # Prefetch document in background so printing is instant upon PIN entry
                     asyncio.create_task(self._prefetch_document(order_id, payload))
+                    if payload.get("files") and isinstance(payload.get("files"), list):
+                        for idx, f_item in enumerate(payload["files"]):
+                            f_order_id = f_item.get("orderId") or f"{order_id}_sub_{idx + 1}"
+                            asyncio.create_task(self._prefetch_document(f_order_id, {**f_item, "orderId": f_order_id}))
 
                 elif msg_type == "PIN_VERIFIED":
                     print(f"[WSS Kiosk Client] 🔑 PIN Verified on Kiosk for Order {order_id}!")
@@ -566,20 +578,33 @@ class KioskWsClient:
         if not order_id:
             return
 
-        settings = payload.get("printSettings") or {}
-        file_name = payload.get("fileName") or settings.get("fileName") or "document.pdf"
-        copies = max(1, int(payload.get("copies") or settings.get("copies") or 1))
-        raw_col = str(payload.get("colourMode") or payload.get("colour") or settings.get("colourMode") or settings.get("colour") or "BW").upper().replace("&", "")
-        colour_mode = "COLOUR" if raw_col in ("COLOUR", "COLOR") else "BW"
-        duplex = str(payload.get("duplex") or settings.get("duplex") or "SINGLE").upper()
-        paper_size = str(payload.get("paperSize") or settings.get("paperSize") or "A4").upper()
-        page_range = str(payload.get("pageRange") or payload.get("pages") or settings.get("pageRange") or settings.get("pages") or "ALL").strip()
-        scaling = str(payload.get("scaling") or settings.get("scaling") or "FIT").strip()
-        orientation = str(payload.get("orientation") or settings.get("orientation") or "AUTO").upper().strip()
-        pages_per_sheet = int(payload.get("pagesPerSheet") or settings.get("pagesPerSheet") or 1)
-
-        page_colours = payload.get("pageColours") or settings.get("pageColours")
-        page_copies = payload.get("pageCopies") or settings.get("pageCopies")
+        # Build the list of jobs to print (handles multi-file orders with distinct settings)
+        jobs_to_print = []
+        if payload.get("subJobs") and isinstance(payload["subJobs"], list) and len(payload["subJobs"]) > 1:
+            jobs_to_print = payload["subJobs"]
+        elif payload.get("files") and isinstance(payload["files"], list) and len(payload["files"]) > 1:
+            for idx, f in enumerate(payload["files"]):
+                f_id = f.get("orderId") or f"{order_id}_sub_{idx + 1}"
+                f_settings = f.get("settings") or {}
+                jobs_to_print.append({
+                    **payload,
+                    **f,
+                    "orderId": f_id,
+                    "fileName": f.get("fileName") or f"Document_{idx + 1}.pdf",
+                    "copies": f_settings.get("copies") or f.get("copies") or payload.get("copies") or 1,
+                    "colourMode": f_settings.get("colour") or f.get("colour") or payload.get("colourMode") or "BW",
+                    "duplex": f_settings.get("duplex") or f.get("duplex") or payload.get("duplex") or "SINGLE",
+                    "paperSize": f_settings.get("paperSize") or f.get("paperSize") or payload.get("paperSize") or "A4",
+                    "pageRange": f_settings.get("pages") or f_settings.get("pageRange") or f.get("pageRange") or f.get("pages") or payload.get("pageRange") or "ALL",
+                    "scaling": f_settings.get("scaling") or f.get("scaling") or payload.get("scaling") or "FIT",
+                    "orientation": f_settings.get("orientation") or f.get("orientation") or payload.get("orientation") or "AUTO",
+                    "pagesPerSheet": f_settings.get("pagesPerSheet") or f.get("pagesPerSheet") or payload.get("pagesPerSheet") or 1,
+                    "pageColours": f_settings.get("pageColours") or f.get("pageColours") or payload.get("pageColours"),
+                    "pageCopies": f_settings.get("pageCopies") or f.get("pageCopies") or payload.get("pageCopies"),
+                    "fileUrl": f.get("fileUrl") or f"{self.api_url}/print/download/{f_id}",
+                })
+        else:
+            jobs_to_print = [payload]
 
         order_number = payload.get("orderNumber")
         release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")
@@ -588,45 +613,111 @@ class KioskWsClient:
         mark_order_processed(order_id, aliases)
         self.printed_orders = load_processed_orders()
 
-        print(f"\n[WSS Kiosk Client] 🖨 Starting Print for Order {order_id}: {file_name}")
-        print(f"  Settings: {copies} copies | {colour_mode} | {duplex} | {paper_size} | Pages: {page_range} | Scaling: {scaling} | Orientation: {orientation} | N-Up: {pages_per_sheet} | Custom Colors: {bool(page_colours)}")
+        for j_idx, job_payload in enumerate(jobs_to_print):
+            job_order_id = job_payload.get("orderId") or f"{order_id}_sub_{j_idx + 1}"
+            settings = job_payload.get("printSettings") or job_payload.get("settings") or {}
+            file_name = job_payload.get("fileName") or settings.get("fileName") or f"document_{j_idx + 1}.pdf"
+            copies = max(1, int(job_payload.get("copies") or settings.get("copies") or 1))
+            raw_col = str(job_payload.get("colourMode") or job_payload.get("colour") or settings.get("colourMode") or settings.get("colour") or "BW").upper().replace("&", "")
+            colour_mode = "COLOUR" if ("COLOUR" in raw_col or "COLOR" in raw_col) else "BW"
+            paper_size = str(job_payload.get("paperSize") or settings.get("paperSize") or "A4").upper().strip()
 
-        # Resolve local document path
-        local_target = TEMP_JOBS_DIR / f"{order_id}_{file_name}"
-        if not local_target.exists() or local_target.stat().st_size == 0:
-            await self._prefetch_document(order_id, payload)
+            raw_dup = job_payload.get("duplex") if job_payload.get("duplex") is not None else settings.get("duplex")
+            if isinstance(raw_dup, bool):
+                duplex = "DOUBLE" if raw_dup else "SINGLE"
+            else:
+                dup_norm = str(raw_dup or "SINGLE").upper().strip()
+                if dup_norm in ("DOUBLE", "DUPLEX", "TWO-SIDED", "2-SIDED", "TWO_SIDED", "2_SIDED", "TRUE", "1"):
+                    duplex = "DOUBLE"
+                elif dup_norm in ("TWO_SIDED_SHORT", "TWO-SIDED-SHORT-EDGE", "SHORT_EDGE"):
+                    duplex = "TWO_SIDED_SHORT"
+                else:
+                    duplex = "SINGLE"
+            page_range = str(job_payload.get("pageRange") or job_payload.get("pages") or settings.get("pageRange") or settings.get("pages") or "ALL").strip()
+            scaling = str(job_payload.get("scaling") or settings.get("scaling") or "FIT").strip()
+            orientation = str(job_payload.get("orientation") or settings.get("orientation") or "AUTO").upper().strip()
+            pages_per_sheet = int(job_payload.get("pagesPerSheet") or settings.get("pagesPerSheet") or 1)
 
-        if not local_target.exists():
-            local_target.write_text(
-                f"%PDF-1.4\n% PrintBooth Automated Kiosk Print\nOrder: {order_id}\nKiosk: {self.kiosk_id}\n"
-            )
+            page_colours = job_payload.get("pageColours") or settings.get("pageColours")
+            page_copies = job_payload.get("pageCopies") or settings.get("pageCopies")
 
-        # Dispatch to CUPS physical printer with all user settings applied
-        result = {}
-        try:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: self.cups.print_file(
-                    file_path=str(local_target),
-                    copies=copies,
-                    colour_mode=colour_mode,
-                    duplex=duplex,
-                    paper_size=paper_size,
-                    page_range=page_range,
-                    scaling=scaling,
-                    pages_per_sheet=pages_per_sheet,
-                    printer_name=self.printer_name,
-                    job_title=f"Order {order_id} - {file_name}",
-                    page_colours=page_colours,
-                    page_copies=page_copies,
-                    orientation=orientation,
+            print(f"\n[WSS Kiosk Client] 🖨 Starting Print [{j_idx + 1}/{len(jobs_to_print)}] for Order {job_order_id}: {file_name}")
+            print(f"  Exact Settings: {copies} copies | {colour_mode} | {duplex} | {paper_size} | Pages: {page_range} | Scaling: {scaling} | Orientation: {orientation} | N-Up: {pages_per_sheet} | Custom Colors: {bool(page_colours)}")
+
+            # Resolve local document path
+            local_target = TEMP_JOBS_DIR / f"{job_order_id}_{file_name}"
+            if not local_target.exists() or local_target.stat().st_size == 0:
+                await self._prefetch_document(job_order_id, job_payload)
+
+            if not local_target.exists() or local_target.stat().st_size == 0:
+                # Fallback to master file if sub file wasn't created separately
+                master_target = TEMP_JOBS_DIR / f"{order_id}_{file_name}"
+                if master_target.exists() and master_target.stat().st_size > 0:
+                    local_target = master_target
+
+            if not local_target.exists():
+                local_target.write_text(
+                    f"%PDF-1.4\n% PrintBooth Automated Kiosk Print\nOrder: {job_order_id}\nKiosk: {self.kiosk_id}\n"
                 )
-            )
-            print(f"[WSS Kiosk Client] CUPS Spooler response: {result}")
-        except Exception as e:
-            print(f"[WSS Kiosk Client] CUPS dispatch error: {e}")
-            result = {"success": False, "error": str(e)}
+
+            # Office conversion for PPT and DOCX with live phase feedback
+            is_ppt = local_target.suffix.lower() in (".pptx", ".ppt", ".ppsx") or bool(re.search(r"\.(pptx?|ppsx?)$", file_name, re.I))
+            is_docx = local_target.suffix.lower() in (".docx", ".doc") or bool(re.search(r"\.(docx?|doc)$", file_name, re.I))
+            if is_ppt or is_docx:
+                phase_msg = "Processing PPT into print PDF…" if is_ppt else "Processing DOCX into print PDF…"
+                print(f"[WSS Kiosk Client] 📄 {phase_msg} for Order {job_order_id} ({file_name})")
+                if self.ws:
+                    try:
+                        await self.ws.send(json.dumps({
+                            "type": "PRINT_PROGRESS",
+                            "kioskId": self.kiosk_id,
+                            "orderId": job_order_id,
+                            "progress": 5,
+                            "phase": phase_msg,
+                            "status": "PROCESSING",
+                            "timestamp": int(time.time() * 1000),
+                        }))
+                    except Exception:
+                        pass
+
+                try:
+                    loop = asyncio.get_event_loop()
+                    conv_path = await loop.run_in_executor(
+                        None,
+                        lambda: self.cups._convert_office_to_pdf(local_target)
+                    )
+                    if conv_path and Path(conv_path).exists() and Path(conv_path).suffix.lower() == ".pdf":
+                        local_target = Path(conv_path)
+                        print(f"[WSS Kiosk Client] ✓ Office doc successfully converted to PDF: {local_target}")
+                except Exception as conv_err:
+                    print(f"[WSS Kiosk Client] Office conversion notice: {conv_err}")
+
+            # Dispatch to CUPS physical printer with all specified settings applied
+            result = {}
+            try:
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: self.cups.print_file(
+                        file_path=str(local_target),
+                        copies=copies,
+                        colour_mode=colour_mode,
+                        duplex=duplex,
+                        paper_size=paper_size,
+                        page_range=page_range,
+                        scaling=scaling,
+                        pages_per_sheet=pages_per_sheet,
+                        printer_name=self.printer_name,
+                        job_title=f"Order {job_order_id} - {file_name}",
+                        page_colours=page_colours,
+                        page_copies=page_copies,
+                        orientation=orientation,
+                    )
+                )
+                print(f"[WSS Kiosk Client] CUPS Spooler response for [{j_idx + 1}/{len(jobs_to_print)}]: {result}")
+            except Exception as e:
+                print(f"[WSS Kiosk Client] CUPS dispatch error: {e}")
+                result = {"success": False, "error": str(e)}
 
         # Check for spooler dispatch failure
         if isinstance(result, dict) and not result.get("success"):

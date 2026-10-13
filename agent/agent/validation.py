@@ -132,9 +132,13 @@ def _validate_print_job(msg: Dict[str, Any], device_kiosk_id: str, max_copies: i
     if not isinstance(colour, bool):
         raise ValidationError("'colour' field must be a strict boolean.")
 
-    duplex = msg.get("duplex", False)
-    if not isinstance(duplex, bool):
-        raise ValidationError("'duplex' field must be a strict boolean.")
+    duplex_raw = msg.get("duplex", False)
+    if isinstance(duplex_raw, bool):
+        duplex = duplex_raw
+    elif isinstance(duplex_raw, str):
+        duplex = duplex_raw.strip().upper() in ("DOUBLE", "DUPLEX", "TWO-SIDED", "2-SIDED", "TRUE", "1")
+    else:
+        raise ValidationError("'duplex' field must be a boolean or duplex mode string.")
 
     paper_size = msg.get("paperSize", "A4")
     if not isinstance(paper_size, str) or paper_size.upper() not in ("A4", "A3", "LETTER", "LEGAL"):
