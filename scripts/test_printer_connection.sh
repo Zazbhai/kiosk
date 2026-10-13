@@ -94,7 +94,7 @@ if [ "$1" == "--recover" ] || [ "$1" == "-r" ]; then
 fi
 
 # 8. Test Print Prompt
-if [ "$1" == "--print" ] || [ "$1" == "-p" ]; then
+if [ "$1" == "--print" ] || [ "$1" == "-p" ] || [ "$1" == "--print-pdf" ]; then
     echo "\n[7] Sending Diagnostic Test Page to Default Printer..."
     TEST_FILE="/tmp/printbooth_diag_test.txt"
     cat << 'EOF' > "$TEST_FILE"
@@ -105,18 +105,51 @@ Status       : Hardware Connection Verified
 Timestamp    : $(date)
 CUPS Spooler : Active & Responding
 Paper Size   : A4
-Resolution   : 600 DPI
+Resolution   : Standard
 Platform     : Raspberry Pi OS
 ========================================================
 EOF
     if lp -o media=A4 "$TEST_FILE"; then
-        echo "✓ Test job submitted to CUPS queue!"
+        echo "✓ Text test job submitted to CUPS queue!"
     else
-        echo "✗ Failed to submit test job. Check CUPS errors above."
+        echo "✗ Failed to submit text test job. Check CUPS errors."
     fi
+
+    # Also test PDF printing pipeline
+    PDF_TEST="/tmp/printbooth_diag_test.pdf"
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c "
+try:
+    from PIL import Image, ImageDraw
+    img = Image.new('L', (2480, 3508), 255)
+    draw = ImageDraw.Draw(img)
+    draw.rectangle([80, 80, 2400, 3428], outline=0, width=6)
+    draw.text((200, 300), 'PRINTBOOTH HARDWARE DIAGNOSTIC - PDF PIPELINE TEST', fill=0)
+    draw.text((200, 450), 'If this page prints, PDF rendering and CUPS raster pipeline are 100% OPERATIONAL!', fill=0)
+    img.save('$PDF_TEST', 'PDF', resolution=300.0)
+    print('  ✓ Generated diagnostic test PDF: $PDF_TEST')
+except Exception as e:
+    print('  Notice generating PDF:', e)
+" 2>/dev/null || true
+    fi
+
+    if [ -f "$PDF_TEST" ]; then
+        echo "Sending Diagnostic PDF to Default Printer (lp -o media=A4)..."
+        if lp -o media=A4 "$PDF_TEST"; then
+            echo "✓ PDF test job submitted to CUPS queue!"
+        else
+            echo "✗ Failed to submit PDF test job."
+        fi
+    fi
+
+    # Check CUPS queue status immediately after submission
+    sleep 1
+    echo "\nCurrent CUPS queue status:"
+    lpstat -o || true
 else
     echo "\nTip: Run 'bash test_printer_connection.sh --recover' to auto-heal queue."
-    echo "Tip: Run 'bash test_printer_connection.sh --print' to dispatch a test print."
+    echo "Tip: Run 'bash test_printer_connection.sh --print' to dispatch text & PDF test prints."
+    echo "Tip: Run 'sudo tail -n 30 /var/log/cups/error_log' to view CUPS error diagnostics."
 fi
 
 echo "\n========================================================"

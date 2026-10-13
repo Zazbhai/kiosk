@@ -1024,14 +1024,7 @@ class CupsController:
             ppd_paper = norm_paper.capitalize()
 
         options: Dict[str, str] = {
-            "copies": str(max(1, int(copies or 1))),
             "media": ppd_paper,
-            "PageSize": ppd_paper,
-            "BRMediaType": "Plain",
-            "job-sheets": "none,none",
-            "fit-to-page": "true",
-            "position": "center",
-            "BRResolution": "600dpi",
         }
 
         # Scaling / Margins:
@@ -1040,15 +1033,6 @@ class CupsController:
             if ppd_paper == "A4":
                 options["PageSize"] = "BrA4_B"
                 options["media"] = "BrA4_B"
-            options["fit-to-page"] = "true"
-            options["position"] = "center"
-        elif norm_scale in ("ACTUAL", "NONE"):
-            options.pop("fit-to-page", None)
-            options["position"] = "center"
-        else:
-            # Default FIT: scales cleanly into ImageableArea and centers with equal margins
-            options["fit-to-page"] = "true"
-            options["position"] = "center"
 
         # Orientation
         norm_orient = str(orientation or "AUTO").upper().strip()
@@ -1069,6 +1053,9 @@ class CupsController:
             options["print-color-mode"] = "monochrome"
 
         # Duplex / Double-Sided Configuration
+        # ONLY apply duplex options if double-sided is explicitly requested.
+        # NEVER pass Duplex=None / BRDuplex=None / sides=one-sided to non-duplex printers (like DCP-T420W)
+        # as it triggers PPD constraint validation errors in CUPS filters!
         is_double = False
         is_short_edge = False
         if isinstance(duplex, bool):
@@ -1090,18 +1077,9 @@ class CupsController:
             if is_short_edge:
                 options["sides"] = "two-sided-short-edge"
                 options["Duplex"] = "DuplexTumble"
-                options["BRDuplex"] = "DuplexTumble"
-                options["JCLDuplex"] = "DuplexTumble"
             else:
                 options["sides"] = "two-sided-long-edge"
                 options["Duplex"] = "DuplexNoTumble"
-                options["BRDuplex"] = "DuplexNoTumble"
-                options["JCLDuplex"] = "DuplexNoTumble"
-        else:
-            options["sides"] = "one-sided"
-            options["Duplex"] = "None"
-            options["BRDuplex"] = "None"
-            options["JCLDuplex"] = "None"
 
         # Page Ranges
         if page_range and page_range.upper() not in ("ALL", ""):
@@ -1197,7 +1175,16 @@ class CupsController:
                 # If a specific job_id was provided, check if it's still in the active queue
                 if job_id:
                     if job_id not in res.stdout:
-                        print(f"[CUPS] ✓ Job '{job_id}' cleared CUPS filter queue ({round(time.time() - start_time, 1)}s)")
+                        elapsed = round(time.time() - start_time, 1)
+                        print(f"[CUPS] ✓ Job '{job_id}' cleared CUPS filter queue ({elapsed}s)")
+                        try:
+                            p_stat = subprocess.run(["lpstat", "-p", printer], capture_output=True, text=True, timeout=3)
+                            if "disabled" in p_stat.stdout.lower() or "paused" in p_stat.stdout.lower():
+                                print(f"[CUPS] ⚠ WARNING: Printer '{printer}' queue was paused/disabled! Auto-unpausing...")
+                                subprocess.run(["cupsenable", printer], timeout=3)
+                                subprocess.run(["cupsaccept", printer], timeout=3)
+                        except Exception:
+                            pass
                         return
                 else:
                     if not res.stdout.strip():
@@ -1656,10 +1643,9 @@ class CupsController:
                     if os.path.exists(br_bin):
                         try:
                             corm_arg = "FullColor" if is_color else "Mono"
-                            dup_arg = "DuplexNoTumble" if is_duplex_job else "OFF"
-                            # Set -corm (color mode), -copies (exact copy count), and -duplex on Brother hardware
-                            subprocess.run([br_bin, "-corm", corm_arg, "-copies", str(clean_copies), "-duplex", dup_arg], timeout=2, capture_output=True)
-                            print(f"[CUPS] Brother hardware configured via {br_bin}: -corm {corm_arg} -copies {clean_copies} -duplex {dup_arg}")
+                            # Set -corm (color mode) and -copies on Brother hardware (DCP-T420W does not accept -duplex)
+                            subprocess.run([br_bin, "-corm", corm_arg, "-copies", str(clean_copies)], timeout=2, capture_output=True)
+                            print(f"[CUPS] Brother hardware configured via {br_bin}: -corm {corm_arg} -copies {clean_copies}")
                         except Exception as e:
                             print(f"[CUPS] Brother hardware config notice: {e}")
                         break
