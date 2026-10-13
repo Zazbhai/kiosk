@@ -1555,6 +1555,46 @@ export default function KioskSessionScreen() {
     }
   }, [state, upiQrValue, session?.sessionId, session?.qrAmount, session?.amount, totalAmount, kioskId, apiUrl, effectiveOrderId])
 
+  const [isSimulatingPayment, setIsSimulatingPayment] = useState(false)
+
+  const handleSimulatePaymentOnKiosk = useCallback(async () => {
+    if (isSimulatingPayment) return
+    setIsSimulatingPayment(true)
+    const targetSessionId = session?.sessionId || `sess_${kioskId}`
+    console.log(`[KioskScreen] 🧪 Simulating payment on kiosk for order ${effectiveOrderId}`)
+
+    try {
+      const res = await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(targetSessionId)}/simulate-payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: targetSessionId,
+          kioskId,
+          orderId: effectiveOrderId,
+          amount: totalAmount,
+          isSimulated: true,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setSession(prev => prev ? { ...prev, state: 'PRINTING', phase: 'Simulated payment confirmed! Printing document…', phaseStep: 5 } : null)
+        setActiveStateOverride('PRINTING')
+      } else {
+        // Fallback to execute-print
+        await fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(targetSessionId)}/execute-print`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        })
+        setSession(prev => prev ? { ...prev, state: 'PRINTING' } : null)
+        setActiveStateOverride('PRINTING')
+      }
+    } catch (err) {
+      console.error('[KioskScreen] Simulate payment error:', err)
+    } finally {
+      setIsSimulatingPayment(false)
+    }
+  }, [isSimulatingPayment, session?.sessionId, kioskId, effectiveOrderId, totalAmount, apiUrl])
+
   // Automatically poll UPI Express order status every 2.5 seconds while customer pays
   useEffect(() => {
     if (state !== 'PAYING' || !effectiveOrderId || effectiveOrderId.startsWith('init-') || isActionPending) {
@@ -2566,6 +2606,35 @@ export default function KioskSessionScreen() {
                   }}>
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a', boxShadow: '0 0 6px #16a34a' }} />
                     <span>Awaiting payment confirmation…</span>
+                  </div>
+
+                  <div style={{ marginTop: 12, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={handleSimulatePaymentOnKiosk}
+                      disabled={isSimulatingPayment}
+                      className="ks-simulate-pay-btn"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        padding: '8px 18px',
+                        background: 'linear-gradient(135deg, #fef2f2, #fff1f2)',
+                        border: '1.5px dashed #dc2626',
+                        borderRadius: 10,
+                        color: '#dc2626',
+                        fontWeight: 700,
+                        fontSize: 12,
+                        cursor: isSimulatingPayment ? 'not-allowed' : 'pointer',
+                        letterSpacing: '0.02em',
+                        boxShadow: '0 2px 8px rgba(220, 38, 38, 0.08)',
+                        transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+                      }}
+                    >
+                      <span>🧪</span>
+                      <span>{isSimulatingPayment ? 'Simulating Print…' : 'Simulate Payment (Test Print)'}</span>
+                    </button>
                   </div>
                 </div>
               </div>
