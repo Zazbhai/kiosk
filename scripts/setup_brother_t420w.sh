@@ -32,6 +32,7 @@ sudo modprobe usblp 2>/dev/null || true
 sleep 1
 
 # 3. Download official Brother DCP-T420W Linux driver package
+ORIGINAL_DIR="$(pwd)"
 WORK_DIR="/tmp/brother_driver_setup"
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
@@ -132,6 +133,7 @@ sudo lpoptions -p "$PRINTER_NAME" -o media=A4 2>/dev/null || true
 sudo lpoptions -d "$PRINTER_NAME" -o media=A4 2>/dev/null || true
 
 # Clean up temporary downloads
+cd "$ORIGINAL_DIR" 2>/dev/null || cd /tmp
 rm -rf "$WORK_DIR"
 
 # Install self-healing recovery engine & udev watchdogs

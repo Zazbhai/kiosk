@@ -6,7 +6,7 @@ Pairs and configures a Raspberry Pi station to the central PrintBooth cloud,
 secures the device with its unique device secret, and links to the merchant partner.
 
 Usage:
-  python3 setup_station.py --id PB-002 --secret pb_sec_xxxx --api http://192.168.1.4:5000/api
+  python3 setup_station.py --id PB-002 --secret pb_sec_xxxx --api http://192.168.1.41:5000/api
 
 Or interactive mode:
   python3 setup_station.py
@@ -60,7 +60,7 @@ def main():
     parser = argparse.ArgumentParser(description="PrintBooth Kiosk Station Provisioning Tool")
     parser.add_argument("--id", dest="kiosk_id", help="Kiosk Station ID (e.g. PB-002)")
     parser.add_argument("--secret", dest="kiosk_secret", help="Unique Device Secret Key from Admin Dashboard")
-    parser.add_argument("--api", dest="api_url", default=None, help="PrintBooth API Base URL (e.g. http://192.168.1.4:5000/api)")
+    parser.add_argument("--api", dest="api_url", default=None, help="PrintBooth API Base URL (e.g. http://192.168.1.41:5000/api)")
     parser.add_argument("--name", dest="kiosk_name", default=None, help="Friendly Station Name")
 
     args = parser.parse_args()
@@ -161,7 +161,7 @@ def main():
             if is_local_target:
                 print("   💡 Note: 'localhost' refers to this Raspberry Pi itself.")
                 print("      If your PrintBooth API runs on another machine on the LAN, specify:")
-                print("      --api http://<YOUR_COMPUTER_LAN_IP>:5000/api  (e.g. http://192.168.1.4:5000/api)")
+                print("      --api http://<YOUR_COMPUTER_LAN_IP>:5000/api  (e.g. http://192.168.1.41:5000/api)")
             else:
                 print("   Please check your network and ensure the API server is reachable from this Pi.")
             sys.exit(1)

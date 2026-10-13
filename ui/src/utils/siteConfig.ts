@@ -26,6 +26,7 @@ export function isLocalOrLanHost(hostname: string): boolean {
 export function getKioskSiteUrl(): string {
   const isLan = typeof window !== 'undefined' && isLocalOrLanHost(window.location.hostname)
 
+  // 1. Explicit runtime query parameter override (?siteUrl=... or ?webUrl=...)
   if (typeof window !== 'undefined') {
     const search = new URLSearchParams(window.location.search)
     const paramUrl = search.get('siteUrl') || search.get('webUrl') || search.get('clientWebUrl')
@@ -33,16 +34,31 @@ export function getKioskSiteUrl(): string {
       return paramUrl.trim().replace(/\/+$/, '')
     }
 
+    // Proactively clean up obsolete hardcoded IP from local storage if present
+    const localUrl = localStorage.getItem('pb_site_url') || localStorage.getItem('pb_web_url')
+    if (localUrl && (localUrl.includes('192.168.1.4:') || (isLan && localUrl.includes('printbooth.co.in')))) {
+      try {
+        localStorage.removeItem('pb_site_url')
+        localStorage.removeItem('pb_web_url')
+      } catch {}
+    }
+  }
+
+  // 2. Environment variable from .env (VITE_SITE_URL or VITE_CLIENT_WEB_URL)
+  const envUrl = import.meta.env.VITE_SITE_URL || import.meta.env.VITE_CLIENT_WEB_URL
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
+    const cleanEnv = envUrl.trim().replace(/\/+$/, '')
+    if (!cleanEnv.includes('192.168.1.4:')) {
+      return cleanEnv
+    }
+  }
+
+  // 3. User / session local storage override (if clean)
+  if (typeof window !== 'undefined') {
     const localUrl = localStorage.getItem('pb_site_url') || localStorage.getItem('pb_web_url')
     if (localUrl && localUrl.trim()) {
       const clean = localUrl.trim().replace(/\/+$/, '')
-      // If we are on LAN/local environment, purge stale cloud domain overrides
-      if (isLan && clean.includes('printbooth.co.in')) {
-        try {
-          localStorage.removeItem('pb_site_url')
-          localStorage.removeItem('pb_web_url')
-        } catch {}
-      } else {
+      if (!clean.includes('192.168.1.4:') && !(isLan && clean.includes('printbooth.co.in'))) {
         return clean
       }
     }
@@ -50,21 +66,18 @@ export function getKioskSiteUrl(): string {
     const winUrl = (window as any).__PRINTBOOTH_SITE_URL__ || (window as any).__PRINTBOOTH_WEB_URL__
     if (winUrl && typeof winUrl === 'string' && winUrl.trim()) {
       const clean = winUrl.trim().replace(/\/+$/, '')
-      if (!(isLan && clean.includes('printbooth.co.in'))) {
+      if (!clean.includes('192.168.1.4:') && !(isLan && clean.includes('printbooth.co.in'))) {
         return clean
       }
     }
   }
 
-  const envUrl = import.meta.env.VITE_CLIENT_WEB_URL || import.meta.env.VITE_SITE_URL
-  if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
-    return envUrl.trim().replace(/\/+$/, '')
-  }
-
+  // 4. Dynamic hostname resolution (matches current browser host on port 5200)
   if (typeof window !== 'undefined') {
     const h = window.location.hostname
     if (isLocalOrLanHost(h)) {
-      return h === 'localhost' || h === '127.0.0.1' ? 'http://192.168.1.4:5200' : `http://${h}:5200`
+      const proto = window.location.protocol || 'http:'
+      return `${proto}//${h}:5200`
     }
   }
 
@@ -139,7 +152,7 @@ export function getKioskApiUrl(): string {
     const localApi = localStorage.getItem('pb_api_url')
     if (localApi && localApi.trim()) {
       const clean = localApi.trim().replace(/\/+$/, '').replace(/\/api$/, '')
-      if (isLan && clean.includes('api.printbooth.co.in')) {
+      if (clean.includes('192.168.1.4:') || (isLan && clean.includes('api.printbooth.co.in'))) {
         try {
           localStorage.removeItem('pb_api_url')
         } catch {}
@@ -150,7 +163,7 @@ export function getKioskApiUrl(): string {
     const winApi = (window as any).__PRINTBOOTH_API_URL__
     if (winApi && typeof winApi === 'string' && winApi.trim()) {
       const clean = winApi.trim().replace(/\/+$/, '').replace(/\/api$/, '')
-      if (!(isLan && clean.includes('api.printbooth.co.in'))) {
+      if (!clean.includes('192.168.1.4:') && !(isLan && clean.includes('api.printbooth.co.in'))) {
         return clean
       }
     }
@@ -228,7 +241,7 @@ export async function fetchRemoteSiteConfig(apiUrl: string, kioskId: string = 'P
       const resolved = data.siteUrl || data.webUrl || data.clientWebUrl
       if (resolved && typeof resolved === 'string' && resolved.trim()) {
         const clean = resolved.trim().replace(/\/+$/, '')
-        if (!(isLan && clean.includes('printbooth.co.in'))) {
+        if (!clean.includes('192.168.1.4:') && !(isLan && clean.includes('printbooth.co.in'))) {
           setKioskSiteUrl(clean)
           return clean
         }
