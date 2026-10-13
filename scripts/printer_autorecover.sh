@@ -70,13 +70,19 @@ if ! lsmod | grep -q usblp; then
     sudo modprobe usblp 2>/dev/null || true
 fi
 
-# 3. Ensure CUPS daemon is active
+# 3. Ensure CUPS daemon is active (auto-heals scheduler crash loops)
 if command -v systemctl >/dev/null 2>&1; then
     if ! systemctl is-active --quiet cups; then
-        log "CUPS is stopped. Starting cups.service..."
+        log "CUPS is stopped or crash-looping. Purging any corrupted spool jobs..."
+        sudo systemctl stop cups 2>/dev/null || true
+        sudo rm -rf /var/spool/cups/c* /var/spool/cups/d* /var/spool/cups/tmp/* 2>/dev/null || true
         sudo systemctl start cups
         sleep 2
     fi
+fi
+
+if [ -d "/opt/brother/Printers/dcpt420w/inf" ]; then
+    sudo chmod -R 777 /opt/brother/Printers/dcpt420w/inf 2>/dev/null || true
 fi
 
 # 4. Check physical USB presence

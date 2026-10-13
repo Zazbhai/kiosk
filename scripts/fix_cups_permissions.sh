@@ -25,9 +25,15 @@ fi
 echo "• Installing passwordless sudoers policy in /etc/sudoers.d/printbooth-cups..."
 sudo tee /etc/sudoers.d/printbooth-cups > /dev/null << 'EOF'
 # PrintBooth Kiosk Hardware & Spooler Passwordless Rights
-ALL ALL=(ALL) NOPASSWD: /usr/sbin/cupsenable, /usr/sbin/cupsaccept, /usr/sbin/lpadmin, /usr/sbin/cupsctl, /usr/sbin/cupsfilter, /sbin/modprobe, /bin/systemctl restart cups, /bin/systemctl status cups
+ALL ALL=(ALL) NOPASSWD: /usr/sbin/cupsenable, /usr/sbin/cupsaccept, /usr/sbin/lpadmin, /usr/sbin/cupsctl, /usr/sbin/cupsfilter, /sbin/modprobe, /bin/systemctl restart cups, /bin/systemctl status cups, /usr/bin/brprintconf_dcpt420w, /opt/brother/Printers/dcpt420w/lpd/brprintconf_dcpt420w, /usr/bin/cancel
 EOF
 sudo chmod 0440 /etc/sudoers.d/printbooth-cups
+
+# Ensure Brother printer configuration directory is writable by all kiosk processes
+if [ -d "/opt/brother/Printers/dcpt420w/inf" ]; then
+    echo "• Granting write permissions on Brother hardware configuration directory..."
+    sudo chmod -R 777 /opt/brother/Printers/dcpt420w/inf 2>/dev/null || true
+fi
 
 # 3. Configure CUPS daemon for local administration
 echo "• Configuring CUPS service permissions..."

@@ -948,30 +948,13 @@ class CupsController:
                             f"[CUPS Controller] [CONVERT] Pre-processed image '{p_path.name}' "
                             f"({orig_w}x{orig_h} -> scaled {final_im.size[0]}x{final_im.size[1]} on {canvas_w}x{canvas_h} {orient_label} {norm_paper} canvas, {mode_label}) -> '{pdf_path.name}'"
                         )
-                        # On Linux, convert the PDF to clean PostScript Level 2 via Ghostscript
-                        # This completely bypasses fragile Poppler pdftops filters and feeds brother_lpdwrapper directly!
-                        if sys.platform != "win32" and shutil.which("gs"):
-                            try:
-                                ps_path = pdf_path.with_suffix(".ps")
-                                gs_cmd = [
-                                    "gs",
-                                    "-q",
-                                    "-dNOPAUSE",
-                                    "-dBATCH",
-                                    "-dSAFER",
-                                    "-sDEVICE=ps2write",
-                                    "-dLanguageLevel=2",
-                                ]
-                                if not is_color:
-                                    gs_cmd.extend(["-dColorConversionStrategy=Gray", "-dProcessColorModel=/DeviceGray"])
-                                gs_cmd.extend([f"-sOutputFile={ps_path}", str(pdf_path)])
-                                res = subprocess.run(gs_cmd, capture_output=True, timeout=25)
-                                if res.returncode == 0 and ps_path.exists() and ps_path.stat().st_size > 0:
-                                    print(f"[CUPS Controller] [CONVERT] Converted canvas to PS Level 2 -> '{ps_path.name}'")
-                                    return ps_path
-                            except Exception as gs_err:
-                                print(f"[CUPS Controller] Ghostscript PS conversion notice: {gs_err}")
-
+                        # If B&W requested, ensure canvas is saved as pure 8-bit monochrome PDF
+                        mode_label = "COLOR" if is_color else "8-bit Monochrome"
+                        orient_label = "Landscape" if canvas_landscape else "Portrait"
+                        print(
+                            f"[CUPS Controller] [CONVERT] Pre-processed image '{p_path.name}' "
+                            f"({orig_w}x{orig_h} -> scaled {final_im.size[0]}x{final_im.size[1]} on {canvas_w}x{canvas_h} {orient_label} {norm_paper} canvas, {mode_label}) -> '{pdf_path.name}'"
+                        )
                         return pdf_path
                 except Exception as e:
                     print(f"[CUPS Controller] Pillow image processing notice: {e}")
@@ -979,49 +962,26 @@ class CupsController:
             # Fallback for Linux if ImageMagick convert exists
             if sys.platform != "win32" and shutil.which("convert"):
                 try:
-                    ps_name = f"{'color' if is_color else 'mono'}_{p_path.stem}.ps"
-                    ps_path = p_path.parent / ps_name
-                    # Upscale or downscale to full A4 page
+                    pdf_name = f"{'color' if is_color else 'mono'}_{p_path.stem}.pdf"
+                    pdf_path = p_path.parent / pdf_name
+                    # Upscale or downscale to full A4 page PDF
                     args = ["convert", str(p_path), "-page", "A4", "-gravity", "center", "-resize", "2400x3428"]
                     if not is_color:
                         args.extend(["-colorspace", "Gray"])
-                    args.append(str(ps_path))
+                    args.append(str(pdf_path))
                     subprocess.run(args, check=True, timeout=15)
-                    if ps_path.exists() and ps_path.stat().st_size > 0:
-                        print(f"[CUPS Controller] [CONVERT] ImageMagick converted image '{p_path.name}' -> '{ps_path.name}'")
-                        return ps_path
+                    if pdf_path.exists() and pdf_path.stat().st_size > 0:
+                        print(f"[CUPS Controller] [CONVERT] ImageMagick converted image '{p_path.name}' -> '{pdf_path.name}'")
+                        return pdf_path
                 except Exception:
                     pass
 
-        # 3. PDF Conversion for Linux: Convert to clean PostScript Level 2 to bypass Poppler pdftops
-        elif suffix == ".pdf" and sys.platform != "win32" and shutil.which("gs"):
-            try:
-                ps_name = f"{'color' if is_color else 'mono'}_{p_path.stem}.ps"
-                ps_path = p_path.parent / ps_name
-                gs_cmd = [
-                    "gs",
-                    "-q",
-                    "-dNOPAUSE",
-                    "-dBATCH",
-                    "-dSAFER",
-                    "-sDEVICE=ps2write",
-                    "-dLanguageLevel=2",
-                ]
-                if not is_color:
-                    gs_cmd.extend([
-                        "-dColorConversionStrategy=Gray",
-                        "-dProcessColorModel=/DeviceGray",
-                    ])
-                gs_cmd.extend([
-                    f"-sOutputFile={ps_path}",
-                    str(p_path),
-                ])
-                res = subprocess.run(gs_cmd, capture_output=True, timeout=25)
-                if res.returncode == 0 and ps_path.exists() and ps_path.stat().st_size > 0:
-                    print(f"[CUPS Controller] [CONVERT] Converted PDF to PS Level 2 via Ghostscript -> '{ps_path.name}'")
-                    return ps_path
-            except Exception as e:
-                print(f"[CUPS Controller] Ghostscript PDF to PS conversion notice: {e}")
+        # 3. PDF Normalization & Monochrome DeviceGray enforcement
+        elif suffix == ".pdf" and not is_color and convert_grayscale:
+            mono_out = p_path.parent / f"mono_{p_path.stem}.pdf"
+            if self._convert_pdf_to_monochrome(p_path, mono_out):
+                print(f"[CUPS Controller] [CONVERT] Pre-converted PDF to pure DeviceGray -> '{mono_out.name}'")
+                return mono_out
 
         return p_path
 
@@ -1077,8 +1037,12 @@ class CupsController:
         is_color = raw_c in ("COLOR", "COLOUR")
         if is_color:
             options["BRMonoColor"] = "FullColor"
+            options["ColorModel"] = "RGB"
+            options["print-color-mode"] = "color"
         else:
             options["BRMonoColor"] = "Mono"
+            options["ColorModel"] = "Gray"
+            options["print-color-mode"] = "monochrome"
 
         # Instruct cups-filters to use Ghostscript instead of broken Poppler
         options["pdftops-renderer"] = "gs"
@@ -1659,6 +1623,14 @@ class CupsController:
                 temp_uniform_files.append(extracted_path)
                 effective_range = None  # PDF already contains ONLY the selected pages!
 
+        # Enforce pure DeviceGray for B&W uniform prints so printer hardware CANNOT use color ink
+        if is_pdf and not is_color:
+            mono_target = p_path.parent / f"mono_devgray_{target_path.stem}.pdf"
+            if self._convert_pdf_to_monochrome(target_path, mono_target):
+                print(f"[CUPS] ✓ Enforced pure DeviceGray grayscale PDF: '{mono_target.name}'")
+                target_path = mono_target
+                temp_uniform_files.append(mono_target)
+
         cups_opts = self.build_cups_options(
             copies=clean_copies,
             colour_mode=colour_mode,
@@ -1676,13 +1648,18 @@ class CupsController:
         try:
             # Primary execution via Linux lp CLI on Raspberry Pi
             if sys.platform != "win32":
+                # Ensure printer queue is active (unpaused/enabled)
+                subprocess.run(["cupsenable", printer], timeout=5, capture_output=True)
+                subprocess.run(["cupsaccept", printer], timeout=5, capture_output=True)
+
                 # Attempt hardware mode sync if Brother utility exists
                 for br_bin in ["/usr/bin/brprintconf_dcpt420w", "/opt/brother/Printers/dcpt420w/lpd/brprintconf_dcpt420w"]:
                     if os.path.exists(br_bin):
                         try:
                             corm_arg = "FullColor" if is_color else "Mono"
-                            # Set -corm (color mode) and -copies on Brother hardware (DCP-T420W does not accept -duplex)
-                            subprocess.run([br_bin, "-corm", corm_arg, "-copies", str(clean_copies)], timeout=2, capture_output=True)
+                            # Set -corm (color mode) and -copies on Brother hardware (run directly and via sudo)
+                            subprocess.run([br_bin, "-corm", corm_arg, "-copies", str(clean_copies)], timeout=3, capture_output=True)
+                            subprocess.run(["sudo", br_bin, "-corm", corm_arg, "-copies", str(clean_copies)], timeout=3, capture_output=True)
                             print(f"[CUPS] Brother hardware configured via {br_bin}: -corm {corm_arg} -copies {clean_copies}")
                         except Exception as e:
                             print(f"[CUPS] Brother hardware config notice: {e}")
