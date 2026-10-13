@@ -5,14 +5,14 @@ Wants=network-online.target cups.service
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/printer_automation/kiosk/brain
-ExecStart=/home/pi/printer_automation/kiosk/brain/venv/bin/python daemon.py
+User=kiosk
+WorkingDirectory=/home/kiosk/kiosk/brain
+ExecStart=/home/kiosk/kiosk/brain/venv/bin/python ws_kiosk_client.py
 Restart=always
-RestartSec=5
+RestartSec=3
 StandardOutput=journal
 StandardError=journal
-EnvironmentFile=-/home/pi/printer_automation/kiosk/.env
+EnvironmentFile=-/home/kiosk/kiosk/.env
 
 [Install]
 WantedBy=multi-user.target

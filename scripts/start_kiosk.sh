@@ -106,21 +106,12 @@ xset s noblank 2>/dev/null || true
 xset s off 2>/dev/null || true
 xset -dpms 2>/dev/null || true
 
-# ── 7. Start Python Brain Daemon in background ───────────────────────────────
-if ! pgrep -f "daemon.py" > /dev/null; then
-    echo "[Start Kiosk] Launching Kiosk Brain Daemon..."
-    (
-        cd "$BRAIN_DIR" || exit 1
-        if [ -d "venv" ]; then
-            source venv/bin/activate
-        fi
-        python3 daemon.py >> "$DAEMON_LOG" 2>&1
-    ) &
-fi
-
-# ── 8. Start WSS Kiosk Client in background ──────────────────────────────────
-if ! pgrep -f "ws_kiosk_client.py" > /dev/null; then
-    echo "[Start Kiosk] Launching WSS Kiosk Client..."
+# ── 7. Supervise WSS Kiosk Client / Brain Daemon ────────────────────────────
+# If systemd service is active, let systemd manage it directly
+if systemctl is-active --quiet printbooth-brain.service 2>/dev/null; then
+    echo "[Start Kiosk] ✓ printbooth-brain.service is active (supervised by systemd)."
+elif ! pgrep -f "ws_kiosk_client.py" > /dev/null && ! pgrep -f "daemon.py" > /dev/null; then
+    echo "[Start Kiosk] Launching WSS Kiosk Client in background..."
     (
         cd "$BRAIN_DIR" || exit 1
         if [ -d "venv" ]; then
@@ -128,6 +119,8 @@ if ! pgrep -f "ws_kiosk_client.py" > /dev/null; then
         fi
         python3 ws_kiosk_client.py >> "$WS_LOG" 2>&1
     ) &
+else
+    echo "[Start Kiosk] ✓ WSS Kiosk Client is already running."
 fi
 
 # ── 9. Extract Backend Spooler API URL from .env ─────────────────────────────

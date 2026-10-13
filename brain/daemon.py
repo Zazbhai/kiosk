@@ -374,5 +374,13 @@ class KioskBrainDaemon:
 
 
 if __name__ == "__main__":
-    daemon = KioskBrainDaemon()
-    daemon.run_forever()
+    import asyncio
+    try:
+        from ws_kiosk_client import KioskWsClient
+        print("[Kiosk Brain] Starting PrintBooth WSS Client directly from daemon.py entrypoint...")
+        client = KioskWsClient()
+        asyncio.run(client.connect())
+    except Exception as err:
+        print(f"[Kiosk Brain] Notice launching ws_kiosk_client ({err}), falling back to synchronous polling daemon...")
+        daemon = KioskBrainDaemon()
+        daemon.run_forever()

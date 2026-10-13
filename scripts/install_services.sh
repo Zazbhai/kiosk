@@ -40,16 +40,17 @@ echo -e "\n[2/4] Installing /etc/systemd/system/printbooth-brain.service..."
 sudo tee /etc/systemd/system/printbooth-brain.service > /dev/null << EOF
 [Unit]
 Description=PrintBooth Kiosk Brain IoT Daemon
-After=network.target cups.service
+After=network-online.target cups.service
+Wants=network-online.target cups.service
 Requires=cups.service
 
 [Service]
 Type=simple
 User=$CURRENT_USER
 WorkingDirectory=$BRAIN_DIR
-ExecStart=$PYTHON_BIN daemon.py
+ExecStart=$PYTHON_BIN ws_kiosk_client.py
 Restart=always
-RestartSec=5
+RestartSec=3
 StandardOutput=journal
 StandardError=journal
 EnvironmentFile=-$KIOSK_ROOT/.env
