@@ -37,7 +37,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 TEMP_JOBS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def claim_order_for_spooling(order_id: str, aliases: Optional[List[str]] = None) -> bool:
+def claim_order_for_spooling(order_id: str, aliases: Optional[List[str]] = None, force: bool = False) -> bool:
     """
     Atomically claims an order ID (and aliases like orderNumber, releasePin)
     across all processes (ws_kiosk_client, daemon, retry handlers).
@@ -74,23 +74,24 @@ def claim_order_for_spooling(order_id: str, aliases: Optional[List[str]] = None)
                 except Exception:
                     claims = {}
 
-            # Check if ANY key is already claimed
-            for k in all_keys:
-                if k in claims:
-                    claimed_info = claims[k]
-                    print(
-                        f"[CUPS Spooler] [BLOCKED] Prevented duplicate print! Order '{order_id}' was already spooled "
-                        f"by PID {claimed_info.get('pid')} at {claimed_info.get('time')}."
-                    )
-                    if sys.platform != "win32":
-                        try:
-                            import fcntl
-                            fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
-                        except Exception:
-                            pass
-                    return False
+            # Check if ANY key is already claimed (unless force=True)
+            if not force:
+                for k in all_keys:
+                    if k in claims:
+                        claimed_info = claims[k]
+                        print(
+                            f"[CUPS Spooler] [BLOCKED] Prevented duplicate print! Order '{order_id}' was already spooled "
+                            f"by PID {claimed_info.get('pid')} at {claimed_info.get('time')}."
+                        )
+                        if sys.platform != "win32":
+                            try:
+                                import fcntl
+                                fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+                            except Exception:
+                                pass
+                        return False
 
-            # First time claim: Register all keys
+            # Register/overwrite claim with current PID & timestamp
             now_iso = time.strftime("%Y-%m-%d %H:%M:%S")
             now_ts = time.time()
             entry = {"pid": os.getpid(), "time": now_iso, "ts": now_ts, "primary": order_id}
@@ -116,11 +117,64 @@ def claim_order_for_spooling(order_id: str, aliases: Optional[List[str]] = None)
         return True
 
 
+def unclaim_order(order_id: str, aliases: Optional[List[str]] = None) -> bool:
+    """
+    Atomically removes an order ID and all its aliases from the claims file.
+    Used when a print job fails so that retries or subsequent commands are not blocked.
+    """
+    if not order_id:
+        return True
+
+    all_keys = [str(order_id).strip()]
+    if aliases:
+        for a in aliases:
+            if a and str(a).strip():
+                all_keys.append(str(a).strip())
+
+    lock_file = DATA_DIR / ".spool_claims.lock"
+    claims_file = DATA_DIR / ".spool_claims.json"
+
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        with open(lock_file, "a+", encoding="utf-8") as lf:
+            if sys.platform != "win32":
+                try:
+                    import fcntl
+                    fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+                except Exception:
+                    pass
+
+            if claims_file.exists():
+                try:
+                    with open(claims_file, "r", encoding="utf-8") as cf:
+                        claims = json.load(cf)
+                    for k in all_keys:
+                        claims.pop(k, None)
+                    with open(claims_file, "w", encoding="utf-8") as cf:
+                        json.dump(claims, cf, indent=2)
+                except Exception:
+                    pass
+
+            if sys.platform != "win32":
+                try:
+                    import fcntl
+                    fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+                except Exception:
+                    pass
+        return True
+    except Exception as e:
+        print(f"[CUPS Spooler] Unclaim notice ({e})")
+        return False
+
+
 class CupsController:
     """Interface to Linux CUPS spooler via pycups or fallback system CLI (lp/lpstat)."""
 
-    def claim_order_for_spooling(self, order_id: str, aliases: Optional[List[str]] = None) -> bool:
-        return claim_order_for_spooling(order_id, aliases)
+    def claim_order_for_spooling(self, order_id: str, aliases: Optional[List[str]] = None, force: bool = False) -> bool:
+        return claim_order_for_spooling(order_id, aliases, force=force)
+
+    def unclaim_order(self, order_id: str, aliases: Optional[List[str]] = None) -> bool:
+        return unclaim_order(order_id, aliases)
 
     def __init__(self, host: str = "localhost", port: int = 631):
         self.host = host

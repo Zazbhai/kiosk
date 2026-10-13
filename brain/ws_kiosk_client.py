@@ -430,8 +430,8 @@ class KioskWsClient:
                 elif msg_type == "FILE_INCOMING":
                     print(f"[WSS Kiosk Client] 📄 Incoming file received via WS: {payload.get('fileName')} (Order: {order_id})")
 
-                elif msg_type in ("PAYMENT_CAPTURED", "PRINT_EXECUTE"):
-                    print(f"[WSS Kiosk Client] ⚡ Order Event: {msg_type} for Order {order_id}")
+                elif msg_type == "PAYMENT_CAPTURED":
+                    print(f"[WSS Kiosk Client] ⚡ Order Event: PAYMENT_CAPTURED for Order {order_id}")
                     order_number = payload.get("orderNumber") or msg.get("orderNumber")
                     release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")
 
@@ -442,27 +442,21 @@ class KioskWsClient:
                         or {}
                     )
 
-                    if not order_number and staged_job.get("orderNumber"):
-                        order_number = staged_job.get("orderNumber")
-                    if not release_pin:
-                        release_pin = staged_job.get("releasePin") or staged_job.get("otp") or staged_job.get("pickupCode")
+                    # For kiosk sessions (direct payment), PAYMENT_CAPTURED is an informative event.
+                    # The central API will dispatch PRINT_EXECUTE containing the full document and settings.
+                    # Only proceed here if we have a staged job already waiting with document payload.
+                    if not staged_job and not payload.get("fileUrl") and not payload.get("filePath"):
+                        print(f"[WSS Kiosk Client] ℹ Payment confirmed for Order {order_id}. Awaiting PRINT_EXECUTE dispatch...")
+                        continue
 
-                    aliases = [a for a in [order_number, release_pin] if a and a != order_id]
-                    all_ids = {order_id} | set(aliases)
-
-                    merged_payload = {**staged_job, **payload}
-                    check_pin = merged_payload.get("releasePin") or merged_payload.get("otp") or merged_payload.get("pickupCode")
-
-                    # If order requires PIN verification at the kiosk, DO NOT auto-print on payment capture!
-                    if check_pin and not merged_payload.get("pinVerified") and not merged_payload.get("immediate"):
+                    # If staged job requires PIN entry at kiosk, DO NOT auto-print on payment capture!
+                    check_pin = staged_job.get("releasePin") or staged_job.get("otp") or staged_job.get("pickupCode")
+                    if check_pin and not staged_job.get("pinVerified") and not staged_job.get("immediate"):
                         print(f"[WSS Kiosk Client] ⏸ Order {order_id} requires PIN entry at kiosk. Awaiting PIN verification.")
                         continue
 
-                    if payload.get("dispatchedLocally") and not payload.get("forceKioskPrint"):
-                        print(f"[WSS Kiosk Client] ℹ Order {order_id} dispatched locally by host. Skipping duplicate spool.")
-                        self.printed_orders.update(all_ids)
-                        continue
-
+                    aliases = [a for a in [order_number, release_pin] if a and a != order_id]
+                    all_ids = {order_id} | set(aliases)
                     if any(i in self.printed_orders for i in all_ids):
                         print(f"[WSS Kiosk Client] ℹ Order {order_id} already spooled. Skipping duplicate spool.")
                         continue
@@ -473,6 +467,34 @@ class KioskWsClient:
                         continue
 
                     self.printed_orders.update(all_ids)
+                    merged_payload = {**staged_job, **payload}
+                    asyncio.create_task(self._handle_print_order(order_id, merged_payload))
+
+                elif msg_type == "PRINT_EXECUTE":
+                    print(f"[WSS Kiosk Client] 🖨 Order Event: PRINT_EXECUTE for Order {order_id}")
+                    order_number = payload.get("orderNumber") or msg.get("orderNumber")
+                    release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")
+                    aliases = [a for a in [order_number, release_pin] if a and a != order_id]
+                    all_ids = {order_id} | set(aliases)
+
+                    force = bool(payload.get("forceKioskPrint") or payload.get("immediate"))
+                    if not force and any(i in self.printed_orders for i in all_ids):
+                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already spooled. Skipping duplicate spool.")
+                        continue
+
+                    if not self.cups.claim_order_for_spooling(order_id, aliases, force=force):
+                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already claimed/spooled. Skipping duplicate spool.")
+                        self.printed_orders.update(all_ids)
+                        continue
+
+                    self.printed_orders.update(all_ids)
+                    staged_job = (
+                        self.staged_jobs.get(order_id)
+                        or (self.staged_jobs.get(order_number) if order_number else None)
+                        or (self.staged_jobs.get(release_pin) if release_pin else None)
+                        or {}
+                    )
+                    merged_payload = {**staged_job, **payload}
                     asyncio.create_task(self._handle_print_order(order_id, merged_payload))
 
             except Exception as e:
@@ -488,7 +510,15 @@ class KioskWsClient:
             return
 
         # Build download URL with query params for station authentication
-        base_dl_url = payload.get("fileUrl") or f"{self.api_url}/print/download/{order_id}"
+        raw_url = payload.get("fileUrl") or f"{self.api_url}/print/download/{order_id}"
+        if raw_url.startswith("http://") or raw_url.startswith("https://"):
+            base_dl_url = raw_url
+        elif raw_url.startswith("/"):
+            server_origin = re.sub(r"/api/?$", "", self.api_url)
+            base_dl_url = f"{server_origin}{raw_url}"
+        else:
+            base_dl_url = f"{self.api_url}/{raw_url}"
+
         separator = "&" if "?" in base_dl_url else "?"
         file_url = f"{base_dl_url}{separator}kioskId={urllib.parse.quote(self.kiosk_id)}"
         if self.kiosk_secret:
@@ -655,10 +685,26 @@ class KioskWsClient:
                 if master_target.exists() and master_target.stat().st_size > 0:
                     local_target = master_target
 
-            if not local_target.exists():
-                local_target.write_text(
-                    f"%PDF-1.4\n% PrintBooth Automated Kiosk Print\nOrder: {job_order_id}\nKiosk: {self.kiosk_id}\n"
-                )
+            if not local_target.exists() or local_target.stat().st_size == 0:
+                print(f"[WSS Kiosk Client] ❌ Download failed or file empty for Order {job_order_id}. Cannot print missing document.")
+                self.cups.unclaim_order(order_id, aliases)
+                for i in all_ids:
+                    self.printed_orders.discard(i)
+                fail_msg = {
+                    "type": "PRINT_ERROR",
+                    "kioskId": self.kiosk_id,
+                    "orderId": order_id,
+                    "payload": {
+                        "error": f"Failed to download printable document for Order {job_order_id}",
+                        "timestamp": int(time.time() * 1000),
+                    },
+                }
+                if self.ws:
+                    try:
+                        await self.ws.send(json.dumps(fail_msg))
+                    except Exception:
+                        pass
+                return
 
             # Office conversion for PPT and DOCX with live phase feedback
             is_ppt = local_target.suffix.lower() in (".pptx", ".ppt", ".ppsx") or bool(re.search(r"\.(pptx?|ppsx?)$", file_name, re.I))
