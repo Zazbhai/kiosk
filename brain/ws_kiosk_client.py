@@ -430,6 +430,16 @@ class KioskWsClient:
                             f_order_id = f_item.get("orderId") or f"{order_id}_sub_{idx + 1}"
                             asyncio.create_task(self._prefetch_document(f_order_id, {**f_item, "orderId": f_order_id}))
 
+                    # If order is flagged for immediate/autonomous printing, dispatch directly to CUPS without blocking on PIN
+                    if payload.get("immediate") or payload.get("forceKioskPrint") or payload.get("isImmediate"):
+                        print(f"[WSS Kiosk Client] ⚡ Immediate print requested for Order {order_id}. Executing print job directly...")
+                        aliases = [a for a in [order_number, release_pin] if a and a != order_id]
+                        all_ids = {order_id} | set(aliases)
+                        if not any(i in self.printed_orders for i in all_ids):
+                            if self.cups.claim_order_for_spooling(order_id, aliases, force=True):
+                                self.printed_orders.update(all_ids)
+                                asyncio.create_task(self._handle_print_order(order_id, payload))
+
                 elif msg_type == "PIN_VERIFIED":
                     print(f"[WSS Kiosk Client] 🔑 PIN Verified on Kiosk for Order {order_id}!")
                     order_number = payload.get("orderNumber") or msg.get("orderNumber")
@@ -553,6 +563,20 @@ class KioskWsClient:
         if local_target.exists() and local_target.stat().st_size > 0:
             return
 
+        # Check if identical file already exists in TEMP_JOBS_DIR under a related order ID
+        for cand in TEMP_JOBS_DIR.glob(f"*_{file_name}"):
+            if cand.exists() and cand.stat().st_size > 0:
+                try:
+                    import shutil
+                    shutil.copyfile(cand, local_target)
+                    print(f"[WSS Kiosk Client] ✓ Reused locally cached binary for '{file_name}' ({local_target.stat().st_size} bytes)")
+                    break
+                except Exception:
+                    pass
+
+        if local_target.exists() and local_target.stat().st_size > 0:
+            return
+
         # Build download URL with query params for station authentication
         raw_url = payload.get("fileUrl") or f"{self.api_url}/print/download/{order_id}"
         if raw_url.startswith("http://") or raw_url.startswith("https://"):
@@ -583,24 +607,30 @@ class KioskWsClient:
                     with urllib.request.urlopen(dl_req, context=ctx, timeout=25) as resp, open(local_target, "wb") as f:
                         f.write(resp.read())
             await loop.run_in_executor(None, _download_with_auth)
-            print(f"[WSS Kiosk Client] ✓ Pre-fetched {file_name} ({local_target.stat().st_size} bytes)")
+            if local_target.exists() and local_target.stat().st_size > 0:
+                print(f"[WSS Kiosk Client] ✓ Pre-fetched {file_name} ({local_target.stat().st_size} bytes)")
 
-            # Immediately pre-convert Office files & images in background thread so printing is instant upon PIN entry!
-            suffix = local_target.suffix.lower()
-            if suffix in (
-                ".pptx", ".ppt", ".docx", ".doc", ".xlsx", ".xls",
-                ".odt", ".odp", ".ods", ".rtf", ".txt",
-                ".png", ".jpg", ".jpeg", ".webp"
-            ):
-                print(f"[WSS Kiosk Client] ⚡ Pre-converting '{local_target.name}' to PDF in background...")
-                def _preconvert():
-                    try:
-                        self.cups.prepare_printable_file(local_target)
-                        print(f"[WSS Kiosk Client] ✓ Pre-conversion ready for '{local_target.name}'")
-                    except Exception as err:
-                        print(f"[WSS Kiosk Client] Pre-convert notice: {err}")
-                await loop.run_in_executor(None, _preconvert)
+                # Immediately pre-convert Office files & images in background thread so printing is instant upon PIN entry!
+                suffix = local_target.suffix.lower()
+                if suffix in (
+                    ".pptx", ".ppt", ".docx", ".doc", ".xlsx", ".xls",
+                    ".odt", ".odp", ".ods", ".rtf", ".txt",
+                    ".png", ".jpg", ".jpeg", ".webp"
+                ):
+                    print(f"[WSS Kiosk Client] ⚡ Pre-converting '{local_target.name}' to PDF in background...")
+                    def _preconvert():
+                        try:
+                            self.cups.prepare_printable_file(local_target)
+                            print(f"[WSS Kiosk Client] ✓ Pre-conversion ready for '{local_target.name}'")
+                        except Exception as err:
+                            print(f"[WSS Kiosk Client] Pre-convert notice: {err}")
+                    await loop.run_in_executor(None, _preconvert)
         except Exception as e:
+            if local_target.exists() and local_target.stat().st_size == 0:
+                try:
+                    local_target.unlink()
+                except Exception:
+                    pass
             print(f"[WSS Kiosk Client] Pre-fetch notice: {e}")
 
     @staticmethod
@@ -725,10 +755,16 @@ class KioskWsClient:
                 await self._prefetch_document(job_order_id, job_payload)
 
             if not local_target.exists() or local_target.stat().st_size == 0:
-                # Fallback to master file if sub file wasn't created separately
+                # Fallback to master file or any matching cached binary in TEMP_JOBS_DIR
                 master_target = TEMP_JOBS_DIR / f"{order_id}_{file_name}"
                 if master_target.exists() and master_target.stat().st_size > 0:
                     local_target = master_target
+                else:
+                    for cand in TEMP_JOBS_DIR.glob(f"*_{file_name}"):
+                        if cand.exists() and cand.stat().st_size > 0:
+                            local_target = cand
+                            print(f"[WSS Kiosk Client] ✓ Fallback matched cached document: '{cand.name}'")
+                            break
 
             if not local_target.exists() or local_target.stat().st_size == 0:
                 print(f"[WSS Kiosk Client] ❌ Download failed or file empty for Order {job_order_id}. Cannot print missing document.")
