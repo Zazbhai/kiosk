@@ -172,6 +172,13 @@ sudo lpadmin -p "$PRINTER_NAME" -o printer-error-policy=retry-current-job 2>/dev
 sudo lpadmin -p "$PRINTER_NAME" -o job-sheets-default=none,none 2>/dev/null || true
 sudo lpadmin -p "$PRINTER_NAME" -o copies-default=1 2>/dev/null || true
 
+# Force system-wide and CUPS queue default paper size to A4 (prevents US-Letter shrinkage)
+echo "a4" | sudo tee /etc/papersize 2>/dev/null || true
+sudo paperconfig -p a4 2>/dev/null || true
+sudo lpadmin -p "$PRINTER_NAME" -o PageSize=A4 -o PageRegion=A4 -o media=A4 2>/dev/null || true
+sudo lpoptions -p "$PRINTER_NAME" -o PageSize=A4 -o PageRegion=A4 -o media=A4 2>/dev/null || true
+sudo lpoptions -d "$PRINTER_NAME" -o PageSize=A4 -o PageRegion=A4 -o media=A4 2>/dev/null || true
+
 echo -e "\n════════════════════════════════════════════════════════"
 echo "  ✓ HP Smart Tank Setup Complete! 🎉"
 echo "  Queue Name : $PRINTER_NAME"

@@ -476,16 +476,30 @@ class CupsController:
                 except Exception:
                     pass
 
-            # 6. Ensure default options for queue (copies=1, job-sheets=none,none)
+            # 6. Ensure default options for queue (copies=1, job-sheets=none,none, media=A4, PageSize=A4)
             subprocess.run(
-                ["lpoptions", "-p", target, "-o", "copies=1", "-o", "job-sheets=none,none"],
+                [
+                    "lpoptions", "-p", target,
+                    "-o", "copies=1",
+                    "-o", "job-sheets=none,none",
+                    "-o", "media=A4",
+                    "-o", "PageSize=A4",
+                    "-o", "PageRegion=A4",
+                ],
                 capture_output=True, stdin=subprocess.DEVNULL, timeout=2,
             )
             subprocess.run(
-                ["sudo", "-n", "lpadmin", "-p", target, "-o", "job-sheets-default=none,none", "-o", "copies-default=1"],
+                [
+                    "sudo", "-n", "lpadmin", "-p", target,
+                    "-o", "job-sheets-default=none,none",
+                    "-o", "copies-default=1",
+                    "-o", "media=A4",
+                    "-o", "PageSize=A4",
+                    "-o", "PageRegion=A4",
+                ],
                 capture_output=True, stdin=subprocess.DEVNULL, timeout=2,
             )
-            actions.append("set queue default copies=1 & job-sheets=none,none")
+            actions.append("set queue default media=A4 & PageSize=A4")
 
             print(f"[CUPS Auto-Recover] Actions executed for '{target}': {', '.join(actions)}")
             return {"success": True, "actions": actions}
@@ -939,11 +953,8 @@ class CupsController:
                             canvas_w, canvas_h = min(base_w, base_h), max(base_w, base_h)
 
                         # Define printable margins
-                        # Standard inkjets need ~3-4mm hardware margin unless borderless is selected
-                        if norm_scale in ("BORDERLESS", "FILL"):
-                            margin = 0
-                        else:
-                            margin = 40  # ~3.4mm at 300 DPI, maximizes printable area
+                        # Use margin=0 so image covers the full A4 canvas without artificial shrinkage
+                        margin = 0
 
                         avail_w = max(100, canvas_w - (margin * 2))
                         avail_h = max(100, canvas_h - (margin * 2))
@@ -1057,11 +1068,20 @@ class CupsController:
 
         options: Dict[str, str] = {
             "media": ppd_paper,
+            "PageSize": ppd_paper,
+            "PageRegion": ppd_paper,
         }
 
         # Scaling / Margins:
         norm_scale = str(scaling or "FIT").upper().strip()
-        if norm_scale in ("FIT", "AUTO"):
+        if norm_scale in ("FILL", "FULL", "BORDERLESS"):
+            options["fit-to-page"] = "true"
+            options["fill"] = "true"
+        elif norm_scale in ("ACTUAL", "NONE", "100", "ORIGINAL"):
+            options["scaling"] = "100"
+            options["natural-scaling"] = "100"
+        else:
+            # Standard "FIT" or "AUTO": scale to full page
             options["fit-to-page"] = "true"
 
         # Orientation
