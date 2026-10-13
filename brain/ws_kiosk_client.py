@@ -639,7 +639,8 @@ class KioskWsClient:
         order_number = payload.get("orderNumber")
         release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")
         aliases = [a for a in [order_number, release_pin] if a and a != order_id]
-        
+        all_ids = {order_id} | set(aliases)
+
         mark_order_processed(order_id, aliases)
         self.printed_orders = load_processed_orders()
 
