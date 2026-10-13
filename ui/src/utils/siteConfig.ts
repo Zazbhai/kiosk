@@ -24,11 +24,22 @@ export function isLocalOrLanHost(hostname: string): boolean {
 }
 
 export function getKioskSiteUrl(): string {
+  // Purge any stale LAN/localhost URLs from localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('pb_site_url') || localStorage.getItem('pb_web_url')
+      if (stored && (stored.includes('192.168.') || stored.includes('5200') || stored.includes('localhost') || stored.includes('127.0.0.1'))) {
+        localStorage.removeItem('pb_site_url')
+        localStorage.removeItem('pb_web_url')
+      }
+    } catch {}
+  }
+
   // 1. Explicit runtime query parameter override (?siteUrl=... or ?webUrl=...)
   if (typeof window !== 'undefined') {
     const search = new URLSearchParams(window.location.search)
     const paramUrl = search.get('siteUrl') || search.get('webUrl') || search.get('clientWebUrl')
-    if (paramUrl && paramUrl.trim() && !paramUrl.includes('192.168.')) {
+    if (paramUrl && paramUrl.trim() && !paramUrl.includes('192.168.') && !paramUrl.includes('localhost')) {
       return paramUrl.trim().replace(/\/+$/, '')
     }
   }
@@ -146,6 +157,9 @@ export function getKioskQrUrl(kioskId: string, customBaseUrl?: string, sessionTo
 export function setKioskSiteUrl(url: string) {
   if (typeof window === 'undefined') return
   const clean = url.trim().replace(/\/+$/, '')
+  if (clean.includes('192.168.') || clean.includes('localhost') || clean.includes(':5200') || clean.includes('127.0.0.1')) {
+    return
+  }
   localStorage.setItem('pb_site_url', clean)
   localStorage.setItem('pb_web_url', clean)
   window.dispatchEvent(new CustomEvent('pb_site_url_changed', { detail: clean }))

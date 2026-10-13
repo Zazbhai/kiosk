@@ -1230,18 +1230,23 @@ export default function KioskSessionScreen() {
 
 
   const qrDisplayValue = useMemo(() => {
+    const base = 'https://printbooth.co.in'
     // 1. Explicit unique session QR URL containing cryptographic session token
     if (session?.qrUrl && session.qrUrl.includes('&session=') && !session.qrUrl.includes('session=init')) {
-      return session.qrUrl
+      try {
+        const u = new URL(session.qrUrl)
+        return `${base}${u.pathname}${u.search}`
+      } catch {
+        return session.qrUrl.replace(/^https?:\/\/[^/]+/, base)
+      }
     }
     // 2. Synthesize using active cryptographic session token
     if (session?.token && session.token !== 'init') {
-      const base = (siteUrl || getKioskSiteUrl()).replace(/\/+$/, '')
       return `${base}/print?id=${encodeURIComponent(kioskId)}&session=${encodeURIComponent(session.token)}`
     }
     // 3. While initializing, return empty string so loading state renders instead of a constant sessionless QR
     return ''
-  }, [session?.qrUrl, session?.token, siteUrl, kioskId])
+  }, [session?.qrUrl, session?.token, kioskId])
 
 
   // Current document and previews
