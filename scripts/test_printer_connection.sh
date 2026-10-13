@@ -65,6 +65,15 @@ if [ -f "/etc/cups/printers.conf" ]; then
     fi
 fi
 
+# Detect mismatch between connected USB hardware and configured CUPS URI
+CONFIGURED_URI=$(lpstat -v 2>/dev/null | grep -i "PrintBooth_Printer" | awk '{print $3}' || true)
+if [ -n "$CONFIGURED_URI" ]; then
+    if echo "$CONFIGURED_URI" | grep -i "HL-L5210DW" >/dev/null && lsusb 2>/dev/null | grep -i "DCP-T420W" >/dev/null; then
+        echo "⚠ MISMATCH DETECTED: Queue is configured for HL-L5210DW, but a Brother DCP-T420W is connected via USB!"
+        echo "  Fix: run 'sudo bash setup_brother_t420w.sh' or 'bash printer_autorecover.sh'"
+    fi
+fi
+
 # 6. Brother DCP-T420W Hardware Register Check
 echo "\n[6] Brother DCP-T420W Hardware Configuration Check:"
 for br in /usr/bin/brprintconf_dcpt420w /opt/brother/Printers/dcpt420w/lpd/brprintconf_dcpt420w; do

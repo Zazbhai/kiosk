@@ -116,6 +116,13 @@ if [ $QUEUE_EXISTS -eq 1 ]; then
         sudo lpadmin -p "$PRINTER_NAME" -v "$ACTIVE_URI" 2>/dev/null || true
     fi
 
+    # Ensure PPD is updated if connected USB hardware is Brother DCP-T420W
+    PPD_PATH="/usr/share/cups/model/Brother/brother_dcpt420w_printer_en.ppd"
+    if [ -f "$PPD_PATH" ] && lsusb 2>/dev/null | grep -i -E "0475|dcp-t420w" >/dev/null; then
+        sudo lpadmin -p "$PRINTER_NAME" -P "$PPD_PATH" 2>/dev/null || true
+        log "✓ Synchronized PPD model with connected Brother DCP-T420W"
+    fi
+
     # CRITICAL: Change printer-error-policy so CUPS NEVER disables queue on power drop
     sudo lpadmin -p "$PRINTER_NAME" -o printer-error-policy=retry-current-job 2>/dev/null || true
     sudo lpadmin -d "$PRINTER_NAME" 2>/dev/null || true
