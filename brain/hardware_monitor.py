@@ -382,7 +382,7 @@ class HardwareMonitor:
             is_online = True
             printer_status = "READY"
             if not printers or active_printer_name in ("None", "CUPS Printer"):
-                active_printer_name = usb_info.get("printerFound") or "Brother DCP-T420W"
+                active_printer_name = usb_info.get("printerFound") or "PrintBooth_Printer"
 
         # If printer is reported OFFLINE on Linux, periodically trigger self-healing (every 20s)
         if not is_online and sys.platform != "win32":
@@ -403,7 +403,7 @@ class HardwareMonitor:
                         printer_status = "READY" if is_online else "OFFLINE"
 
         # Determine printer hardware model name
-        printer_model_name = usb_info.get("printerFound") or "Brother DCP-T420W"
+        printer_model_name = usb_info.get("printerFound") or ("USB Printer" if is_usb_connected else "No Printer Detected")
         if printers:
             active_p_obj = next((p for p in printers if p.get("name") == active_printer_name), None)
             if active_p_obj and active_p_obj.get("info"):
@@ -429,7 +429,7 @@ class HardwareMonitor:
             "usbDevice": usb_info.get("printerFound") or printer_model_name,
             "usbInfo": usb_info,
             "allPrinters": printers if printers else ([{
-                "name": active_printer_name if active_printer_name != "None" else "Brother_DCP_T420W",
+                "name": active_printer_name if active_printer_name != "None" else "PrintBooth_Printer",
                 "info": printer_model_name,
                 "is_default": True,
                 "is_online": is_online,

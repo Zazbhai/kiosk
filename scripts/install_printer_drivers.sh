@@ -31,17 +31,23 @@ sudo systemctl restart ipp-usb 2>/dev/null || true
 sleep 2
 
 # 3. Check for USB printers connected
-echo "\n[2/4] Scanning for connected USB printing devices..."
-USB_PRINTERS=$(lsusb | grep -i -E "printer|brother|hewlett|canon|epson|xerox|samsung" || true)
+echo -e "\n[2/4] Scanning for connected USB printing devices..."
+USB_PRINTERS=$(lsusb | grep -i -E "03f0:|04f9:|04b8:|04a9:|printer|brother|hp|hewlett|smart tank|deskjet|laserjet|canon|epson|xerox|samsung" || true)
 
 if [ -n "$USB_PRINTERS" ]; then
     echo "Found USB hardware device:"
     echo "$USB_PRINTERS"
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     
+    # Specific specialized driver flow for HP (Smart Tank, DeskJet, LaserJet, Ink Tank)
+    if echo "$USB_PRINTERS" | grep -i -E "03f0:|hp|smart tank|deskjet|laserjet|ink tank" >/dev/null 2>&1; then
+        echo "✓ Identified HP printer hardware! Launching dedicated HP setup..."
+        exec bash "$SCRIPT_DIR/setup_hp_smart_tank.sh"
+    fi
+
     # Specific specialized driver flow for Brother DCP-T420W
-    if echo "$USB_PRINTERS" | grep -i -E "DCP-T420W|04f9:0475" >/dev/null 2>&1; then
+    if echo "$USB_PRINTERS" | grep -i -E "DCP-T420W|04f9:0475|04f9:" >/dev/null 2>&1; then
         echo "✓ Identified Brother DCP-T420W hardware! Launching dedicated driver installer..."
-        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
         exec bash "$SCRIPT_DIR/setup_brother_t420w.sh"
     fi
 else

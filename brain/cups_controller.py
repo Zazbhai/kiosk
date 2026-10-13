@@ -289,21 +289,37 @@ class CupsController:
 
             matched_lines = []
             found_name = None
-            is_brother = False
+            found_vendor = None
 
-            brother_keywords = ["04f9:", "brother", "brothers", "dcp-t420w", "dcp-", "mfc-", "hl-"]
+            # Multi-vendor printer recognition:
+            VENDOR_MAP = {
+                "HP": ["03f0:", "hp", "hewlett", "smart tank", "deskjet", "laserjet", "ink tank", "officejet", "envy", "photosmart"],
+                "Brother": ["04f9:", "brother", "brothers", "dcp", "mfc", "hl-"],
+                "Epson": ["04b8:", "epson", "ecotank", "l3150", "l3250", "l4150", "workforce", "stylus"],
+                "Canon": ["04a9:", "canon", "pixma", "maxify", "imageclass", "selphy"],
+                "Samsung": ["04e8:", "samsung"],
+                "Pantum": ["232b:", "pantum"],
+            }
 
             for line in lines:
                 lower = line.lower()
-                # Check for Brother vendor ID (04f9), brother name, dcp, mfc, or general printer
-                if any(k in lower for k in brother_keywords):
-                    matched_lines.append(line.strip())
-                    is_brother = True
-                    found_name = line.strip()
+                for v_name, keywords in VENDOR_MAP.items():
+                    if any(k in lower for k in keywords):
+                        matched_lines.append(line.strip())
+                        found_vendor = v_name
+                        parts = line.split("ID", 1)
+                        if len(parts) > 1 and len(parts[1].split(None, 1)) > 1:
+                            found_name = parts[1].split(None, 1)[1].strip()
+                        else:
+                            found_name = line.strip()
+                        break
+                if found_vendor:
                     break
                 elif "printer" in lower:
                     matched_lines.append(line.strip())
+                    found_vendor = "Generic"
                     found_name = line.strip()
+                    break
 
             # Also check sysfs USB descriptors if lsusb didn't match
             if not matched_lines:
@@ -315,15 +331,19 @@ class CupsController:
                             mfg_path = os.path.join(dev_path, "manufacturer")
                             prod_path = os.path.join(dev_path, "product")
                             vendor_path = os.path.join(dev_path, "idVendor")
-                            
+
                             mfg = open(mfg_path).read().strip().lower() if os.path.exists(mfg_path) else ""
                             prod = open(prod_path).read().strip().lower() if os.path.exists(prod_path) else ""
-                            vendor = open(vendor_path).read().strip().lower() if os.path.exists(vendor_path) else ""
+                            vendor_id = open(vendor_path).read().strip().lower() if os.path.exists(vendor_path) else ""
 
-                            if vendor == "04f9" or any(k in mfg for k in ["brother", "brothers"]) or any(k in prod for k in ["brother", "brothers", "dcp"]):
-                                matched_lines.append(f"Sysfs USB device {dev}: {mfg} {prod} (04f9)")
-                                is_brother = True
-                                found_name = f"Brother {prod.upper() if prod else 'Printer'} ({dev})"
+                            combo = f"{vendor_id} {mfg} {prod}"
+                            for v_name, keywords in VENDOR_MAP.items():
+                                if any(k in combo for k in keywords):
+                                    matched_lines.append(f"Sysfs USB device {dev}: {mfg} {prod} ({vendor_id})")
+                                    found_vendor = v_name
+                                    found_name = f"{mfg.title()} {prod.title()} ({dev})".strip()
+                                    break
+                            if found_vendor:
                                 break
                 except Exception:
                     pass
@@ -334,8 +354,11 @@ class CupsController:
             is_connected = bool(matched_lines or has_lp_node)
             return {
                 "connected": is_connected,
-                "printerFound": found_name or ("Brother Printer (/dev/usb/lp0)" if has_lp_node else None),
-                "isBrother": is_brother,
+                "printerFound": found_name or ("Printer (/dev/usb/lp0)" if has_lp_node else None),
+                "vendor": found_vendor or ("Generic" if is_connected else "Unknown"),
+                "isBrother": (found_vendor == "Brother"),
+                "isHP": (found_vendor == "HP"),
+                "isEpson": (found_vendor == "Epson"),
                 "hasLpDeviceNode": has_lp_node,
                 "matchedLines": matched_lines,
                 "rawLsusb": raw_output.strip(),
@@ -406,6 +429,8 @@ class CupsController:
             # 5. Check if URI needs re-binding if printer is on USB
             if self._is_usb_printer_present():
                 try:
+                    usb_info = self.check_usb_printer()
+                    vendor = (usb_info.get("vendor") or "").lower()
                     lpinfo_out = subprocess.run(
                         ["lpinfo", "-v"],
                         capture_output=True,
@@ -415,11 +440,28 @@ class CupsController:
                     ).stdout
                     active_uri = None
                     for line in lpinfo_out.splitlines():
-                        if any(k in line.lower() for k in ["brother", "dcp-t420w", "direct usb://brother"]):
+                        lower = line.lower()
+                        if vendor == "hp" and any(k in lower for k in ["hp:/usb", "direct usb://hp", "usb://hp", "smart tank", "deskjet", "laserjet"]):
                             parts = line.split()
                             if len(parts) >= 2:
                                 active_uri = parts[1]
                                 break
+                        elif vendor == "brother" and any(k in lower for k in ["brother", "dcp-t420w", "direct usb://brother"]):
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                active_uri = parts[1]
+                                break
+                        elif vendor == "epson" and any(k in lower for k in ["epson", "direct usb://epson"]):
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                active_uri = parts[1]
+                                break
+                        elif any(k in lower for k in ["direct usb://", "hp:/usb", "ipp://"]):
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                active_uri = parts[1]
+                                break
+
                     if not active_uri and os.path.exists("/dev/usb/lp0"):
                         active_uri = "usb:/dev/usb/lp0"
 
@@ -507,9 +549,9 @@ class CupsController:
                                 p["state"] = "READY"
                     else:
                         usb_info = self.check_usb_printer()
-                        p_name = usb_info.get("printerFound") or "Brother_DCP_T420W"
+                        p_name = usb_info.get("printerFound") or "PrintBooth_Printer"
                         printers = [{
-                            "name": "Brother_DCP_T420W",
+                            "name": "PrintBooth_Printer",
                             "info": p_name,
                             "state": "READY",
                             "is_default": True,
@@ -519,7 +561,7 @@ class CupsController:
                             "connection_type": "USB",
                             "is_virtual": False,
                         }]
-                        default_p = "Brother_DCP_T420W"
+                        default_p = "PrintBooth_Printer"
 
                 return {"success": True, "printers": printers, "default": default_p}
             except Exception:

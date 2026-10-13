@@ -219,7 +219,7 @@ class KioskWsClient:
     async def _usb_monitor_loop(self):
         """
         Background physical USB scanner loop running every 60 seconds (1 minute).
-        Executes 'lsusb' probe to verify Brother printer connection.
+        Executes 'lsusb' probe to verify physical USB printer connection.
         Logs status and broadcasts heartbeat immediately if connection state changes.
         """
         print("[WSS Kiosk Client] ⏱ 1-minute physical USB scanner loop (lsusb) initialized.")
@@ -228,20 +228,21 @@ class KioskWsClient:
                 loop = asyncio.get_event_loop()
                 usb_info = await loop.run_in_executor(None, self.cups.check_usb_printer)
                 is_connected = bool(usb_info.get("connected", False))
-                printer_found = usb_info.get("printerFound") or "Brother Printer"
+                vendor = usb_info.get("vendor") or "USB"
+                printer_found = usb_info.get("printerFound") or f"{vendor} Printer"
 
                 if self._last_usb_connected is None or is_connected != self._last_usb_connected:
                     self._last_usb_connected = is_connected
                     if is_connected:
-                        print(f"[WSS Kiosk Client] [1-min USB Monitor] 🟢 Brother printer DETECTED on USB via lsusb: '{printer_found}'")
+                        print(f"[WSS Kiosk Client] [1-min USB Monitor] 🟢 {vendor} printer DETECTED on USB via lsusb: '{printer_found}'")
                     else:
-                        print(f"[WSS Kiosk Client] [1-min USB Monitor] 🔴 Brother printer NOT DETECTED via lsusb! USB cable unplugged or printer powered off.")
+                        print(f"[WSS Kiosk Client] [1-min USB Monitor] 🔴 USB printer NOT DETECTED via lsusb! USB cable unplugged or printer powered off.")
                     await self._send_heartbeat()
                 else:
                     if is_connected:
-                        print(f"[WSS Kiosk Client] [1-min USB Monitor] ✓ Heartbeat tick: Brother printer connected via USB ({printer_found}).")
+                        print(f"[WSS Kiosk Client] [1-min USB Monitor] ✓ Heartbeat tick: {vendor} printer connected via USB ({printer_found}).")
                     else:
-                        print(f"[WSS Kiosk Client] [1-min USB Monitor] ⚠️ Heartbeat tick: Brother printer offline (lsusb not detecting printer).")
+                        print(f"[WSS Kiosk Client] [1-min USB Monitor] ⚠️ Heartbeat tick: USB printer offline (lsusb not detecting printer).")
             except Exception as e:
                 print(f"[WSS Kiosk Client] [1-min USB Monitor] Error probing USB printer: {e}")
 
