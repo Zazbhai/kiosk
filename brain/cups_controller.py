@@ -60,7 +60,21 @@ def claim_order_for_spooling(order_id: str, aliases: Optional[List[str]] = None,
     claims_file = DATA_DIR / ".spool_claims.json"
 
     try:
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        lock_file = DATA_DIR / ".spool_claims.lock"
+        claims_file = DATA_DIR / ".spool_claims.json"
+        if not os.access(DATA_DIR, os.W_OK):
+            fallback_dir = Path("/tmp/printbooth_claims")
+            try:
+                fallback_dir.mkdir(parents=True, exist_ok=True)
+                lock_file = fallback_dir / ".spool_claims.lock"
+                claims_file = fallback_dir / ".spool_claims.json"
+            except Exception:
+                pass
+
         with open(lock_file, "a+", encoding="utf-8") as lf:
             if sys.platform != "win32":
                 try:
@@ -136,6 +150,14 @@ def unclaim_order(order_id: str, aliases: Optional[List[str]] = None) -> bool:
 
     lock_file = DATA_DIR / ".spool_claims.lock"
     claims_file = DATA_DIR / ".spool_claims.json"
+    if not os.access(DATA_DIR, os.W_OK):
+        fallback_dir = Path("/tmp/printbooth_claims")
+        try:
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+            lock_file = fallback_dir / ".spool_claims.lock"
+            claims_file = fallback_dir / ".spool_claims.json"
+        except Exception:
+            pass
 
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -1281,15 +1303,16 @@ class CupsController:
 
         # Method 1: PyMuPDF (fitz)
         try:
-            import pymupdf  # type: ignore
-            src = pymupdf.open(str(src_path))
-            dst = pymupdf.open()
-            for p in pages_1_indexed:
-                if 1 <= p <= len(src):
-                    dst.insert_pdf(src, from_page=p - 1, to_page=p - 1)
-            dst.save(str(dest_path))
-            dst.close()
-            src.close()
+            with _MUPDF_LOCK:
+                import pymupdf  # type: ignore
+                src = pymupdf.open(str(src_path))
+                dst = pymupdf.open()
+                for p in pages_1_indexed:
+                    if 1 <= p <= len(src):
+                        dst.insert_pdf(src, from_page=p - 1, to_page=p - 1)
+                dst.save(str(dest_path))
+                dst.close()
+                src.close()
             if dest_path.exists() and dest_path.stat().st_size > 0:
                 return True
         except ImportError:
@@ -1689,7 +1712,8 @@ class CupsController:
         effective_range = page_range
         if is_pdf and selected_pages and len(selected_pages) < total_pages:
             range_tag = "_".join(str(x) for x in selected_pages[:4])
-            extracted_name = f"extracted_{p_path.stem}_p{range_tag}.pdf"
+            unique_suffix = f"{os.getpid()}_{int(time.time() * 1000) % 100000}"
+            extracted_name = f"extracted_{p_path.stem}_p{range_tag}_{unique_suffix}.pdf"
             extracted_path = p_path.parent / extracted_name
             if self._extract_pdf_pages(p_path, selected_pages, extracted_path):
                 print(f"[CUPS] Sliced PDF to {len(selected_pages)} selected page(s): {selected_pages} -> '{extracted_path.name}'")
@@ -1699,7 +1723,8 @@ class CupsController:
 
         # Enforce pure DeviceGray for B&W uniform prints so printer hardware CANNOT use color ink
         if is_pdf and not is_color and not target_path.name.startswith("mono_"):
-            mono_target = p_path.parent / f"mono_devgray_{target_path.stem}.pdf"
+            unique_suffix = f"{os.getpid()}_{int(time.time() * 1000) % 100000}"
+            mono_target = p_path.parent / f"mono_devgray_{target_path.stem}_{unique_suffix}.pdf"
             if self._convert_pdf_to_monochrome(target_path, mono_target):
                 print(f"[CUPS] ✓ Enforced pure DeviceGray grayscale PDF: '{mono_target.name}'")
                 target_path = mono_target
@@ -1718,6 +1743,12 @@ class CupsController:
 
         print(f"[CUPS] Dispatching '{target_path.name}' to printer '{printer}'")
         print(f"[CUPS] Hardware Options applied: {cups_opts}")
+
+        # Explicit target verification: Guarantee file exists and is readable before contacting CUPS
+        if not target_path.exists() or target_path.stat().st_size == 0:
+            err_msg = f"Print target file not found or empty on disk: '{target_path.name}'"
+            print(f"[CUPS] ❌ Error: {err_msg}")
+            return {"success": False, "error": err_msg, "printer": printer}
 
         try:
             # Primary execution via Linux lp CLI on Raspberry Pi
@@ -1764,6 +1795,9 @@ class CupsController:
                     job_match = re.search(r"request id is ([^\s]+)", out)
                     submitted_job_id = job_match.group(1) if job_match else None
                     return {"success": True, "output": out.strip(), "printer": printer, "cupsJobId": submitted_job_id}
+                except subprocess.CalledProcessError as cpe:
+                    cli_out = (cpe.output or "").strip()
+                    print(f"[CUPS CLI] lp execution error: {cpe} (Output: '{cli_out}'). Trying pycups fallback...")
                 except Exception as e:
                     print(f"[CUPS CLI] lp execution error: {e}. Trying pycups fallback...")
 
@@ -1782,12 +1816,8 @@ class CupsController:
                     "printer": printer,
                 }
         finally:
-            for tf in temp_uniform_files:
-                try:
-                    if tf.exists() and tf != p_path:
-                        tf.unlink()
-                except Exception:
-                    pass
+            # Retain temporary files on disk until CUPS filter queue clears and ws_kiosk_client purges them
+            pass
 
         # Real Windows GDI hardware print engine
         if sys.platform == "win32":

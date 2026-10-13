@@ -32,12 +32,40 @@ from order_tracker import (
     mark_order_processed,
     is_order_processed,
     purge_temp_job_files,
-    save_staged_order,
-)
+_SINGLETON_LOCK_FILE = None
+
+
+def acquire_singleton_lock():
+    """
+    Guarantees that only ONE instance of ws_kiosk_client runs on this kiosk station.
+    Blocks duplicate instances from systemd, start_kiosk.sh, or manual terminal execution.
+    """
+    global _SINGLETON_LOCK_FILE
+    lock_file = Path("/tmp/printbooth_ws_client.pid")
+    try:
+        _SINGLETON_LOCK_FILE = open(lock_file, "a+", encoding="utf-8")
+        if sys.platform != "win32":
+            import fcntl
+            try:
+                fcntl.flock(_SINGLETON_LOCK_FILE.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except (BlockingIOError, IOError):
+                _SINGLETON_LOCK_FILE.seek(0)
+                existing_pid = _SINGLETON_LOCK_FILE.read().strip()
+                print(f"\n[WSS Kiosk Client] ⚠️ ANOTHER INSTANCE IS ALREADY RUNNING (PID {existing_pid or 'unknown'}).")
+                print(f"[WSS Kiosk Client] Exiting duplicate process immediately to prevent duplicate prints.")
+                sys.exit(0)
+
+        _SINGLETON_LOCK_FILE.seek(0)
+        _SINGLETON_LOCK_FILE.truncate()
+        _SINGLETON_LOCK_FILE.write(str(os.getpid()))
+        _SINGLETON_LOCK_FILE.flush()
+    except Exception as e:
+        print(f"[WSS Kiosk Client] Singleton lock notice: {e}")
 
 
 class KioskWsClient:
     def __init__(self, kiosk_id: str = KIOSK_ID, api_url: str = API_URL):
+        acquire_singleton_lock()
         self.kiosk_id = kiosk_id.upper()
         self.kiosk_secret = KIOSK_SECRET
         self.api_url = api_url.rstrip("/")

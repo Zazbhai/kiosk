@@ -81,8 +81,17 @@ RestartSec=5
 WantedBy=graphical.target
 EOF
 
-# 5. Reload systemd and enable services
-echo -e "\n[4/4] Reloading systemd and enabling services..."
+# 5. Reload systemd, clean stale processes, and enable services
+echo -e "\n[4/4] Terminating any stale background Python client instances..."
+sudo pkill -f "ws_kiosk_client.py" 2>/dev/null || true
+sudo pkill -f "daemon.py" 2>/dev/null || true
+rm -f /tmp/printbooth_ws_client.pid 2>/dev/null || true
+
+echo "Ensuring file permissions on brain data directory..."
+mkdir -p "$BRAIN_DIR/data"
+sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$BRAIN_DIR/data" 2>/dev/null || true
+sudo chmod -R 775 "$BRAIN_DIR/data" 2>/dev/null || true
+
 sudo systemctl daemon-reload
 sudo systemctl enable printbooth-brain.service
 sudo systemctl enable printbooth-display.service

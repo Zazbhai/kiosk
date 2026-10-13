@@ -107,9 +107,10 @@ xset s off 2>/dev/null || true
 xset -dpms 2>/dev/null || true
 
 # ── 7. Supervise WSS Kiosk Client / Brain Daemon ────────────────────────────
-# If systemd service is active, let systemd manage it directly
-if systemctl is-active --quiet printbooth-brain.service 2>/dev/null; then
-    echo "[Start Kiosk] ✓ printbooth-brain.service is active (supervised by systemd)."
+# If systemd service is active or enabled, let systemd manage it directly
+if systemctl is-active --quiet printbooth-brain.service 2>/dev/null || systemctl is-enabled --quiet printbooth-brain.service 2>/dev/null; then
+    echo "[Start Kiosk] ✓ printbooth-brain.service is supervised by systemd."
+    sudo systemctl start printbooth-brain.service 2>/dev/null || true
 elif ! pgrep -f "ws_kiosk_client.py" > /dev/null && ! pgrep -f "daemon.py" > /dev/null; then
     echo "[Start Kiosk] Launching WSS Kiosk Client in background..."
     (
