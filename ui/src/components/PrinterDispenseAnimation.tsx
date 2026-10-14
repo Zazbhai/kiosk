@@ -118,7 +118,7 @@ export default function PrinterDispenseAnimation({
         { transform: T(land - 0.8, fr), offset: 0.92, easing: 'ease-in' },
         { transform: fin, offset: 1 },
       ],
-      { duration: 1300, fill: 'forwards' }
+      { duration: 750, fill: 'forwards' }
     ).finished.then(() => {
       p.style.transform = fin
       p.style.willChange = 'auto'
@@ -126,7 +126,7 @@ export default function PrinterDispenseAnimation({
     })
   }, [])
 
-  // Paper feeder sheet sliding into top input slot
+  // Paper feeder sheet sliding into top input slot (rapid mechanical feed)
   const feedSheet = useCallback(() => {
     const printer = printerRef.current
     if (!printer) return
@@ -140,7 +140,7 @@ export default function PrinterDispenseAnimation({
         { transform: 'translate(-50%,0) rotate(-6deg)', offset: 0.15 },
         { transform: 'translate(-50%,150%) rotate(0deg)' },
       ],
-      { duration: 1000, easing: 'cubic-bezier(.5,0,.8,.7)' }
+      { duration: 550, easing: 'cubic-bezier(.5,0,.8,.7)' }
     ).finished.then(() => f.remove())
   }, [])
 
@@ -150,11 +150,10 @@ export default function PrinterDispenseAnimation({
   onCompleteRef.current = onComplete
   const hasStartedRef = useRef(false)
 
-  // Primary realtime animation lifecycle:
-  // - 6s to boot and fetch
-  // - 4s per B&W page
-  // - 8s per Color page
-  // - Zero verbose text banners
+  // Calibrated real-hardware animation lifecycle:
+  // - 8s hardware boot, fuser roller warm-up, and CUPS spool receive
+  // - 2s per page physical laser print speed
+  // - Realtime LCD telemetry updates
   useEffect(() => {
     if (hasStartedRef.current) return
     hasStartedRef.current = true
@@ -162,22 +161,28 @@ export default function PrinterDispenseAnimation({
     const rig = rigRef.current
 
     async function executePrintRun() {
-      // ── PHASE 1: Boot & Fetch (Strictly 6 seconds) ──
+      // ── PHASE 1: Hardware Warmup & Spooling (8 seconds) ──
       setIsBootingClass(true)
       setIsPrintingClass(true)
-      setLcdStatus('IDLE')
-      setLcdNumber('000')
+      setLcdStatus('WARM UP')
+      setLcdNumber('008')
 
-      // Wait 6000ms for hardware boot and spooling
-      await wait(6000)
+      // Real hardware countdown for 8s warm-up & spooling
+      for (let sec = 8; sec > 0; sec--) {
+        if (isCancelled) return
+        setLcdNumber(String(sec).padStart(3, '0'))
+        if (sec <= 4) {
+          setLcdStatus('SPOOL')
+        }
+        await wait(1000)
+      }
       if (isCancelled) return
 
       setIsBootingClass(false)
       setIsRigOn(true)
 
-      // ── PHASE 2: Page-by-Page Mechanical Print Loop ──
-      // 4000ms per mono page, 8000ms per color page
-      const pagePrintDuration = mode === 'color' ? 8000 : 4000
+      // ── PHASE 2: Page-by-Page Physical Print Loop (2 seconds per page) ──
+      const pagePrintDuration = 2000
 
       for (let pageIdx = 1; pageIdx <= totalSheetsToPrint; pageIdx++) {
         if (isCancelled) return
@@ -218,11 +223,11 @@ export default function PrinterDispenseAnimation({
           }
         }
 
-        await wait(300)
+        await wait(150)
         if (isCancelled) return
 
-        // Cover sliding reveal & paper ejection downward from printer slot
-        const adjustedDuration = pagePrintDuration - 300
+        // Cover sliding reveal & rapid paper ejection (1550ms for 2s page cycle)
+        const adjustedDuration = pagePrintDuration - 450
         const coverEl = paperEl.querySelector('.cover')
         if (coverEl) {
           coverEl.animate(
@@ -252,8 +257,8 @@ export default function PrinterDispenseAnimation({
         // Gravity drop into output tray with mechanical bounce
         dropPaper(paperEl, pageIdx - 1)
 
-        // Micro-pause before the next feed begins
-        await wait(350)
+        // Micro-pause before the next feed begins (150ms) -> total ~2000ms per sheet
+        await wait(150)
         if (isCancelled) return
       }
 
@@ -265,7 +270,7 @@ export default function PrinterDispenseAnimation({
       setLcdNumber(String(totalSheetsToPrint).padStart(3, '0'))
 
       // Settle time for customer to observe finished pages in output tray
-      await wait(1800)
+      await wait(1500)
       if (isCancelled) return
 
       onCompleteRef.current?.()
