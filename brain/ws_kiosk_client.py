@@ -345,27 +345,49 @@ class KioskWsClient:
 
             await asyncio.sleep(60)
 
+    async def _delayed_order_cleanup(self, order_id: str, delay_seconds: int = 600):
+        """
+        Delayed Privacy Enforcement:
+        Waits 10 minutes (600 seconds) before safely purging local temporary print files,
+        ensuring all CUPS rasterizers, filter pipelines, and hardware paper feeds finish 100%.
+        """
+        try:
+            await asyncio.sleep(delay_seconds)
+            purged = 0
+            if TEMP_JOBS_DIR.exists():
+                for f in TEMP_JOBS_DIR.glob(f"*{order_id}*"):
+                    try:
+                        if f.is_file() and f.name not in (".spool_claims.lock", ".spool_claims.json", ".gitignore"):
+                            f.unlink()
+                            purged += 1
+                    except Exception:
+                        pass
+            if purged > 0:
+                print(f"[WSS Kiosk Client] 🧹 10-Minute retention expired: Safely purged {purged} file(s) for Order {order_id}.")
+        except Exception as e:
+            print(f"[WSS Kiosk Client] Delayed cleanup notice for Order {order_id}: {e}")
+
     async def _file_retention_loop(self):
         """
-        Periodically sweeps local temporary jobs directory every 15 minutes.
-        Permanently purges any staged files older than 24 hours (86,400 seconds).
+        Periodically sweeps local temporary jobs directory every 60 seconds.
+        Permanently purges any staged files older than 10 minutes (600 seconds).
         """
         while self.is_running and self.ws:
             try:
-                cutoff = time.time() - 86400  # 24 hours
+                cutoff = time.time() - 600  # 10 minutes retention
                 if TEMP_JOBS_DIR.exists():
                     for item in TEMP_JOBS_DIR.iterdir():
-                        if item.is_file() and item.name not in (".spool_claims.lock", ".spool_claims.json"):
+                        if item.is_file() and item.name not in (".spool_claims.lock", ".spool_claims.json", ".gitignore"):
                             try:
                                 if item.stat().st_mtime < cutoff:
                                     item.unlink()
-                                    print(f"[WSS Kiosk Client] 🧹 Purged local print file exceeding 24h retention: {item.name}")
+                                    print(f"[WSS Kiosk Client] 🧹 Purged local print file exceeding 10m retention: {item.name}")
                             except Exception:
                                 pass
             except Exception as e:
                 print(f"[WSS Kiosk Client] Error in file retention sweep: {e}")
 
-            await asyncio.sleep(15 * 60)
+            await asyncio.sleep(60)
 
     async def _http_poll_loop(self):
         """
@@ -1151,16 +1173,8 @@ class KioskWsClient:
                     await self.ws.send(json.dumps(fail_msg))
                 except Exception:
                     pass
-            # Still delete file for privacy
-            try:
-                for extra_f in TEMP_JOBS_DIR.glob(f"*{order_id}*"):
-                    try:
-                        if extra_f.is_file():
-                            extra_f.unlink()
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+            # Preserve local documents on failure for 10 minutes so admin/user diagnostics or retries succeed
+            asyncio.create_task(self._delayed_order_cleanup(order_id, delay_seconds=600))
             return
 
         # Simulate / stream spooler progress to customer's phone and kiosk UI
@@ -1220,20 +1234,10 @@ class KioskWsClient:
         mark_order_processed(order_id, aliases)
         self.printed_orders.update(all_ids)
 
-        # Privacy Enforcement: Immediately and permanently delete user's printed document
-        try:
-            if local_target.exists():
-                local_target.unlink()
-                print(f"[WSS Kiosk Client] 🗑 PERMANENTLY DELETED user document for Order {order_id}: {local_target.name}")
-            # Also clean up any converted or generated files matching this order
-            for extra_f in TEMP_JOBS_DIR.glob(f"*{order_id}*"):
-                try:
-                    if extra_f.is_file():
-                        extra_f.unlink()
-                except Exception:
-                    pass
-        except Exception as del_err:
-            print(f"[WSS Kiosk Client] Warning deleting local document {local_target}: {del_err}")
+        # Delayed Privacy Enforcement: Retain local document & converted slices intact on disk for 10 minutes (600s)
+        # to ensure CUPS rasterizers, filter pipelines, and hardware paper feeds finish printing completely.
+        print(f"[WSS Kiosk Client] ⏱ Preserving local print job files on disk for 10 minutes before automated purge.")
+        asyncio.create_task(self._delayed_order_cleanup(order_id, delay_seconds=600))
 
     async def _run_auto_update(self, payload: Optional[dict] = None):
         """Executes the kiosk_autoupdate.sh script asynchronously and streams real-time telemetry."""

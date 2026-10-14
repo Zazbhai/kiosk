@@ -1723,30 +1723,66 @@ class CupsController:
 
         return False
 
-    def _wait_for_job_spool(self, printer_name: str, job_id: Optional[str] = None, timeout: int = 60) -> bool:
+    def _wait_for_job_spool(self, printer_name: str, job_id: Optional[str] = None, timeout: int = 90, expected_pages: int = 1) -> bool:
         """
         Synchronously monitors CUPS until the job has completed and cleared from the queue,
         guaranteeing synchronous execution before the next job or page can start.
+        Tracks physical page output if /var/log/cups/page_log is present.
         """
         start = time.time()
-        time.sleep(0.6)  # Give CUPS a brief instant to register the job ID
         clean_id = job_id.strip() if job_id else None
+        job_numeric = clean_id.split("-")[-1] if clean_id and "-" in clean_id else clean_id
+
+        # Allow initial CUPS rasterizer spinup (at least 2.5s for laser engines, scaled by page count)
+        safe_pages = max(1, int(expected_pages or 1))
+        min_hardware_wait = max(2.5, min(15.0, safe_pages * 1.2))
+        print(f"[CUPS Spooler] Monitoring job '{clean_id}' ({safe_pages} pages expected, min wait: {min_hardware_wait:.1f}s)...")
+        time.sleep(1.8)
+
+        last_logged_pages = 0
 
         while time.time() - start < timeout:
+            # 1. Check /var/log/cups/page_log for real hardware page ejections
+            if os.path.exists("/var/log/cups/page_log") and job_numeric:
+                try:
+                    with open("/var/log/cups/page_log", "r") as pf:
+                        lines = pf.readlines()[-40:]
+                        matched_pages = 0
+                        for pl in lines:
+                            parts = pl.split()
+                            if len(parts) >= 8 and parts[2] == job_numeric:
+                                matched_pages += 1
+                        if matched_pages > last_logged_pages:
+                            last_logged_pages = matched_pages
+                            print(f"[CUPS Spooler] 📄 Physical hardware printed page {matched_pages}/{safe_pages} for job '{clean_id}'")
+                        if safe_pages > 0 and matched_pages >= safe_pages:
+                            print(f"[CUPS Spooler] ✓ Confirmed physical page log: All {safe_pages} pages printed for '{clean_id}'.")
+                            return True
+                except Exception:
+                    pass
+
+            # 2. Check active spool queue via lpstat -o
             try:
                 cmd = ["lpstat", "-o", printer_name] if printer_name else ["lpstat", "-o"]
                 out = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL)
-                if not out.strip():
-                    print(f"[CUPS Spooler] ✓ Active queue for '{printer_name}' is completely clear. Hardware completed.")
-                    return True
-                if clean_id and clean_id not in out:
-                    print(f"[CUPS Spooler] ✓ Job '{clean_id}' has cleared from active queue. Synchronous page completed.")
-                    return True
+                has_active = bool(out.strip())
+
+                elapsed = time.time() - start
+                # Only declare complete if minimum hardware time elapsed and queue is clear of this job
+                if elapsed >= min_hardware_wait:
+                    if not has_active:
+                        print(f"[CUPS Spooler] ✓ Active queue for '{printer_name}' is completely clear. Hardware completed {safe_pages} pages.")
+                        return True
+                    if clean_id and clean_id not in out:
+                        print(f"[CUPS Spooler] ✓ Job '{clean_id}' has cleared from active queue. Hardware completed.")
+                        return True
             except Exception:
-                return True
+                if time.time() - start >= min_hardware_wait:
+                    return True
+
             time.sleep(0.8)
 
-        print(f"[CUPS Spooler] Hardware sync wait timeout ({timeout}s) reached; proceeding with queue.")
+        print(f"[CUPS Spooler] Hardware sync wait timeout ({timeout}s) reached; proceeding.")
         return True
 
     def print_file(
@@ -2093,7 +2129,7 @@ class CupsController:
                     job_match = re.search(r"request id is ([^\s]+)", out)
                     submitted_job_id = job_match.group(1) if job_match else None
                     # Synchronously wait for job to finish printing so pages and subsequent jobs do not overlap
-                    self._wait_for_job_spool(printer, job_id=submitted_job_id, timeout=60)
+                    self._wait_for_job_spool(printer, job_id=submitted_job_id, timeout=90, expected_pages=len(selected_pages))
                     return {"success": True, "output": out.strip(), "printer": printer, "cupsJobId": submitted_job_id}
                 except subprocess.CalledProcessError as cpe:
                     cli_out = (cpe.output or "").strip()
@@ -2107,7 +2143,7 @@ class CupsController:
                 try:
                     with _CUPS_LOCK:
                         job_id = conn.printFile(printer, str(target_path.resolve()), job_title, cups_opts)
-                    self._wait_for_job_spool(printer, job_id=str(job_id), timeout=60)
+                    self._wait_for_job_spool(printer, job_id=str(job_id), timeout=90, expected_pages=len(selected_pages))
                     return {"success": True, "job_id": job_id, "printer": printer}
                 except Exception as e:
                     print(f"[CUPS] pycups print error: {e}")
