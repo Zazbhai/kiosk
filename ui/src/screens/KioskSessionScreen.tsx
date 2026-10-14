@@ -142,6 +142,8 @@ export interface LiveSession {
   phoneGraceRemainingSec?: number
   isBackwardNav?: boolean
   currentSectionEnteredAt?: number
+  isSyncing?: boolean
+  syncMessage?: string
 }
 
 // ─── Phase Metadata ──────────────────────────────────────────────────────────
@@ -259,6 +261,11 @@ export default function KioskSessionScreen() {
   const [isActionPending, setIsActionPending] = useState(false)
   const [activeStateOverride, setActiveStateOverride] = useState<SessionState | null>(null)
   const [urlParamsCleared, setUrlParamsCleared] = useState(false)
+
+  // Active Synchronization / Phase Transition States
+  const [isSyncingPhase, setIsSyncingPhase] = useState(false)
+  const [syncPhaseLabel, setSyncPhaseLabel] = useState('')
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Hardware variant: PrintBooth Pro (Touch & Color) vs PrintBooth Lite (Zero-touch & Monochrome)
   const queryVariant = typeof window !== 'undefined'
@@ -816,6 +823,18 @@ export default function KioskSessionScreen() {
           }
 
           const isStateChanged = prev.state !== s.state
+          const isPhaseChanged = prev.phase !== s.phase
+          const isSyncTriggered = Boolean(s.isSyncing) || isStateChanged || isPhaseChanged
+
+          if (isSyncTriggered && s.state !== 'QR_READY' && s.state !== 'DONE') {
+            setIsSyncingPhase(true)
+            setSyncPhaseLabel(s.syncMessage || s.phase || (isStateChanged ? `Switching to ${s.state}…` : 'Syncing with phone…'))
+            if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
+            syncTimerRef.current = setTimeout(() => {
+              if (mountedRef.current) setIsSyncingPhase(false)
+            }, 1200)
+          }
+
           if (isStateChanged) {
             setStateChanged(true)
             setTimeout(() => setStateChanged(false), 250)
@@ -891,7 +910,10 @@ export default function KioskSessionScreen() {
       } catch {} finally {
         inFlight = false
         if (mountedRef.current) {
-          timerId = setTimeout(poll, 400)
+          const currentS = sessionRef.current
+          const isInteractive = currentS && ['CLAIMED', 'UPLOADING', 'CONFIRMING', 'CONFIGURING', 'REVIEWING', 'PAYING'].includes(currentS.state)
+          const pollInterval = isSyncingPhase ? 140 : (isInteractive ? 220 : 600)
+          timerId = setTimeout(poll, pollInterval)
         }
       }
     }
@@ -1742,20 +1764,30 @@ export default function KioskSessionScreen() {
     const currentIdx = steps.findIndex(s => s.id === currentStep)
 
     return (
-      <div className="ks-flow-tabs">
-        {steps.map((st, i) => {
-          const isDone = i < currentIdx
-          const isActive = i === currentIdx
-          return (
-            <div key={st.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div className={`ks-flow-tab ${isDone ? 'ks-flow-tab--done' : ''} ${isActive ? 'ks-flow-tab--active' : ''}`}>
-                <span className="ks-flow-tab-num">{isDone ? '✓' : st.num}</span>
-                <span>{st.label}</span>
+      <div className="ks-flow-tabs-wrapper">
+        <div className="ks-flow-tabs">
+          {steps.map((st, i) => {
+            const isDone = i < currentIdx
+            const isActive = i === currentIdx
+            return (
+              <div key={st.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div className={`ks-flow-tab ${isDone ? 'ks-flow-tab--done' : ''} ${isActive ? 'ks-flow-tab--active' : ''} ${isActive && isSyncingPhase ? 'ks-flow-tab--syncing' : ''}`}>
+                  <span className="ks-flow-tab-num">{isDone ? '✓' : st.num}</span>
+                  <span>{st.label}</span>
+                  {isActive && isSyncingPhase && <span className="ks-flow-tab-sync-dot" />}
+                </div>
+                {i < steps.length - 1 && <span className="ks-flow-tab-arrow">→</span>}
               </div>
-              {i < steps.length - 1 && <span className="ks-flow-tab-arrow">→</span>}
-            </div>
-          )
-        })}
+            )
+          })}
+        </div>
+
+        {isSyncingPhase && (
+          <div className="ks-tabs-sync-badge" role="status" aria-live="polite">
+            <span className="ks-sync-spinner-ring-mini" />
+            <span className="ks-tabs-sync-text">Syncing with phone…</span>
+          </div>
+        )}
       </div>
     )
   }
@@ -2086,6 +2118,29 @@ export default function KioskSessionScreen() {
           </div>
         </header>
       )}
+
+      {/* ── Active Phase / State Synchronization Laser Indicator ── */}
+      <div className={`ks-sync-banner ${isSyncingPhase ? 'ks-sync-banner--active' : ''}`} role="status" aria-live="polite">
+        <div className="ks-sync-banner-card">
+          <div className="ks-sync-banner-spinner">
+            <span className="ks-sync-banner-ring" />
+            <span className="ks-sync-banner-dot" />
+          </div>
+          <div className="ks-sync-banner-text">
+            <div className="ks-sync-banner-headline">
+              <span className="ks-sync-pulse-indicator" />
+              <span className="ks-sync-title">SYNCING WITH PHONE</span>
+            </div>
+            <span className="ks-sync-subtitle">{syncPhaseLabel || session?.phase || 'Synchronizing phase…'}</span>
+          </div>
+          <div className="ks-sync-laser-track">
+            <div className="ks-sync-laser-bar" />
+          </div>
+        </div>
+      </div>
+
+      {/* Top viewport crimson laser sweep when syncing */}
+      <div className={`ks-laser-sweep ${isSyncingPhase ? 'ks-laser-sweep--active' : ''}`} />
 
       {/* Main Container */}
       <main className={`ks-main ${stateChanged ? 'ks-transition' : ''}`}>
