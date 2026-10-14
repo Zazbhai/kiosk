@@ -88,7 +88,8 @@ def mark_order_processed(order_id: str, aliases: Optional[List[str]] = None):
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     keys_to_add = [str(order_id).strip()]
-    if aliases:
+    # Sub-orders (e.g. ORD-123_sub_1) must never record the master order ID as an alias
+    if aliases and "_sub_" not in str(order_id):
         for a in aliases:
             if a and str(a).strip() and not _is_numeric_pin(str(a)):
                 keys_to_add.append(str(a).strip())
@@ -148,7 +149,7 @@ def is_order_processed(order_id: str, aliases: Optional[List[str]] = None) -> bo
 
     processed = load_processed_orders()
     check_keys = [str(order_id).strip()]
-    if aliases:
+    if aliases and "_sub_" not in str(order_id):
         for a in aliases:
             if a and str(a).strip() and not _is_numeric_pin(str(a)):
                 check_keys.append(str(a).strip())

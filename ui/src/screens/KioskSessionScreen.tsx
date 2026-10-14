@@ -1025,9 +1025,19 @@ export default function KioskSessionScreen() {
     }
   }, [isLite, selectedColour])
 
-  // ── Dynamic Pricing Calculation with Per-Page & Eco Savings ───────────────
+  const totalFilesPageCount = useMemo(() => {
+    const flist = (session?.files && session.files.length > 0)
+      ? session.files
+      : (session?.document?.files && session.document.files.length > 0)
+        ? session.document.files
+        : []
+    if (flist && flist.length > 0) {
+      return flist.reduce((acc: number, f: any) => acc + Math.max(1, f.pageCount || 1), 0)
+    }
+    return 0
+  }, [session?.files, session?.document?.files])
 
-  const rawDocPageCount = session?.document?.pageCount || session?.totalPages || (session?.document?.pages?.length) || 1
+  const rawDocPageCount = session?.document?.pageCount || session?.totalPages || (session?.document?.pages?.length) || totalFilesPageCount || 1
 
   const maxPageFromQuery = useMemo(() => {
     if (typeof window !== 'undefined') {
@@ -1041,7 +1051,7 @@ export default function KioskSessionScreen() {
   }, [])
 
   const devTotalParam = typeof window !== 'undefined' ? Number(new URLSearchParams(window.location.search).get('devTotalPages')) : 0
-  const pageCount = Math.max(rawDocPageCount, devTotalParam || 0, maxPageFromQuery)
+  const pageCount = Math.max(rawDocPageCount, totalFilesPageCount, devTotalParam || 0, maxPageFromQuery)
 
   const effectivePageRange = useMemo(() => {
     if (typeof window !== 'undefined') {
@@ -1067,7 +1077,29 @@ export default function KioskSessionScreen() {
     let colourCount = 0
     let skippedCount = 0
 
-    if (settingsMode === 'PER_PAGE') {
+    const flist = (session?.files && session.files.length > 0)
+      ? session.files
+      : (session?.document?.files && session.document.files.length > 0)
+        ? session.document.files
+        : []
+    const isMultiFile = Array.isArray(flist) && flist.length > 1
+
+    let sheetsPerCopy = 0
+    let includedPages = 0
+
+    if (isMultiFile) {
+      const pagesPerSheet = nUpLayout * (selectedDuplex === 'DOUBLE' ? 2 : 1)
+      for (const f of flist) {
+        const fileP = Math.max(1, f.pageCount || 1)
+        includedPages += fileP
+        sheetsPerCopy += Math.max(1, Math.ceil(fileP / pagesPerSheet))
+      }
+      if (selectedColour === 'COLOUR') {
+        colourCount = includedPages
+      } else {
+        bwCount = includedPages
+      }
+    } else if (settingsMode === 'PER_PAGE') {
       for (let i = 0; i < pageCount; i++) {
         const custom = pageCustomizations[i]
         const isSkipped = Boolean(custom?.skipped)
@@ -1082,6 +1114,9 @@ export default function KioskSessionScreen() {
           bwCount++
         }
       }
+      includedPages = bwCount + colourCount
+      const pagesPerSheet = nUpLayout * (selectedDuplex === 'DOUBLE' ? 2 : 1)
+      sheetsPerCopy = Math.max(1, Math.ceil(includedPages / pagesPerSheet))
     } else {
       // GLOBAL uniform mode with selected page range
       const activePages = parsePageRange(effectivePageRange, pageCount)
@@ -1091,11 +1126,11 @@ export default function KioskSessionScreen() {
       } else {
         bwCount = activePages.length
       }
+      includedPages = bwCount + colourCount
+      const pagesPerSheet = nUpLayout * (selectedDuplex === 'DOUBLE' ? 2 : 1)
+      sheetsPerCopy = Math.max(1, Math.ceil(includedPages / pagesPerSheet))
     }
 
-    const includedPages = bwCount + colourCount
-    const pagesPerSheet = nUpLayout * (selectedDuplex === 'DOUBLE' ? 2 : 1)
-    const sheetsPerCopy = Math.max(1, Math.ceil(includedPages / pagesPerSheet))
     const totalSheets = sheetsPerCopy * selectedCopies
 
     // Rates dynamically derived from live station pricing matching customer mobile app
@@ -1132,7 +1167,7 @@ export default function KioskSessionScreen() {
       colourRate: isDouble ? pricing.colorDouble : pricing.colorSingle,
       pricing,
     }
-  }, [pageCount, pageCustomizations, settingsMode, selectedColour, selectedDuplex, nUpLayout, selectedCopies, effectivePageRange])
+  }, [session?.files, session?.document?.files, pageCount, pageCustomizations, settingsMode, selectedColour, selectedDuplex, nUpLayout, selectedCopies, effectivePageRange])
 
   // Reset touch override whenever phone updates the session amount
   useEffect(() => {

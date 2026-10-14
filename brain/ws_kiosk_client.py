@@ -163,14 +163,31 @@ class KioskWsClient:
             headers["Authorization"] = f"Bearer {self.kiosk_secret}"
         return headers
 
+    def _extract_clean_aliases(self, order_id: str, order_number: Optional[str]) -> List[str]:
+        if not order_id:
+            return []
+        # For sub-orders (e.g. ORD-123_sub_1), the master order number ORD-123 must NEVER be treated as an alias!
+        # Otherwise, sub_1 printing will cause sub_2, sub_3... to be rejected as duplicate orders!
+        if "_sub_" in str(order_id):
+            return []
+        if not order_number or str(order_number).strip() == str(order_id).strip():
+            return []
+        s = str(order_number).strip()
+        if s.isdigit() and len(s) <= 6:
+            return []
+        return [s]
+
     def _is_order_busy_or_printed(self, order_id: str, aliases: Optional[List[str]] = None) -> bool:
         """Atomically checks if an order is currently printing, already spooled, or marked processed."""
         if not order_id:
             return False
-        clean_aliases = [
-            str(a).strip() for a in (aliases or [])
-            if a and str(a).strip() and not (str(a).strip().isdigit() and len(str(a).strip()) <= 6)
-        ]
+        if "_sub_" in str(order_id):
+            clean_aliases = []
+        else:
+            clean_aliases = [
+                str(a).strip() for a in (aliases or [])
+                if a and str(a).strip() and not (str(a).strip().isdigit() and len(str(a).strip()) <= 6)
+            ]
         all_ids = {str(order_id).strip()} | set(clean_aliases)
         if any(i in self.printed_orders for i in all_ids):
             return True
@@ -413,7 +430,7 @@ class KioskWsClient:
                         order_id = job.get("orderId") or job.get("job_id")
                         order_number = job.get("orderNumber")
                         release_pin = job.get("releasePin") or job.get("otp") or job.get("pickupCode")
-                        aliases = [a for a in [order_number] if a and a != order_id and not (str(a).isdigit() and len(str(a)) <= 6)]
+                        aliases = self._extract_clean_aliases(order_id, order_number)
                         all_ids = {order_id} | set(aliases)
 
                         def _notify_server_completed(oid=order_id):
@@ -588,7 +605,7 @@ class KioskWsClient:
 
                     # If order is flagged for immediate/autonomous printing, dispatch directly to CUPS without blocking on PIN
                     if payload.get("immediate") or payload.get("forceKioskPrint") or payload.get("isImmediate"):
-                        aliases = [a for a in [order_number] if a and a != order_id and not (str(a).isdigit() and len(str(a)) <= 6)]
+                        aliases = self._extract_clean_aliases(order_id, order_number)
                         all_ids = {order_id} | set(aliases)
                         if self._is_order_busy_or_printed(order_id, aliases):
                             print(f"[WSS Kiosk Client] ℹ Order {order_id} already printing or spooled. Skipping duplicate PRINT_JOB_STAGED trigger.")
@@ -617,7 +634,7 @@ class KioskWsClient:
                     if not release_pin:
                         release_pin = staged_job.get("releasePin") or staged_job.get("otp") or staged_job.get("pickupCode")
 
-                    aliases = [a for a in [order_number] if a and a != order_id and not (str(a).isdigit() and len(str(a)) <= 6)]
+                    aliases = self._extract_clean_aliases(order_id, order_number)
                     all_ids = {order_id} | set(aliases)
 
                     if payload.get("dispatchedLocally") and not payload.get("forceKioskPrint"):
@@ -679,7 +696,7 @@ class KioskWsClient:
                     # The PIN remains available as an order receipt / pickup reference, but does not block printing.
                     print(f"[WSS Kiosk Client] 💰 Payment confirmed for Order {order_id}. Auto-dispatching physical print...")
 
-                    aliases = [a for a in [order_number] if a and a != order_id and not (str(a).isdigit() and len(str(a)) <= 6)]
+                    aliases = self._extract_clean_aliases(order_id, order_number)
                     all_ids = {order_id} | set(aliases)
                     if self._is_order_busy_or_printed(order_id, aliases):
                         print(f"[WSS Kiosk Client] ℹ Order {order_id} already printing or spooled. Skipping duplicate PAYMENT_CAPTURED.")
@@ -713,7 +730,7 @@ class KioskWsClient:
                     print(f"[WSS Kiosk Client] 🖨 Order Event: PRINT_EXECUTE for Order {order_id}")
                     order_number = payload.get("orderNumber") or msg.get("orderNumber")
                     release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")
-                    aliases = [a for a in [order_number] if a and a != order_id and not (str(a).isdigit() and len(str(a)) <= 6)]
+                    aliases = self._extract_clean_aliases(order_id, order_number)
                     all_ids = {order_id} | set(aliases)
 
                     force_reprint = bool(payload.get("forceReprint") or payload.get("adminForce"))
@@ -916,7 +933,7 @@ class KioskWsClient:
 
         order_number = payload.get("orderNumber")
         release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")
-        aliases = [a for a in [order_number] if a and a != order_id and not (str(a).isdigit() and len(str(a)) <= 6)]
+        aliases = self._extract_clean_aliases(order_id, order_number)
         all_ids = {str(order_id).strip()} | {str(a).strip() for a in aliases if a}
 
         # Concurrency Lock: Prevent simultaneous parallel executions for the same order

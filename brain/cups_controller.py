@@ -72,7 +72,8 @@ def claim_order_for_spooling(order_id: str, aliases: Optional[List[str]] = None,
         return True
 
     all_keys = [str(order_id).strip()]
-    if aliases:
+    # Sub-orders (e.g. ORD-123_sub_1) must never claim or check the master order ID as an alias
+    if aliases and "_sub_" not in str(order_id):
         for a in aliases:
             if a and str(a).strip() and not _is_pin(str(a)):
                 all_keys.append(str(a).strip())
