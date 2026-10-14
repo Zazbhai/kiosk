@@ -74,7 +74,9 @@ echo "✓ Old rotated logs purged."
 echo -e "\n[4/8] Purging CUPS print spooler files..."
 if [ -d "/var/spool/cups" ]; then
     sudo rm -rf /var/spool/cups/c* /var/spool/cups/d* /var/spool/cups/tmp/* 2>/dev/null || true
-    echo "✓ CUPS spooler cache purged."
+    # Restart CUPS so it releases held file descriptors for deleted spool files
+    sudo systemctl restart cups 2>/dev/null || true
+    echo "✓ CUPS spooler cache purged and daemon refreshed."
 fi
 
 # 5. Clean NPM & Pip development caches
@@ -107,8 +109,9 @@ rm -rf /tmp/printbooth_* 2>/dev/null || true
 rm -rf /tmp/lu* /tmp/.com.sun.star* 2>/dev/null || true # LibreOffice temp conversions
 rm -rf /var/tmp/* 2>/dev/null || true
 
-# Purge any old UI build backups in kiosk repository
+# Purge persistent temp jobs and old UI build backups in kiosk repository
 KIOSK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+rm -rf "$KIOSK_ROOT/brain/data/temp_jobs"/* 2>/dev/null || true
 rm -rf "$KIOSK_ROOT/ui/dist.bak" 2>/dev/null || true
 echo "✓ Temporary files and conversion caches purged."
 

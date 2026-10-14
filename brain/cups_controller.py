@@ -41,7 +41,7 @@ try:
     from config import DATA_DIR, TEMP_JOBS_DIR
 except Exception:
     DATA_DIR = Path("./data")
-    TEMP_JOBS_DIR = Path("/tmp/printbooth_jobs" if os.name != "nt" else "./temp_jobs")
+    TEMP_JOBS_DIR = DATA_DIR / "temp_jobs"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 TEMP_JOBS_DIR.mkdir(parents=True, exist_ok=True)
 
