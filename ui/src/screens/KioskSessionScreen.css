@@ -406,13 +406,12 @@
 }
 
 .ks-transition {
-  animation: ks-state-shift 0.45s var(--ks-ease) both;
+  animation: ks-state-shift 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes ks-state-shift {
-  0% { opacity: 0.7; transform: scale(0.985); }
-  60% { transform: scale(1.008); }
-  100% { opacity: 1; transform: scale(1); }
+  0% { opacity: 0.88; }
+  100% { opacity: 1; }
 }
 
 /* ── QR Panel (Idle Scan State - Minimal, Fast, Centered, No Buttons) ──────── */

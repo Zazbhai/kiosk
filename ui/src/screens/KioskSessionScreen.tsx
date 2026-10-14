@@ -310,10 +310,11 @@ export default function KioskSessionScreen() {
   const [phoneDisconnectCountdown, setPhoneDisconnectCountdown] = useState<number | null>(null)
   const disconnectCountdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // 1-minute (60s) inactivity watchdog in each interactive section
-  const [inactivitySecondsLeft, setInactivitySecondsLeft] = useState<number>(60)
+  // 5-minute (300s) inactivity watchdog in each interactive section
+  const [inactivitySecondsLeft, setInactivitySecondsLeft] = useState<number>(300)
   const lastSectionActivityTimeRef = useRef<number>(Date.now())
   const lastActiveSectionRef = useRef<string | null>(null)
+  const lastTouchTimeRef = useRef<number>(0)
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const rotateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -565,10 +566,11 @@ export default function KioskSessionScreen() {
     }
   }, [kioskId, apiUrl, createSession, clearUrlStateParam])
 
-  // Touch/pointer on kiosk screen resets the 1-minute timer and notifies backend
+  // Touch/pointer on kiosk screen resets the inactivity timer and notifies backend
   const recordKioskActivity = useCallback(() => {
+    lastTouchTimeRef.current = Date.now()
     lastSectionActivityTimeRef.current = Date.now()
-    setInactivitySecondsLeft(60)
+    setInactivitySecondsLeft(300)
     const curId = sessionRef.current?.sessionId
     if (curId && !curId.startsWith('init-')) {
       fetch(`${apiUrl}/api/kiosk-sessions/${encodeURIComponent(curId)}/activity`, {
@@ -588,21 +590,21 @@ export default function KioskSessionScreen() {
     }
   }, [recordKioskActivity])
 
-  // Reset section inactivity timer to 60s whenever state changes or updates arrive from phone
+  // Reset section inactivity timer to 300s whenever state changes or updates arrive from phone
   useEffect(() => {
     if (!session) return
     const curState = session.state
     if (curState !== lastActiveSectionRef.current) {
       lastActiveSectionRef.current = curState
       lastSectionActivityTimeRef.current = Date.now()
-      setInactivitySecondsLeft(60)
+      setInactivitySecondsLeft(300)
     } else {
       lastSectionActivityTimeRef.current = Date.now()
-      setInactivitySecondsLeft(60)
+      setInactivitySecondsLeft(300)
     }
   }, [session?.state, session?.document, session?.settings, session?.lastPhoneActivityAt])
 
-  // Watchdog: 1-minute countdown in each interactive section if no activity on user phone
+  // Watchdog: 5-minute countdown in each interactive section if no activity on user phone
   useEffect(() => {
     const currentSectionState = session?.state
     const isInteractiveSection =
@@ -617,14 +619,14 @@ export default function KioskSessionScreen() {
 
     const watchdog = setInterval(() => {
       const elapsed = Date.now() - lastSectionActivityTimeRef.current
-      const remaining = Math.max(0, Math.ceil((60000 - elapsed) / 1000))
+      const remaining = Math.max(0, Math.ceil((300000 - elapsed) / 1000))
       setInactivitySecondsLeft(remaining)
 
-      if (elapsed >= 60000) {
+      if (elapsed >= 300000) {
         clearInterval(watchdog)
         handleInactivityExpireAndReset()
       }
-    }, 500)
+    }, 1000)
 
     return () => clearInterval(watchdog)
   }, [session?.state, handleInactivityExpireAndReset])
@@ -689,15 +691,30 @@ export default function KioskSessionScreen() {
     }
   }, [createSession])
 
-  // ── Session Polling (every 1.2s) ─────────────────────────────────────────
-
+  // ── High-Performance Non-Overlapping Polling Loop ────────────────────────
   useEffect(() => {
+    let timerId: ReturnType<typeof setTimeout> | null = null
+    let inFlight = false
+
     const poll = async () => {
-      if (!mountedRef.current) return
+      if (!mountedRef.current || inFlight) return
+      inFlight = true
       try {
-        let res = await fetch(`${apiUrl}/api/kiosk-sessions/active/${encodeURIComponent(kioskId)}`).catch(() => null)
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 2500)
+
+        let res = await fetch(`${apiUrl}/api/kiosk-sessions/active/${encodeURIComponent(kioskId)}`, {
+          signal: controller.signal,
+        }).catch(() => null)
+        clearTimeout(timeoutId)
+
         if (!res || !res.ok) {
-          res = await fetch(`/api/kiosk-sessions/active/${encodeURIComponent(kioskId)}`).catch(() => null)
+          const fallbackCtrl = new AbortController()
+          const fbTimeout = setTimeout(() => fallbackCtrl.abort(), 2500)
+          res = await fetch(`/api/kiosk-sessions/active/${encodeURIComponent(kioskId)}`, {
+            signal: fallbackCtrl.signal,
+          }).catch(() => null)
+          clearTimeout(fbTimeout)
         }
         if (!res || !res.ok) return
 
@@ -721,41 +738,63 @@ export default function KioskSessionScreen() {
         }
 
         if (s.state === 'QR_READY' || data.isInactiveTimeout || s.state === 'EXPIRED') {
-          setSession({
-            sessionId: s.sessionId || `init-${kioskId}`,
-            token: effectiveToken,
-            qrUrl: effectiveQrUrl || s.qrUrl || '',
-            kioskVariant: s.kioskVariant || getKioskVariant(),
-            state: 'QR_READY',
-            phase: s.phase || 'Waiting for user to scan QR',
-            phaseStep: 0,
-            createdAt: s.createdAt || Date.now(),
-            expiresAt: s.expiresAt || (Date.now() + 300000),
-            document: undefined,
-            fileName: undefined,
-            totalPages: undefined,
-            settings: undefined,
-            amount: undefined,
-            orderId: undefined,
-            otp: undefined,
-            upiQrValue: undefined,
-            paymentUrl: undefined,
-            upiIntentUrl: undefined,
-            merchantUpiId: undefined,
-            gateway: undefined,
-            phoneDisconnected: false,
-            phoneGraceRemainingSec: 0,
-          })
-          setPhoneDisconnectCountdown(null)
+          if (currentSession?.state !== 'QR_READY' || (effectiveToken && currentSession?.token !== effectiveToken)) {
+            setSession({
+              sessionId: s.sessionId || `init-${kioskId}`,
+              token: effectiveToken,
+              qrUrl: effectiveQrUrl || s.qrUrl || '',
+              kioskVariant: s.kioskVariant || getKioskVariant(),
+              state: 'QR_READY',
+              phase: s.phase || 'Waiting for user to scan QR',
+              phaseStep: 0,
+              createdAt: s.createdAt || Date.now(),
+              expiresAt: s.expiresAt || (Date.now() + 300000),
+              document: undefined,
+              fileName: undefined,
+              totalPages: undefined,
+              settings: undefined,
+              amount: undefined,
+              orderId: undefined,
+              otp: undefined,
+              upiQrValue: undefined,
+              paymentUrl: undefined,
+              upiIntentUrl: undefined,
+              merchantUpiId: undefined,
+              gateway: undefined,
+              phoneDisconnected: false,
+              phoneGraceRemainingSec: 0,
+            })
+            setPhoneDisconnectCountdown(null)
+          }
           return
         }
 
         setSession(prev => {
           if (!prev) return { ...s, qrUrl: effectiveQrUrl, token: effectiveToken, kioskVariant: s.kioskVariant }
-          if (prev.state !== s.state) {
+          
+          const isStateChanged = prev.state !== s.state
+          if (isStateChanged) {
             setStateChanged(true)
-            setTimeout(() => setStateChanged(false), 500)
+            setTimeout(() => setStateChanged(false), 250)
           }
+
+          // Structural memoization: compare essential fields to avoid unnecessary re-renders
+          const isDocEqual = prev.document?.fileName === s.document?.fileName &&
+            (prev.document?.pages?.length || 0) === (s.document?.pages?.length || 0) &&
+            (prev.files?.length || 0) === (s.files?.length || 0)
+          const isSettingsEqual = prev.settings?.copies === s.settings?.copies &&
+            prev.settings?.colour === s.settings?.colour &&
+            prev.settings?.duplex === s.settings?.duplex &&
+            prev.settings?.pageRange === s.settings?.pageRange &&
+            prev.amount === s.amount
+          const isDisconnectEqual = prev.phoneDisconnected === s.phoneDisconnected &&
+            prev.phoneGraceRemainingSec === s.phoneGraceRemainingSec
+
+          if (!isStateChanged && isDocEqual && isSettingsEqual && isDisconnectEqual &&
+              prev.upiQrValue === s.upiQrValue && prev.orderId === s.orderId && prev.phase === s.phase) {
+            return prev
+          }
+
           return {
             ...prev,
             ...s,
@@ -778,7 +817,7 @@ export default function KioskSessionScreen() {
         }
 
         // Phone Disconnect handling: only count down if session has no document and phone truly left
-        const hasActiveDoc = Boolean(s.document)
+        const hasActiveDoc = Boolean(s.document) || Boolean(s.files && s.files.length > 0)
         const isDisconnected = Boolean(s.phoneDisconnected || data.phoneDisconnected) && !hasActiveDoc
         const isPrePrint = s.state !== 'PRINTING' && s.state !== 'DONE' && s.state !== 'CANCELLED'
 
@@ -792,7 +831,7 @@ export default function KioskSessionScreen() {
         if (typeof data.inactivityRemainingSec === 'number') {
           setInactivitySecondsLeft(data.inactivityRemainingSec)
           if (data.resetAt) {
-            lastSectionActivityTimeRef.current = data.resetAt - 60000
+            lastSectionActivityTimeRef.current = data.resetAt - (5 * 60 * 1000)
           }
         }
 
@@ -800,13 +839,17 @@ export default function KioskSessionScreen() {
           setPhoneDisconnectCountdown(null)
           handleCancelAndNewUpload()
         }
-      } catch {}
+      } catch {} finally {
+        inFlight = false
+        if (mountedRef.current) {
+          timerId = setTimeout(poll, 400)
+        }
+      }
     }
 
     poll()
-    pollRef.current = setInterval(poll, 600)
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current)
+      if (timerId) clearTimeout(timerId)
     }
   }, [apiUrl, kioskId, siteUrl, createSession, handleCancelAndNewUpload])
 
@@ -844,43 +887,11 @@ export default function KioskSessionScreen() {
     }
   }, [phoneDisconnectCountdown, handleCancelAndNewUpload])
 
-  // ── Phone Inactivity Timer (1-minute timeout strictly from phone touch inactivity) ──
-  // Auto reverts to the "Print from your phone" QR upload page after user didn't touch
-  // anything on their phone for 1 minute (60 seconds).
-  // CRITICAL REQUIREMENT: Touching or tapping the kiosk display must NEVER reset or postpone
-  // this timer! Only user touch/interaction on the paired phone resets the timer.
-  useEffect(() => {
-    if (!session) return
-    const isPrePrintState = session.state !== 'QR_READY' &&
-                            session.state !== 'PRINTING' &&
-                            session.state !== 'DONE' &&
-                            session.state !== 'CANCELLED'
-    if (!isPrePrintState) return
-
-    const checkPhoneInactivity = () => {
-      const cur = sessionRef.current
-      if (!cur) return
-      const isStillPrePrint = cur.state !== 'QR_READY' &&
-                              cur.state !== 'PRINTING' &&
-                              cur.state !== 'DONE' &&
-                              cur.state !== 'CANCELLED'
-      if (!isStillPrePrint) return
-
-      const maxInactivityMs = 60000 // 1 minute
-      const lastPhone = cur.lastPhoneActivityAt || cur.claimedAt || cur.createdAt
-      if (lastPhone && (Date.now() - lastPhone >= maxInactivityMs)) {
-        console.log(`[KioskSessionScreen] ⏱️ Session phone inactivity reached (1 min). Returning to upload from your phone page.`)
-        handleCancelAndNewUpload()
-      }
-    }
-
-    const timer = setInterval(checkPhoneInactivity, 1000)
-    return () => clearInterval(timer)
-  }, [session?.state, handleCancelAndNewUpload])
-
   // ── Sync Settings from Session ───────────────────────────────────────────
-
+  // Guards against UI jitter: if the user recently tapped or modified settings on the touchscreen
+  // (within 2.5s), don't overwrite their selection with in-flight polled server state.
   useEffect(() => {
+    if (Date.now() - lastTouchTimeRef.current < 2500) return
     if (session?.settings) {
       if (session.settings.colour) {
         setSelectedColour(isLite ? 'BW' : session.settings.colour)
@@ -1075,6 +1086,7 @@ export default function KioskSessionScreen() {
 
   const handleProColourChange = useCallback((mode: 'BW' | 'COLOUR') => {
     if (isLite) return
+    lastTouchTimeRef.current = Date.now()
     setTouchModified(true)
     setSelectedColour(mode)
     syncProgress({
@@ -1090,6 +1102,7 @@ export default function KioskSessionScreen() {
   }, [isLite, selectedDuplex, selectedCopies, pageDetails.calculatedTotal, session?.settings, syncProgress])
 
   const handleProDuplexChange = useCallback((duplex: 'SINGLE' | 'DOUBLE') => {
+    lastTouchTimeRef.current = Date.now()
     setTouchModified(true)
     setSelectedDuplex(duplex)
     syncProgress({
@@ -1104,6 +1117,7 @@ export default function KioskSessionScreen() {
   }, [selectedColour, selectedCopies, pageDetails.calculatedTotal, session?.settings, syncProgress])
 
   const handleProCopiesChange = useCallback((delta: number) => {
+    lastTouchTimeRef.current = Date.now()
     setTouchModified(true)
     const next = Math.max(1, Math.min(50, selectedCopies + delta))
     setSelectedCopies(next)
@@ -1122,6 +1136,7 @@ export default function KioskSessionScreen() {
   }, [selectedCopies, selectedColour, selectedDuplex, effectivePageRange, pageDetails.calculatedTotal, session?.settings, syncProgress])
 
   const handleProPageRangeChange = useCallback((range: string) => {
+    lastTouchTimeRef.current = Date.now()
     setTouchModified(true)
     setSelectedPageRange(range)
     syncProgress({
