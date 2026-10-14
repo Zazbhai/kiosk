@@ -44,10 +44,17 @@ def _release_lock(file_obj):
             pass
 
 
+def _is_numeric_pin(val: str) -> bool:
+    """Returns True if the string is a 4-6 digit numeric PIN/OTP code, which must not be used as an order ID."""
+    s = str(val).strip()
+    return s.isdigit() and len(s) <= 6
+
+
 def load_processed_orders() -> Set[str]:
     """
-    Loads all permanently processed/printed order IDs and consumed PINs
+    Loads all permanently processed/printed order IDs
     from persistent storage. Survives Pi reboots.
+    Strictly excludes 4-6 digit numeric PINs.
     """
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     if not HISTORY_FILE.exists():
@@ -59,9 +66,9 @@ def load_processed_orders() -> Set[str]:
             try:
                 data = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
                 if isinstance(data, list):
-                    return set(str(x).strip() for x in data if x)
+                    return set(str(x).strip() for x in data if x and not _is_numeric_pin(str(x)))
                 elif isinstance(data, dict):
-                    return set(str(k).strip() for k in data.keys() if k)
+                    return set(str(k).strip() for k in data.keys() if k and not _is_numeric_pin(str(k)))
             finally:
                 _release_lock(lf)
     except Exception as e:
@@ -72,17 +79,18 @@ def load_processed_orders() -> Set[str]:
 
 def mark_order_processed(order_id: str, aliases: Optional[List[str]] = None):
     """
-    Atomically records an order ID (and all aliases like orderNumber, releasePin)
+    Atomically records an order ID (and legitimate aliases like orderNumber)
     into persistent storage with immediate disk sync (fsync).
+    PINs are strictly ignored and never marked as processed orders.
     """
-    if not order_id:
+    if not order_id or _is_numeric_pin(str(order_id)):
         return
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     keys_to_add = [str(order_id).strip()]
     if aliases:
         for a in aliases:
-            if a and str(a).strip():
+            if a and str(a).strip() and not _is_numeric_pin(str(a)):
                 keys_to_add.append(str(a).strip())
 
     try:
@@ -94,9 +102,9 @@ def mark_order_processed(order_id: str, aliases: Optional[List[str]] = None):
                     try:
                         raw = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
                         if isinstance(raw, list):
-                            current_records = {k: {"time": time.time()} for k in raw}
+                            current_records = {k: {"time": time.time()} for k in raw if not _is_numeric_pin(k)}
                         elif isinstance(raw, dict):
-                            current_records = raw
+                            current_records = {k: v for k, v in raw.items() if not _is_numeric_pin(k)}
                     except Exception:
                         current_records = {}
 
@@ -111,7 +119,7 @@ def mark_order_processed(order_id: str, aliases: Optional[List[str]] = None):
 
                 # Retain records for 30 days, then prune
                 cutoff = now_ts - (30 * 86400)
-                current_records = {k: v for k, v in current_records.items() if v.get("ts", now_ts) > cutoff}
+                current_records = {k: v for k, v in current_records.items() if v.get("ts", now_ts) > cutoff and not _is_numeric_pin(k)}
 
                 temp_file = DATA_DIR / f".history_tmp_{os.getpid()}.json"
                 with open(temp_file, "w", encoding="utf-8") as tf:
@@ -132,17 +140,17 @@ def mark_order_processed(order_id: str, aliases: Optional[List[str]] = None):
 
 def is_order_processed(order_id: str, aliases: Optional[List[str]] = None) -> bool:
     """
-    Checks if an order ID or any alias (orderNumber, releasePin) has already
-    been printed or burned.
+    Checks if an order ID or any legitimate alias (orderNumber) has already
+    been printed or burned. Never checks numeric PINs.
     """
-    if not order_id:
+    if not order_id or _is_numeric_pin(str(order_id)):
         return False
 
     processed = load_processed_orders()
     check_keys = [str(order_id).strip()]
     if aliases:
         for a in aliases:
-            if a and str(a).strip():
+            if a and str(a).strip() and not _is_numeric_pin(str(a)):
                 check_keys.append(str(a).strip())
 
     return any(k in processed for k in check_keys)

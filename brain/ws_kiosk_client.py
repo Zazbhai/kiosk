@@ -164,7 +164,10 @@ class KioskWsClient:
         """Atomically checks if an order is currently printing, already spooled, or marked processed."""
         if not order_id:
             return False
-        clean_aliases = [str(a).strip() for a in (aliases or []) if a and str(a).strip()]
+        clean_aliases = [
+            str(a).strip() for a in (aliases or [])
+            if a and str(a).strip() and not (str(a).strip().isdigit() and len(str(a).strip()) <= 6)
+        ]
         all_ids = {str(order_id).strip()} | set(clean_aliases)
         if any(i in self.printed_orders for i in all_ids):
             return True
@@ -382,7 +385,7 @@ class KioskWsClient:
                         order_id = job.get("orderId") or job.get("job_id")
                         order_number = job.get("orderNumber")
                         release_pin = job.get("releasePin") or job.get("otp") or job.get("pickupCode")
-                        aliases = [a for a in [order_number, release_pin] if a and a != order_id]
+                        aliases = [a for a in [order_number] if a and a != order_id and not (str(a).isdigit() and len(str(a)) <= 6)]
                         all_ids = {order_id} | set(aliases)
 
                         def _notify_server_completed(oid=order_id):
@@ -557,7 +560,7 @@ class KioskWsClient:
 
                     # If order is flagged for immediate/autonomous printing, dispatch directly to CUPS without blocking on PIN
                     if payload.get("immediate") or payload.get("forceKioskPrint") or payload.get("isImmediate"):
-                        aliases = [a for a in [order_number, release_pin] if a and a != order_id]
+                        aliases = [a for a in [order_number] if a and a != order_id and not (str(a).isdigit() and len(str(a)) <= 6)]
                         all_ids = {order_id} | set(aliases)
                         if self._is_order_busy_or_printed(order_id, aliases):
                             print(f"[WSS Kiosk Client] ℹ Order {order_id} already printing or spooled. Skipping duplicate PRINT_JOB_STAGED trigger.")
@@ -586,7 +589,7 @@ class KioskWsClient:
                     if not release_pin:
                         release_pin = staged_job.get("releasePin") or staged_job.get("otp") or staged_job.get("pickupCode")
 
-                    aliases = [a for a in [order_number, release_pin] if a and a != order_id]
+                    aliases = [a for a in [order_number] if a and a != order_id and not (str(a).isdigit() and len(str(a)) <= 6)]
                     all_ids = {order_id} | set(aliases)
 
                     if payload.get("dispatchedLocally") and not payload.get("forceKioskPrint"):
@@ -601,8 +604,6 @@ class KioskWsClient:
 
                     if not self.cups.claim_order_for_spooling(order_id, aliases, force=False):
                         print(f"[WSS Kiosk Client] ℹ Order {order_id} already claimed/spooled. Skipping duplicate spool.")
-                        mark_order_processed(order_id, aliases)
-                        self.printed_orders = load_processed_orders()
                         continue
 
                     mark_order_processed(order_id, aliases)
@@ -650,7 +651,7 @@ class KioskWsClient:
                     # The PIN remains available as an order receipt / pickup reference, but does not block printing.
                     print(f"[WSS Kiosk Client] 💰 Payment confirmed for Order {order_id}. Auto-dispatching physical print...")
 
-                    aliases = [a for a in [order_number, release_pin] if a and a != order_id]
+                    aliases = [a for a in [order_number] if a and a != order_id and not (str(a).isdigit() and len(str(a)) <= 6)]
                     all_ids = {order_id} | set(aliases)
                     if self._is_order_busy_or_printed(order_id, aliases):
                         print(f"[WSS Kiosk Client] ℹ Order {order_id} already printing or spooled. Skipping duplicate PAYMENT_CAPTURED.")
@@ -684,19 +685,17 @@ class KioskWsClient:
                     print(f"[WSS Kiosk Client] 🖨 Order Event: PRINT_EXECUTE for Order {order_id}")
                     order_number = payload.get("orderNumber") or msg.get("orderNumber")
                     release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")
-                    aliases = [a for a in [order_number, release_pin] if a and a != order_id]
+                    aliases = [a for a in [order_number] if a and a != order_id and not (str(a).isdigit() and len(str(a)) <= 6)]
                     all_ids = {order_id} | set(aliases)
 
                     force_reprint = bool(payload.get("forceReprint") or payload.get("adminForce"))
-                    if not force_reprint and self._is_order_busy_or_printed(order_id, aliases):
-                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already printing or spooled. Skipping duplicate PRINT_EXECUTE.")
+                    # Skip only if this exact order is currently actively running on hardware right this second
+                    if not force_reprint and any(i in self.active_printing_orders for i in all_ids):
+                        print(f"[WSS Kiosk Client] ℹ Order {order_id} currently printing on hardware. Skipping concurrent duplicate PRINT_EXECUTE.")
                         continue
 
-                    if not self.cups.claim_order_for_spooling(order_id, aliases, force=force_reprint):
-                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already claimed/spooled. Skipping duplicate PRINT_EXECUTE.")
-                        self.printed_orders.update(all_ids)
-                        continue
-
+                    # Always claim spooling for PRINT_EXECUTE with force=True so earlier payment/staged claims never block execution
+                    self.cups.claim_order_for_spooling(order_id, aliases, force=True)
                     self.printed_orders.update(all_ids)
                     staged_job = (
                         self.staged_jobs.get(order_id)
@@ -880,7 +879,7 @@ class KioskWsClient:
 
         order_number = payload.get("orderNumber")
         release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")
-        aliases = [a for a in [order_number, release_pin] if a and a != order_id]
+        aliases = [a for a in [order_number] if a and a != order_id and not (str(a).isdigit() and len(str(a)) <= 6)]
         all_ids = {str(order_id).strip()} | {str(a).strip() for a in aliases if a}
 
         # Concurrency Lock: Prevent simultaneous parallel executions for the same order
@@ -889,8 +888,6 @@ class KioskWsClient:
             return
 
         self.active_printing_orders.update(all_ids)
-        mark_order_processed(order_id, aliases)
-        self.printed_orders.update(all_ids)
 
         try:
             await self._execute_print_order_internal(order_id, payload, aliases, all_ids)
@@ -1131,6 +1128,9 @@ class KioskWsClient:
         if isinstance(result, dict) and not result.get("success"):
             error_reason = result.get("error") or "Hardware spooler rejected the job"
             print(f"[WSS Kiosk Client] ❌ Print job failed: {error_reason}")
+            self.cups.unclaim_order(order_id, aliases)
+            for i in all_ids:
+                self.printed_orders.discard(i)
             fail_msg = {
                 "type": "PRINT_ERROR",
                 "kioskId": self.kiosk_id,
@@ -1210,6 +1210,10 @@ class KioskWsClient:
                 print(f"[WSS Kiosk Client] ✓ Print complete relayed for Order {order_id}!")
             except Exception:
                 pass
+
+        # Mark processed persistently only when print was successfully executed
+        mark_order_processed(order_id, aliases)
+        self.printed_orders.update(all_ids)
 
         # Privacy Enforcement: Immediately and permanently delete user's printed document
         try:

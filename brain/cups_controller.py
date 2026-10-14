@@ -55,18 +55,26 @@ _CUPS_LOCK = threading.RLock()
 
 def claim_order_for_spooling(order_id: str, aliases: Optional[List[str]] = None, force: bool = False) -> bool:
     """
-    Atomically claims an order ID (and aliases like orderNumber, releasePin)
+    Atomically claims an order ID (and legitimate aliases like orderNumber)
     across all processes (ws_kiosk_client, daemon, retry handlers).
     Returns True if successfully claimed (first time), False if already claimed (duplicate).
     Stores claims in persistent DATA_DIR to survive reboots.
+    Strictly excludes 4-6 digit numeric PINs.
     """
     if not order_id:
+        return True
+
+    def _is_pin(s: str) -> bool:
+        t = str(s).strip()
+        return t.isdigit() and len(t) <= 6
+
+    if _is_pin(order_id):
         return True
 
     all_keys = [str(order_id).strip()]
     if aliases:
         for a in aliases:
-            if a and str(a).strip():
+            if a and str(a).strip() and not _is_pin(str(a)):
                 all_keys.append(str(a).strip())
 
     lock_file = DATA_DIR / ".spool_claims.lock"
@@ -155,10 +163,17 @@ def unclaim_order(order_id: str, aliases: Optional[List[str]] = None) -> bool:
     if not order_id:
         return True
 
+    def _is_pin(s: str) -> bool:
+        t = str(s).strip()
+        return t.isdigit() and len(t) <= 6
+
+    if _is_pin(order_id):
+        return True
+
     all_keys = [str(order_id).strip()]
     if aliases:
         for a in aliases:
-            if a and str(a).strip():
+            if a and str(a).strip() and not _is_pin(str(a)):
                 all_keys.append(str(a).strip())
 
     lock_file = DATA_DIR / ".spool_claims.lock"
