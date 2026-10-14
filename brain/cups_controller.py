@@ -421,7 +421,17 @@ class CupsController:
 
         try:
             # 1. Ensure kernel usblp module is UNLOADED so CUPS libusb backend has full access to the USB printer
-            subprocess.run(["sudo", "-n", "rmmod", "usblp"], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
+            # Only attempt rmmod if usblp is actually active in the kernel (checking /proc/modules requires zero root permissions)
+            is_usblp_loaded = False
+            try:
+                if os.path.exists("/proc/modules"):
+                    with open("/proc/modules", "r") as f:
+                        is_usblp_loaded = any(line.startswith("usblp ") for line in f)
+            except Exception:
+                pass
+
+            if is_usblp_loaded:
+                subprocess.run(["sudo", "-n", "rmmod", "usblp"], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
 
             # 2. Re-enable ALL CUPS queues and accept incoming jobs
             # Using stdin=subprocess.DEVNULL and sudo -n completely prevents interactive password prompts
