@@ -602,6 +602,71 @@ class CupsController:
         except Exception as e:
             return {"success": False, "error": str(e), "actions": actions}
 
+    def wake_brother_printer(self, printer_name: Optional[str] = None):
+        """
+        Actively wakes up Brother printers (e.g. HL-L5210DW, DCP series) from deep sleep:
+        1. Sets CUPS printer-error-policy=retry-current-job so CUPS NEVER disables the queue when printer sleeps.
+        2. Sets usb-no-reattach-default=true and usb-unidir-default=true to prevent USB bus resets.
+        3. Unpauses/enables all CUPS queues (cupsenable -a, cupsaccept -a).
+        4. Disables Linux USB autosuspend on all Brother USB hardware (vendor 04f9).
+        5. Sends a harmless PJL wakeup packet directly to /dev/usb/lp* to wake the fuser and engine processor.
+        """
+        if sys.platform == "win32":
+            return
+
+        target = printer_name or "PrintBooth_Printer"
+        try:
+            # 1. Ensure queue is active and accepting jobs
+            subprocess.run(["cupsenable", "-a"], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
+            subprocess.run(["cupsaccept", "-a"], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
+            subprocess.run(["cupsenable", target], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
+            subprocess.run(["cupsaccept", target], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
+
+            # 2. Prevent CUPS from ever stopping queue on sleep delay
+            subprocess.run(
+                ["lpadmin", "-p", target, "-o", "printer-error-policy=retry-current-job", "-o", "usb-unidir-default=true", "-o", "usb-no-reattach-default=true"],
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                timeout=2,
+            )
+
+            # 3. Disable Linux USB autosuspend for Brother devices (vendor 04f9)
+            usb_dev_path = Path("/sys/bus/usb/devices")
+            if usb_dev_path.exists():
+                for dev in usb_dev_path.iterdir():
+                    try:
+                        v_file = dev / "idVendor"
+                        if v_file.exists() and v_file.read_text().strip().lower() == "04f9":
+                            ctrl = dev / "power" / "control"
+                            if ctrl.exists():
+                                try:
+                                    ctrl.write_text("on")
+                                except Exception:
+                                    subprocess.run(["sudo", "-n", "sh", "-c", f"echo on > {ctrl}"], capture_output=True, timeout=2)
+                            auto_s = dev / "power" / "autosuspend"
+                            if auto_s.exists():
+                                try:
+                                    auto_s.write_text("-1")
+                                except Exception:
+                                    subprocess.run(["sudo", "-n", "sh", "-c", f"echo -1 > {auto_s}"], capture_output=True, timeout=2)
+                    except Exception:
+                        pass
+
+            # 4. PJL Wakeup Ping to spin up printer engine from sleep mode
+            pjl_wake = b"\x1b%-12345X@PJL \r\n@PJL ECHO WAKE\r\n\x1b%-12345X"
+            for usb_lp in ("/dev/usb/lp0", "/dev/usb/lp1"):
+                if os.path.exists(usb_lp):
+                    try:
+                        with open(usb_lp, "wb") as f:
+                            f.write(pjl_wake)
+                            f.flush()
+                        print(f"[CUPS] ⚡ Sent PJL wake-up pulse to Brother printer via {usb_lp}")
+                        break
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f"[CUPS] Brother wakeup notice: {e}")
+
     def get_printers(self) -> Dict[str, Any]:
         """Discovers and returns all configured CUPS printers and their states with self-healing."""
         conn = self._get_connection()
@@ -1958,7 +2023,8 @@ class CupsController:
         try:
             # Primary execution via Linux lp CLI on Raspberry Pi
             if sys.platform != "win32":
-                # Ensure printer queue is active (unpaused/enabled)
+                # Ensure printer queue is active (unpaused/enabled) and wake from deep sleep
+                self.wake_brother_printer(printer)
                 subprocess.run(["cupsenable", printer], timeout=5, capture_output=True)
                 subprocess.run(["cupsaccept", printer], timeout=5, capture_output=True)
 

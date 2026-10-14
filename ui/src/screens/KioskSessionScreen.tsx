@@ -141,6 +141,7 @@ export interface LiveSession {
   phoneDisconnectedAt?: number
   phoneGraceRemainingSec?: number
   isBackwardNav?: boolean
+  currentSectionEnteredAt?: number
 }
 
 // ─── Phase Metadata ──────────────────────────────────────────────────────────
@@ -789,10 +790,12 @@ export default function KioskSessionScreen() {
           if (!prev) return { ...s, qrUrl: effectiveQrUrl, token: effectiveToken, kioskVariant: s.kioskVariant }
           
           // State regression guard: Never regress from PAYING or PRINTING to an earlier state like REVIEWING/CONFIGURING
-          // unless isBackwardNav is explicitly signaled from user interaction.
+          // unless an explicit, fresh user backward navigation occurred strictly AFTER entering payment.
+          const isExplicitFreshBackwardNav = Boolean(s.isBackwardNav) &&
+            Boolean(s.currentSectionEnteredAt && prev.currentSectionEnteredAt && s.currentSectionEnteredAt > prev.currentSectionEnteredAt)
           const isRegressingFromPayment = (prev.state === 'PAYING' || prev.state === 'OTP_READY') &&
             ['REVIEWING', 'CONFIGURING', 'CONFIRMING', 'UPLOADING'].includes(s.state) &&
-            !s.isBackwardNav
+            !isExplicitFreshBackwardNav
           const isRegressingFromPrinting = prev.state === 'PRINTING' && s.state !== 'PRINTING' && s.state !== 'DONE'
 
           if (isRegressingFromPayment || isRegressingFromPrinting) {

@@ -328,6 +328,8 @@ class KioskWsClient:
                 else:
                     if is_connected:
                         print(f"[WSS Kiosk Client] [1-min USB Monitor] ✓ Heartbeat tick: {vendor} printer connected via USB ({printer_found}).")
+                        # Anti-sleep guard: Keep CUPS queues unpaused and prevent deep sleep lock
+                        await loop.run_in_executor(None, lambda: self.cups.wake_brother_printer(self.printer_name))
                     else:
                         print(f"[WSS Kiosk Client] [1-min USB Monitor] ⚠️ Heartbeat tick: USB printer offline (lsusb not detecting printer).")
             except Exception as e:
@@ -644,11 +646,9 @@ class KioskWsClient:
                         print(f"[WSS Kiosk Client] ℹ Payment confirmed for Order {order_id}. Awaiting PRINT_EXECUTE dispatch...")
                         continue
 
-                    # If staged job requires PIN entry at kiosk, DO NOT auto-print on payment capture!
-                    check_pin = staged_job.get("releasePin") or staged_job.get("otp") or staged_job.get("pickupCode")
-                    if check_pin and not staged_job.get("pinVerified") and not staged_job.get("immediate"):
-                        print(f"[WSS Kiosk Client] ⏸ Order {order_id} requires PIN entry at kiosk. Awaiting PIN verification.")
-                        continue
+                    # When payment is confirmed at kiosk (UPI QR or companion), execute print immediately!
+                    # The PIN remains available as an order receipt / pickup reference, but does not block printing.
+                    print(f"[WSS Kiosk Client] 💰 Payment confirmed for Order {order_id}. Auto-dispatching physical print...")
 
                     aliases = [a for a in [order_number, release_pin] if a and a != order_id]
                     all_ids = {order_id} | set(aliases)
