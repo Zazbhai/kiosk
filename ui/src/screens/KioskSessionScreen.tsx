@@ -32,6 +32,7 @@ import {
 import KioskAdBackground from '../components/KioskAdBackground'
 import PrinterDispenseAnimation from '../components/PrinterDispenseAnimation'
 import KioskInactivityBanner from '../components/KioskInactivityBanner'
+import { usePrinterStatus } from '../hooks/usePrinterStatus'
 import './KioskSessionScreen.css'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -232,6 +233,8 @@ export default function KioskSessionScreen() {
   const kioskName = getKioskName()
   const apiUrl = getKioskApiUrl()
   const { siteUrl } = useKioskSiteUrl(apiUrl, kioskId)
+  const { isOffline: isPrinterOffline, printerStatus } = usePrinterStatus(kioskId, apiUrl)
+  const isPrinterReady = !isPrinterOffline && (printerStatus === 'READY' || printerStatus === 'IDLE' || printerStatus === 'PRINTING')
 
   // Immediate non-null session: initialized with empty token and qrUrl so that
   // we NEVER display a stale or constant sessionless QR while creating the session
@@ -2032,10 +2035,17 @@ export default function KioskSessionScreen() {
       {isWaiting && (
         <header className="ks-topbar">
           <div className="ks-topbar-left">
-            <div className="ks-topbar-pill">
+            <div
+              className={`ks-topbar-pill ${isPrinterReady ? 'ks-topbar-pill--online' : 'ks-topbar-pill--offline'}`}
+              title={isPrinterReady ? 'Printer Hardware Online & Ready' : 'Printer Offline (Checking Connection)'}
+            >
               <img src="/logo.png" alt="PrintBooth" style={{ width: 18, height: 18, objectFit: 'contain' }} />
-              <span className="ks-topbar-dot" />
+              <span className={`ks-topbar-dot ${isPrinterReady ? 'ks-topbar-dot--online' : 'ks-topbar-dot--offline'}`} />
               <span className="ks-topbar-station-name">{kioskName || kioskId}</span>
+              <span className="ks-topbar-sep">•</span>
+              <span className={`ks-topbar-status-text ${isPrinterReady ? 'online' : 'offline'}`}>
+                {isPrinterReady ? 'Ready' : 'Offline'}
+              </span>
             </div>
           </div>
         </header>

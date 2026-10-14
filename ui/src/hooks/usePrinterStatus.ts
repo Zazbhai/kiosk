@@ -50,7 +50,13 @@ export function usePrinterStatus(kioskId: string = 'PB-001', customApiUrl?: stri
   const checkingRef = useRef(false)
   const isLocalPiDetectedRef = useRef(
     typeof window !== 'undefined' &&
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    (
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.port === '5175' ||
+      window.location.hostname.startsWith('100.') ||
+      window.location.hostname.startsWith('192.168.')
+    )
   )
   const failureStreakRef = useRef(0)
   const successStreakRef = useRef(0)
