@@ -362,6 +362,8 @@ clean_chromium_crash_state() {
     rm -rf "$USER_PROFILE_DIR/Default/GCM Store"* 2>/dev/null || true
     rm -rf ~/.cache/chromium 2>/dev/null || true
     rm -rf ~/.cache/chromium-browser 2>/dev/null || true
+    # Purge stale temporary print documents older than 30 minutes to free disk space
+    find /tmp/printbooth_jobs -type f -mmin +30 -delete 2>/dev/null || true
     find "$USER_PROFILE_DIR" -name "*LOCK*" -o -name "*.lock" -o -name "*journal*" -delete 2>/dev/null || true
 
     # Remove process Singleton lock files in default user config
@@ -463,6 +465,8 @@ while [ "$EXIT_REQUESTED" -eq 0 ]; do
         --enable-offline-auto-reload-visible-only
         --hide-scrollbars
         --check-for-update-interval=31536000
+        --disk-cache-size=10485760
+        --media-cache-size=10485760
         --log-level=3
         --disable-features=Translate,OptimizationHints,MediaRouter,DialMediaRouteProvider
     )
