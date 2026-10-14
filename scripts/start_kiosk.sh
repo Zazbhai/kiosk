@@ -173,15 +173,44 @@ for candidate in "$BRAIN_DIR/venv/bin/python3" "$BRAIN_DIR/venv/bin/python" "$KI
 done
 
 is_ui_server_responding() {
-    curl -s --connect-timeout 2 "http://127.0.0.1:5175" > /dev/null 2>&1 || \
-    curl -s --connect-timeout 2 "http://localhost:5175" > /dev/null 2>&1
+    local code
+    code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 2 "http://127.0.0.1:5175/" 2>/dev/null || echo "000")
+    if [ "$code" = "200" ] || [ "$code" = "304" ]; then
+        return 0
+    fi
+    code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 2 "http://localhost:5175/" 2>/dev/null || echo "000")
+    if [ "$code" = "200" ] || [ "$code" = "304" ]; then
+        return 0
+    fi
+    return 1
 }
 
 ensure_ui_server() {
-    # 1. Check if systemd service is active/supervised
-    if systemctl is-active --quiet printbooth-ui.service 2>/dev/null; then
-        echo "[Start Kiosk] ✓ printbooth-ui.service is active under systemd supervision."
+    # 1. Check if already responding and healthy with 200 OK
+    if is_ui_server_responding; then
+        echo "[Start Kiosk] ✓ Local UI server is already active and healthy on port 5175."
         return 0
+    fi
+
+    # 2. Check if systemd service is active/supervised
+    if systemctl is-active --quiet printbooth-ui.service 2>/dev/null; then
+        echo "[Start Kiosk] printbooth-ui.service is active, verifying HTTP response..."
+        for _i in {1..8}; do
+            if is_ui_server_responding; then
+                echo "[Start Kiosk] ✓ printbooth-ui.service is responding with 200 OK."
+                return 0
+            fi
+            sleep 0.5
+        done
+        echo "[Start Kiosk] ⚠️ printbooth-ui.service is running but not responding with 200. Restarting service..."
+        sudo systemctl restart printbooth-ui.service 2>/dev/null || true
+        for _i in {1..8}; do
+            if is_ui_server_responding; then
+                echo "[Start Kiosk] ✓ Local UI server healthy after restart ✓"
+                return 0
+            fi
+            sleep 0.5
+        done
     elif systemctl is-enabled --quiet printbooth-ui.service 2>/dev/null; then
         echo "[Start Kiosk] Starting printbooth-ui.service via systemd..."
         sudo systemctl start printbooth-ui.service 2>/dev/null || true
@@ -219,6 +248,13 @@ EOF
 
     # Determine serve directory
     SERVE_PATH="$UI_DIR/dist"
+    if [ ! -f "$SERVE_PATH/index.html" ]; then
+        echo "[Start Kiosk] ⚠️ $SERVE_PATH/index.html not found! Checking $UI_DIR..."
+        if [ -d "$UI_DIR" ] && command -v npm >/dev/null 2>&1; then
+            echo "[Start Kiosk] Running autonomous 'npm run build' in $UI_DIR..."
+            (cd "$UI_DIR" && npm run build) >> "$UI_LOG" 2>&1 || true
+        fi
+    fi
     if [ ! -d "$SERVE_PATH" ]; then
         echo "[Start Kiosk] ⚠️ $SERVE_PATH not found! Falling back to $UI_DIR..."
         SERVE_PATH="$UI_DIR"

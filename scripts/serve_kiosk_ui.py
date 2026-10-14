@@ -21,7 +21,51 @@ except ImportError:
     from http.server import HTTPServer as ServerClass
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 5175
-SERVE_DIR = sys.argv[2] if len(sys.argv) > 2 else "."
+raw_dir = sys.argv[2] if len(sys.argv) > 2 else "."
+
+def resolve_serve_dir(initial_dir):
+    p = Path(initial_dir).resolve()
+    if p.is_dir() and (p / "index.html").is_file():
+        return str(p)
+
+    script_dir = Path(__file__).resolve().parent
+    candidates = [
+        p,
+        p / "dist",
+        script_dir.parent / "ui" / "dist",
+        script_dir.parent / "ui",
+        Path.home() / "kiosk" / "ui" / "dist",
+        Path.home() / "kiosk" / "ui",
+        Path.home() / "printer_automation" / "kiosk" / "ui" / "dist",
+        Path.home() / "printer_automation" / "apps" / "kiosk" / "dist",
+        Path.cwd() / "dist",
+        Path.cwd() / "ui" / "dist",
+        Path.cwd(),
+    ]
+    for c in candidates:
+        if c.is_dir() and (c / "index.html").is_file():
+            print(f"[Kiosk Server] ✓ Resolved UI directory with index.html at: {c}")
+            return str(c.resolve())
+
+    # If still not found, check if npm run build can be run
+    ui_candidate = script_dir.parent / "ui"
+    if not ui_candidate.is_dir():
+        ui_candidate = Path.home() / "kiosk" / "ui"
+    if ui_candidate.is_dir() and (ui_candidate / "package.json").is_file():
+        print(f"[Kiosk Server] ⚠️ No dist found! Attempting autonomous build in {ui_candidate}...")
+        try:
+            subprocess.run(["npm", "run", "build"], cwd=str(ui_candidate), timeout=60, capture_output=True)
+            if (ui_candidate / "dist" / "index.html").is_file():
+                print(f"[Kiosk Server] ✓ Build succeeded! Serving {ui_candidate / 'dist'}")
+                return str((ui_candidate / "dist").resolve())
+        except Exception as e:
+            print(f"[Kiosk Server] Notice building UI: {e}")
+
+    if p.is_dir():
+        return str(p)
+    return str(Path.cwd().resolve())
+
+SERVE_DIR = resolve_serve_dir(raw_dir)
 
 def terminate_kiosk():
     print("\n[Kiosk Server] 🛑 Exit signal received! Terminating Chromium Kiosk...")
@@ -419,8 +463,36 @@ class KioskHTTPHandler(SimpleHTTPRequestHandler):
         # SPA routing fallback: serve index.html for virtual routes
         clean_path = self.path.split("?")[0]
         full_path = os.path.join(SERVE_DIR, clean_path.lstrip("/"))
-        if not os.path.exists(full_path) and not clean_path.startswith("/api/"):
-            self.path = "/index.html"
+        index_file = os.path.join(SERVE_DIR, "index.html")
+
+        if (clean_path == "/" or not os.path.exists(full_path)) and not clean_path.startswith("/api/"):
+            if os.path.exists(index_file):
+                self.path = "/index.html"
+            else:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                emergency_html = """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>PrintBooth Kiosk - Initializing</title>
+  <meta http-equiv="refresh" content="5">
+  <style>
+    body { background: #06110D; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }
+    h1 { color: #c8ff00; font-size: 2rem; margin-bottom: 8px; }
+    p { color: #9ca3af; font-size: 1rem; }
+    .badge { background: rgba(200, 255, 0, 0.1); border: 1px solid #c8ff00; color: #c8ff00; padding: 6px 16px; border-radius: 9999px; font-size: 0.8rem; font-weight: bold; margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+  <div class="badge">PRINTBOOTH STATION INITIALIZING</div>
+  <h1>Building Kiosk UI…</h1>
+  <p>The display bundle is compiling or updating in background.<br>This page will reload automatically in 5 seconds.</p>
+</body>
+</html>"""
+                self.wfile.write(emergency_html.encode("utf-8"))
+                return
 
         return super().do_GET()
 

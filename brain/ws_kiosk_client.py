@@ -136,123 +136,124 @@ class KioskWsClient:
             return True
         return False
 
+    async def _run_ws_session(self, ws):
+        """Runs the active WebSocket connection session. Only receive_task closure ends session."""
+        self.ws = ws
+        print(f"[WSS Kiosk Client] ✓ Connected to WSS Relay!")
+
+        heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+        usb_monitor_task = asyncio.create_task(self._usb_monitor_loop())
+        retention_task = asyncio.create_task(self._file_retention_loop())
+
+        try:
+            # receive_task drives the lifetime of the socket connection
+            await self._receive_loop()
+        finally:
+            self.ws = None
+            for t in (heartbeat_task, usb_monitor_task, retention_task):
+                t.cancel()
+            await asyncio.gather(heartbeat_task, usb_monitor_task, retention_task, return_exceptions=True)
+
     async def connect(self):
         """Main connection and auto-reconnect loop with universal websockets library compatibility."""
+        # Lifecycle workers persist across WebSocket reconnects
+        queue_worker_task = asyncio.create_task(self._process_print_queue())
+        http_poll_task = asyncio.create_task(self._http_poll_loop())
+
         reconnect_delay = 2
-        while self.is_running:
-            try:
-                print(f"[WSS Kiosk Client] Connecting to {self.ws_url}...")
-                headers = self._get_auth_headers()
-
-                # Build version-calibrated connection kwargs
-                # websockets >= 13 uses additional_headers, legacy websockets uses extra_headers
-                ws_kwargs = {
-                    "ping_interval": 20,
-                    "ping_timeout": 15,
-                }
-                if headers:
-                    try:
-                        import inspect
-                        sig = inspect.signature(websockets.connect)
-                        if "additional_headers" in sig.parameters:
-                            ws_kwargs["additional_headers"] = headers
-                        elif "extra_headers" in sig.parameters:
-                            ws_kwargs["extra_headers"] = headers
-                    except Exception:
-                        pass
-
-                # Connect with fallback for TypeError across websockets library versions
-                # (Query parameters in self.ws_url already provide cryptographic verification on the backend)
+        try:
+            while self.is_running:
                 try:
-                    async with websockets.connect(self.ws_url, **ws_kwargs) as ws:
-                        self.ws = ws
-                        reconnect_delay = 2
-                        print(f"[WSS Kiosk Client] ✓ Connected to WSS Relay!")
+                    print(f"[WSS Kiosk Client] Connecting to {self.ws_url}...")
+                    headers = self._get_auth_headers()
 
-                        heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-                        usb_monitor_task = asyncio.create_task(self._usb_monitor_loop())
-                        receive_task = asyncio.create_task(self._receive_loop())
-                        retention_task = asyncio.create_task(self._file_retention_loop())
-                        poll_task = asyncio.create_task(self._http_poll_loop())
-                        queue_task = asyncio.create_task(self._process_print_queue())
+                    # Build version-calibrated connection kwargs
+                    # websockets >= 13 uses additional_headers, legacy websockets uses extra_headers
+                    ws_kwargs = {
+                        "ping_interval": 20,
+                        "ping_timeout": 15,
+                    }
+                    if headers:
+                        try:
+                            import inspect
+                            sig = inspect.signature(websockets.connect)
+                            if "additional_headers" in sig.parameters:
+                                ws_kwargs["additional_headers"] = headers
+                            elif "extra_headers" in sig.parameters:
+                                ws_kwargs["extra_headers"] = headers
+                        except Exception:
+                            pass
 
-                        done, pending = await asyncio.wait(
-                            [heartbeat_task, usb_monitor_task, receive_task, retention_task, poll_task, queue_task],
-                            return_when=asyncio.FIRST_COMPLETED
-                        )
-                        for t in pending:
-                            t.cancel()
-                except TypeError as te:
-                    if "extra_headers" in str(te) or "additional_headers" in str(te):
-                        async with websockets.connect(self.ws_url, ping_interval=20, ping_timeout=15) as ws:
-                            self.ws = ws
+                    # Connect with fallback for TypeError across websockets library versions
+                    try:
+                        async with websockets.connect(self.ws_url, **ws_kwargs) as ws:
                             reconnect_delay = 2
-                            print(f"[WSS Kiosk Client] ✓ Connected to WSS Relay!")
+                            await self._run_ws_session(ws)
+                    except TypeError as te:
+                        if "extra_headers" in str(te) or "additional_headers" in str(te):
+                            async with websockets.connect(self.ws_url, ping_interval=20, ping_timeout=15) as ws:
+                                reconnect_delay = 2
+                                await self._run_ws_session(ws)
+                        else:
+                            raise
 
-                            heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-                            usb_monitor_task = asyncio.create_task(self._usb_monitor_loop())
-                            receive_task = asyncio.create_task(self._receive_loop())
-                            retention_task = asyncio.create_task(self._file_retention_loop())
-                            poll_task = asyncio.create_task(self._http_poll_loop())
-                            queue_task = asyncio.create_task(self._process_print_queue())
-
-                            done, pending = await asyncio.wait(
-                                [heartbeat_task, usb_monitor_task, receive_task, retention_task, poll_task, queue_task],
-                                return_when=asyncio.FIRST_COMPLETED
-                            )
-                            for t in pending:
-                                t.cancel()
-                    else:
-                        raise
-
-            except Exception as e:
-                print(f"[WSS Kiosk Client] Disconnected / Connection error: {e}")
-                self.ws = None
-                await asyncio.sleep(reconnect_delay)
-                reconnect_delay = min(reconnect_delay * 1.5, 15)
+                except Exception as e:
+                    print(f"[WSS Kiosk Client] Disconnected / Connection error: {e}")
+                    self.ws = None
+                    await asyncio.sleep(reconnect_delay)
+                    reconnect_delay = min(reconnect_delay * 1.5, 15)
+        finally:
+            queue_worker_task.cancel()
+            http_poll_task.cancel()
+            await asyncio.gather(queue_worker_task, http_poll_task, return_exceptions=True)
 
     async def _send_heartbeat(self):
         """Constructs and sends hardware heartbeat to API server."""
         if not self.ws:
             return
-        hw = self.monitor.get_hardware_status()
-        is_online = hw["isOnline"]
-        active_printer = hw.get("printerName") or hw.get("activePrinter") or self.printer_name
-        printer_model = hw.get("printerModel") or hw.get("usbDevice") or active_printer
-        wifi_ssid = hw.get("wifiName") or "Offline"
-        hostname = hw.get("hostname") or "kiosk"
+        try:
+            loop = asyncio.get_event_loop()
+            hw = await loop.run_in_executor(None, self.monitor.get_hardware_status)
+            is_online = hw["isOnline"]
+            active_printer = hw.get("printerName") or hw.get("activePrinter") or self.printer_name
+            printer_model = hw.get("printerModel") or hw.get("usbDevice") or active_printer
+            wifi_ssid = hw.get("wifiName") or "Offline"
+            hostname = hw.get("hostname") or "kiosk"
 
-        if is_online != self._was_printer_online:
-            self._was_printer_online = is_online
-            if is_online:
-                print(f"[WSS Kiosk Client] [ONLINE] Printer: {active_printer} ({printer_model}) | Wi-Fi: {wifi_ssid} | Host: {hostname}")
-            else:
-                print(f"[WSS Kiosk Client] [OFFLINE] Printer offline: {active_printer}. Auto-recovering...")
+            if is_online != self._was_printer_online:
+                self._was_printer_online = is_online
+                if is_online:
+                    print(f"[WSS Kiosk Client] [ONLINE] Printer: {active_printer} ({printer_model}) | Wi-Fi: {wifi_ssid} | Host: {hostname}")
+                else:
+                    print(f"[WSS Kiosk Client] [OFFLINE] Printer offline: {active_printer}. Auto-recovering...")
 
-        payload = {
-            "type": "KIOSK_HEARTBEAT",
-            "kioskId": self.kiosk_id,
-            "payload": {
-                "status": "ONLINE" if is_online else "OFFLINE",
-                "printerStatus": hw["printerStatus"],
-                "activePrinter": active_printer,
-                "printerName": active_printer,
-                "printerModel": printer_model,
-                "hostname": hostname,
-                "wifiName": wifi_ssid,
-                "connectedWifi": wifi_ssid,
-                "allPrinters": hw.get("allPrinters", []),
-                "paperLevel": hw["paperLevel"],
-                "tonerLevel": hw["tonerLevel"],
-                "usbConnected": hw.get("usbConnected", True),
-                "usbDevice": hw.get("usbDevice") or printer_model,
-                "usbInfo": hw.get("usbInfo"),
-                "diagnostics": hw.get("diagnostics", {}),
-                "network": hw.get("network", {}),
-            },
-            "timestamp": int(time.time() * 1000)
-        }
-        await self.ws.send(json.dumps(payload))
+            payload = {
+                "type": "KIOSK_HEARTBEAT",
+                "kioskId": self.kiosk_id,
+                "payload": {
+                    "status": "ONLINE" if is_online else "OFFLINE",
+                    "printerStatus": hw["printerStatus"],
+                    "activePrinter": active_printer,
+                    "printerName": active_printer,
+                    "printerModel": printer_model,
+                    "hostname": hostname,
+                    "wifiName": wifi_ssid,
+                    "connectedWifi": wifi_ssid,
+                    "allPrinters": hw.get("allPrinters", []),
+                    "paperLevel": hw["paperLevel"],
+                    "tonerLevel": hw["tonerLevel"],
+                    "usbConnected": hw.get("usbConnected", True),
+                    "usbDevice": hw.get("usbDevice") or printer_model,
+                    "usbInfo": hw.get("usbInfo"),
+                    "diagnostics": hw.get("diagnostics", {}),
+                    "network": hw.get("network", {}),
+                },
+                "timestamp": int(time.time() * 1000)
+            }
+            if self.ws:
+                await self.ws.send(json.dumps(payload))
+        except Exception as e:
+            print(f"[WSS Kiosk Client] Send heartbeat notice: {e}")
 
     async def _heartbeat_loop(self):
         """Sends live hardware telemetry every 10 seconds."""
@@ -261,7 +262,6 @@ class KioskWsClient:
                 await self._send_heartbeat()
             except Exception as e:
                 print(f"[WSS Kiosk Client] Heartbeat error: {e}")
-                break
             await asyncio.sleep(10)
 
     async def _usb_monitor_loop(self):
@@ -344,10 +344,26 @@ class KioskWsClient:
                         aliases = [a for a in [order_number, release_pin] if a and a != order_id]
                         all_ids = {order_id} | set(aliases)
 
+                        def _notify_server_completed(oid=order_id):
+                            try:
+                                post_url = f"{self.api_url}/orders/{urllib.parse.quote(oid)}/status"
+                                req = urllib.request.Request(
+                                    post_url,
+                                    data=json.dumps({"status": "COMPLETED"}).encode("utf-8"),
+                                    headers={**self._get_auth_headers(), "Content-Type": "application/json"},
+                                    method="POST",
+                                )
+                                with urllib.request.urlopen(req, timeout=5):
+                                    pass
+                            except Exception:
+                                pass
+
                         if self._is_order_busy_or_printed(order_id, aliases):
+                            loop.run_in_executor(None, _notify_server_completed)
                             continue
 
                         if not self.cups.claim_order_for_spooling(order_id, aliases, force=False):
+                            loop.run_in_executor(None, _notify_server_completed)
                             continue
 
                         print(f"[WSS Kiosk Client] 📥 Picked up pending paid job via HTTP poll: {order_id} ({job.get('filename')})")

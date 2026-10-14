@@ -133,11 +133,13 @@ if [ $QUEUE_EXISTS -eq 1 ]; then
     sudo lpadmin -p "$PRINTER_NAME" -o printer-error-policy=retry-current-job 2>/dev/null || true
     sudo lpadmin -d "$PRINTER_NAME" 2>/dev/null || true
 
-    # PURGE GHOST JOBS: Flush any lingering or unprinted queue residue from prior sessions
-    log "Purging any stale jobs from CUPS queue..."
-    sudo cancel -a -x "$PRINTER_NAME" 2>/dev/null || true
-    sudo cancel -a 2>/dev/null || true
-    sudo lprm - 2>/dev/null || true
+    # PURGE GHOST JOBS: Flush queue residue only on cold boot or explicit purge request
+    if [ "$1" = "--boot-wait" ] || [ "$1" = "--purge" ]; then
+        log "Purging any stale jobs from CUPS queue (boot/purge mode)..."
+        sudo cancel -a -x "$PRINTER_NAME" 2>/dev/null || true
+        sudo cancel -a 2>/dev/null || true
+        sudo lprm - 2>/dev/null || true
+    fi
 
     # Prevent CUPS from retaining printed files in /var/spool/cups
     sudo cupsctl PreserveJobHistory=No PreserveJobFiles=No 2>/dev/null || true

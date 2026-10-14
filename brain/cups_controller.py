@@ -222,6 +222,7 @@ class CupsController:
                 self._init_error = str(e)
         else:
             self._init_error = "pycups not installed; using system CLI fallback (lp / lpstat)"
+        self._last_state5_recovery: Dict[str, float] = {}
 
     @property
     def is_connected(self) -> bool:
@@ -540,17 +541,21 @@ class CupsController:
                     state_code = d.get("printer-state", 3)
                     state_map = {3: "IDLE", 4: "PRINTING", 5: "STOPPED"}
 
-                    # SELF-HEALING: If printer is STOPPED (5) on Linux, auto-recover immediately!
+                    # SELF-HEALING: If printer is STOPPED (5) on Linux, auto-recover (throttled to once per 45s)
                     if state_code == 5 and sys.platform != "win32":
-                        print(f"[CUPS Controller] Detected STOPPED state (code 5) for '{name}'. Auto-recovering...")
-                        self.auto_recover_printer(name)
-                        try:
-                            # Re-fetch state after recovery
-                            raw_printers = self._conn.getPrinters()
-                            d = raw_printers.get(name, d)
-                            state_code = d.get("printer-state", 3)
-                        except Exception:
-                            pass
+                        now_ts = time.time()
+                        last_rec = self._last_state5_recovery.get(name, 0)
+                        if now_ts - last_rec > 45:
+                            self._last_state5_recovery[name] = now_ts
+                            print(f"[CUPS Controller] Detected STOPPED state (code 5) for '{name}'. Auto-recovering...")
+                            self.auto_recover_printer(name)
+                            try:
+                                # Re-fetch state after recovery
+                                raw_printers = self._conn.getPrinters()
+                                d = raw_printers.get(name, d)
+                                state_code = d.get("printer-state", 3)
+                            except Exception:
+                                pass
 
                     is_online = state_code in (3, 4)
                     uri = d.get("device-uri", "")
