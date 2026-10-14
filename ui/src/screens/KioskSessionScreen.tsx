@@ -938,26 +938,50 @@ export default function KioskSessionScreen() {
   // (within 2.5s), don't overwrite their selection with in-flight polled server state.
   useEffect(() => {
     if (Date.now() - lastTouchTimeRef.current < 2500) return
-    if (session?.settings) {
-      if (session.settings.colour) {
-        setSelectedColour(isLite ? 'BW' : session.settings.colour)
+    if (session?.settings || session?.colourMode || (session as any)?.colour || (session?.files && session.files.length > 0)) {
+      const rawColour = (
+        session?.settings?.colour ||
+        (session?.settings as any)?.colourMode ||
+        (session?.settings as any)?.color ||
+        (session?.settings as any)?.colorMode ||
+        session?.colourMode ||
+        (session as any)?.colour ||
+        (session?.files && (session.files[0]?.settings?.colour || (session.files[0] as any)?.colour || (session.files[0] as any)?.colourMode))
+      )
+      if (rawColour) {
+        const isCol = String(rawColour).toUpperCase().includes('COL')
+        setSelectedColour(isLite ? 'BW' : (isCol ? 'COLOUR' : 'BW'))
       }
-      if (session.settings.duplex) setSelectedDuplex(session.settings.duplex)
-      if (session.settings.copies) setSelectedCopies(session.settings.copies)
-      const incomingPages = session.settings.pageRange || session.settings.pages
+
+      const rawDuplex = (
+        session?.settings?.duplex ||
+        (session?.settings as any)?.duplexMode ||
+        (session as any)?.duplex ||
+        (session?.files && (session.files[0]?.settings?.duplex || session.files[0]?.duplex))
+      )
+      if (rawDuplex) {
+        const isDub = String(rawDuplex).toUpperCase().includes('DOUB') || String(rawDuplex).toUpperCase().includes('2') || String(rawDuplex).toUpperCase().includes('TWO')
+        setSelectedDuplex(isDub ? 'DOUBLE' : 'SINGLE')
+      }
+
+      const rawCopies = session?.settings?.copies || (session as any)?.copies || (session?.files && (session.files[0]?.settings?.copies || session.files[0]?.copies))
+      if (rawCopies) {
+        setSelectedCopies(Math.max(1, Number(rawCopies)))
+      }
+
+      const incomingPages = session?.settings?.pageRange || session?.settings?.pages || (session?.files && (session.files[0]?.settings?.pages || session.files[0]?.settings?.pageRange))
       if (incomingPages) setSelectedPageRange(incomingPages)
-      if (session.settings.settingsMode) setSettingsMode(session.settings.settingsMode as any)
-      if (session.settings.nUpLayout) setNUpLayout(session.settings.nUpLayout as any)
-      if (session.settings.duplexBinding) setDuplexBinding(session.settings.duplexBinding as any)
-      if (session.settings.printDpi) setPrintDpi(session.settings.printDpi as any)
-      if (session.settings.paperWeight) setPaperWeight(session.settings.paperWeight as any)
-      if (session.settings.pageCustomizations) setPageCustomizations(session.settings.pageCustomizations as any)
-    } else if (session?.colourMode) {
-      setSelectedColour(isLite ? 'BW' : (session.colourMode === 'COLOUR' ? 'COLOUR' : 'BW'))
+
+      if (session?.settings?.settingsMode) setSettingsMode(session.settings.settingsMode as any)
+      if (session?.settings?.nUpLayout) setNUpLayout(session.settings.nUpLayout as any)
+      if (session?.settings?.duplexBinding) setDuplexBinding(session.settings.duplexBinding as any)
+      if (session?.settings?.printDpi) setPrintDpi(session.settings.printDpi as any)
+      if (session?.settings?.paperWeight) setPaperWeight(session.settings.paperWeight as any)
+      if (session?.settings?.pageCustomizations) setPageCustomizations(session.settings.pageCustomizations as any)
     }
     const rootPages = (session as any)?.pageRange || (session as any)?.pages
     if (rootPages) setSelectedPageRange(rootPages)
-  }, [session?.settings, session?.colourMode, (session as any)?.pageRange, (session as any)?.pages, isLite])
+  }, [session?.settings, session?.colourMode, (session as any)?.colour, session?.files, (session as any)?.pageRange, (session as any)?.pages, isLite])
 
   // Support dev-mode ?devPages= URL query parameter
   useEffect(() => {
@@ -1779,6 +1803,9 @@ export default function KioskSessionScreen() {
                           src={pageObj?.url}
                           alt={pageObj?.title}
                           className="ks-row-thumb-img"
+                          style={{
+                            filter: ((item.file.colour ? item.file.colour === 'COLOUR' : selectedColour === 'COLOUR') ? 'none' : 'grayscale(100%) contrast(108%)')
+                          }}
                           onError={() => {
                             if (pageObj?.url) {
                               setFailedPreviewUrls(prev => new Set(prev).add(pageObj.url))
@@ -1820,9 +1847,9 @@ export default function KioskSessionScreen() {
                       <div className="ks-row-meta-line">
                         <span>{item.pageCount} {item.pageCount === 1 ? 'page' : 'pages'}</span>
                         <span className="ks-row-dot">•</span>
-                        <span>{item.file.colour || selectedColour === 'COLOUR' ? 'Colour' : 'B&W'}</span>
+                        <span>{((item.file.colour ? item.file.colour === 'COLOUR' : selectedColour === 'COLOUR') ? 'Colour' : 'B&W')}</span>
                         <span className="ks-row-dot">•</span>
-                        <span>{item.file.duplex || selectedDuplex === 'DOUBLE' ? '2-Sided' : '1-Sided'}</span>
+                        <span>{((item.file.duplex ? (item.file.duplex === 'DOUBLE' || String(item.file.duplex).includes('2')) : selectedDuplex === 'DOUBLE') ? '2-Sided' : '1-Sided')}</span>
                         {item.isCustom && (
                           <>
                             <span className="ks-row-dot">•</span>
@@ -1873,6 +1900,9 @@ export default function KioskSessionScreen() {
               src={activePageUrl}
               alt={activePageTitle}
               className="ks-preview-img"
+              style={{
+                filter: selectedColour === 'BW' ? 'grayscale(100%) contrast(108%)' : 'none'
+              }}
               onError={() => {
                 setFailedPreviewUrls(prev => new Set(prev).add(activePageUrl))
               }}
@@ -1965,6 +1995,9 @@ export default function KioskSessionScreen() {
                         src={thumbUrl}
                         alt={pageTitle}
                         className="ks-gallery-thumb-img"
+                        style={{
+                          filter: selectedColour === 'BW' ? 'grayscale(100%) contrast(108%)' : 'none'
+                        }}
                         onError={() => {
                           setFailedPreviewUrls(prev => new Set(prev).add(thumbUrl))
                         }}
@@ -2747,7 +2780,17 @@ export default function KioskSessionScreen() {
             fileName={docFileName}
             sheets={calculatedSheets}
             copies={selectedCopies}
-            colourMode={selectedColour}
+            colourMode={
+              isLite ? 'BW' : (
+                (
+                  (session?.settings?.colour && session.settings.colour === 'COLOUR') ||
+                  ((session?.settings as any)?.colourMode && String((session.settings as any).colourMode).toUpperCase().includes('COL')) ||
+                  (session?.colourMode && String(session.colourMode).toUpperCase().includes('COL')) ||
+                  (session?.files && session.files.some((f: any) => (f.colour && String(f.colour).toUpperCase().includes('COL')) || (f.settings?.colour && String(f.settings.colour).toUpperCase().includes('COL')))) ||
+                  selectedColour === 'COLOUR'
+                ) ? 'COLOUR' : 'BW'
+              )
+            }
             onComplete={handlePrintComplete}
             docPages={filteredDocPages.length > 0 ? filteredDocPages : docPages}
           />

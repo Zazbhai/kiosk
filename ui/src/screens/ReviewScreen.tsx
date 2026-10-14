@@ -53,9 +53,9 @@ export default function ReviewScreen() {
           <div className="kiosk-review-card">
             {[
               { label: 'Document', value: fileName },
-              { label: 'Colour', value: settings.colour === 'BW' ? 'Black & White' : 'Colour' },
-              { label: 'Sides', value: settings.duplex === 'DOUBLE' ? 'Double-sided' : 'Single-sided' },
-              { label: 'Copies', value: settings.copies },
+              { label: 'Colour', value: String(settings.colour || settings.colourMode || '').toUpperCase().includes('COL') ? 'Colour' : 'Black & White' },
+              { label: 'Sides', value: (String(settings.duplex || settings.duplexMode || '').toUpperCase().includes('DOUB') || String(settings.duplex || '').includes('2')) ? 'Double-sided' : 'Single-sided' },
+              { label: 'Copies', value: settings.copies || 1 },
             ].map(row => (
               <div key={row.label} className="kiosk-review-row">
                 <span className="kiosk-review-row__label">{row.label}</span>
