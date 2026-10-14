@@ -19,6 +19,11 @@ from typing import Optional, Callable, List, Dict, Any, Set
 
 import websockets
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(line_buffering=True)
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(line_buffering=True)
+
 # Import local kiosk modules
 current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
