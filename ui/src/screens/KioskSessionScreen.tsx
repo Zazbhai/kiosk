@@ -2152,90 +2152,171 @@ export default function KioskSessionScreen() {
         )}
 
         {/* ── STEP 1: Device Connected / Uploading State ── */}
-        {(state === 'CLAIMED' || state === 'UPLOADING') && (
-          <div className="ks-interactive-panel">
-            {renderStepTabs('upload')}
-            {!doc ? (
-              <div className="ks-connected-view" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div className="ks-connected-center">
-                  <div className="ks-connected-icon-wrap">
-                    <img
-                      src="/phone-connected.svg"
-                      alt="Device Connected"
-                      className="ks-connected-phone-svg"
-                    />
-                  </div>
-                  <h1 className="ks-connected-title">Device Connected</h1>
-                  <p className="ks-connected-sub" style={{ fontSize: 16, color: '#64748b', margin: '6px 0 0', fontWeight: 500 }}>
-                    Select your document on your phone to continue
-                  </p>
-                  <div className="ks-companion-status-pill" style={{ marginTop: 20 }}>
-                    <span className="ks-companion-dot" />
-                    <span>Step 1: Choose or upload documents on phone</span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="ks-flow-body">
-                {/* Left Column: Real Page Preview & Gallery */}
-                {renderDocumentPreviewBox()}
+        {/* ── STEP 1: Device Connected / Uploading State ── */}
+        {(state === 'CLAIMED' || state === 'UPLOADING') && (() => {
+          const isUploadingActive = state === 'UPLOADING' ||
+            Boolean(session?.progressData?.isUploading) ||
+            typeof session?.progressData?.uploadPercent === 'number' ||
+            (Boolean(session?.phase) && (
+              session!.phase.toLowerCase().includes('upload') ||
+              session!.phase.toLowerCase().includes('preparing') ||
+              session!.phase.toLowerCase().includes('processing')
+            ))
 
-                {/* Right Column: Upload Progress & Mobile Companion Status */}
-                <div className="ks-flow-right" style={{ justifyContent: 'space-between', gap: 16 }}>
-                  <div>
-                    <h3 className="ks-summary-title">Uploading Documents</h3>
-                    <div className="ks-summary-table">
-                      {docFiles.length > 1 ? (
-                        <div className="ks-summary-row ks-summary-row--multifile">
-                          <span>Documents ({docFiles.length})</span>
-                          <div className="ks-multifile-chip-group">
-                            {docFiles.map((f, i) => (
-                              <div key={i} className="ks-multifile-chip" title={`${f.fileName} (${f.pageCount || 1} pages)`}>
-                                <span className="ks-multifile-chip-name">{f.fileName}</span>
-                                <span className="ks-multifile-chip-badge">{f.pageCount || 1}p</span>
-                              </div>
-                            ))}
+          const activeUploadPercent = Math.min(100, Math.max(
+            0,
+            typeof session?.progressData?.uploadPercent === 'number'
+              ? Math.round(session.progressData.uploadPercent)
+              : (session?.phase && session.phase.match(/(\d+)%/)?.[1]
+                ? parseInt(session.phase.match(/(\d+)%/)?.[1], 10)
+                : (isUploadingActive ? 45 : 0))
+          ))
+
+          return (
+            <div className="ks-interactive-panel">
+              {renderStepTabs('upload')}
+              {!doc ? (
+                isUploadingActive ? (
+                  <div className="ks-connected-view ks-uploading-stage" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div className="ks-upload-card">
+                      <div className="ks-upload-graphic-wrap">
+                        <div className="ks-upload-radar-ring ks-radar-1" />
+                        <div className="ks-upload-radar-ring ks-radar-2" />
+                        <div className="ks-upload-icon-circle">
+                          <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="ks-upload-pulse-svg">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="17 8 12 3 7 8" />
+                            <line x1="12" y1="3" x2="12" y2="15" />
+                          </svg>
+                        </div>
+                      </div>
+
+                      <div className="ks-upload-percent-row">
+                        <span className="ks-upload-percent-val">{activeUploadPercent}%</span>
+                      </div>
+
+                      <h1 className="ks-upload-heading">Receiving Document…</h1>
+
+                      <div className="ks-upload-progress-track">
+                        <div
+                          className="ks-upload-progress-fill"
+                          style={{ width: `${Math.max(6, activeUploadPercent)}%` }}
+                        >
+                          <span className="ks-upload-progress-glow" />
+                        </div>
+                      </div>
+
+                      <div className="ks-upload-meta-line">
+                        <span className="ks-upload-filename">
+                          {session?.fileName || session?.progressData?.fileName || 'Document.pdf'}
+                        </span>
+                        {session?.progressData?.loadedMB && session?.progressData?.totalMB && (
+                          <span className="ks-upload-bytes">
+                            · {session.progressData.loadedMB} MB / {session.progressData.totalMB} MB
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="ks-companion-status-pill" style={{ marginTop: 22 }}>
+                        <span className="ks-companion-dot" />
+                        <span>{session?.phase || `Step 1: Uploading from phone (${activeUploadPercent}%)`}</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="ks-connected-view" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div className="ks-connected-center">
+                      <div className="ks-connected-icon-wrap">
+                        <img
+                          src="/phone-connected.svg"
+                          alt="Device Connected"
+                          className="ks-connected-phone-svg"
+                        />
+                      </div>
+                      <h1 className="ks-connected-title">Device Connected</h1>
+                      <p className="ks-connected-sub" style={{ fontSize: 16, color: '#64748b', margin: '6px 0 0', fontWeight: 500 }}>
+                        Select your document on your phone to continue
+                      </p>
+                      <div className="ks-companion-status-pill" style={{ marginTop: 20 }}>
+                        <span className="ks-companion-dot" />
+                        <span>Step 1: Choose or upload documents on phone</span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              ) : (
+                <div className="ks-flow-body">
+                  {/* Left Column: Real Page Preview & Gallery */}
+                  {renderDocumentPreviewBox()}
+
+                  {/* Right Column: Upload Progress & Mobile Companion Status */}
+                  <div className="ks-flow-right" style={{ justifyContent: 'space-between', gap: 16 }}>
+                    <div>
+                      {isUploadingActive && (
+                        <div className="ks-upload-live-banner">
+                          <div className="ks-upload-banner-top">
+                            <span className="ks-upload-banner-label">Transfer in Progress</span>
+                            <strong className="ks-upload-banner-pct">{activeUploadPercent}%</strong>
+                          </div>
+                          <div className="ks-upload-progress-track ks-upload-progress-track--small">
+                            <div className="ks-upload-progress-fill" style={{ width: `${Math.max(6, activeUploadPercent)}%` }} />
                           </div>
                         </div>
-                      ) : (
-                        <div className="ks-summary-row">
-                          <span>Document</span>
-                          <strong style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{docFileName}</strong>
-                        </div>
                       )}
-                      <div className="ks-summary-row">
-                        <span>Total Pages</span>
-                        <strong>{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</strong>
-                      </div>
-                      <div className="ks-summary-row">
-                        <span>Paper Tray</span>
-                        <strong style={{ color: '#16a34a' }}>Ready (A4 75GSM)</strong>
-                      </div>
-                      <div className="ks-summary-row">
-                        <span>Current Stage</span>
-                        <strong style={{ color: '#16a34a' }}>Step 1: Selecting on Mobile</strong>
+                      <h3 className="ks-summary-title">Uploading Documents</h3>
+                      <div className="ks-summary-table">
+                        {docFiles.length > 1 ? (
+                          <div className="ks-summary-row ks-summary-row--multifile">
+                            <span>Documents ({docFiles.length})</span>
+                            <div className="ks-multifile-chip-group">
+                              {docFiles.map((f, i) => (
+                                <div key={i} className="ks-multifile-chip" title={`${f.fileName} (${f.pageCount || 1} pages)`}>
+                                  <span className="ks-multifile-chip-name">{f.fileName}</span>
+                                  <span className="ks-multifile-chip-badge">{f.pageCount || 1}p</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="ks-summary-row">
+                            <span>Document</span>
+                            <strong style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{docFileName}</strong>
+                          </div>
+                        )}
+                        <div className="ks-summary-row">
+                          <span>Total Pages</span>
+                          <strong>{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</strong>
+                        </div>
+                        <div className="ks-summary-row">
+                          <span>Paper Tray</span>
+                          <strong style={{ color: '#16a34a' }}>Ready (A4 75GSM)</strong>
+                        </div>
+                        <div className="ks-summary-row">
+                          <span>Current Stage</span>
+                          <strong style={{ color: '#16a34a' }}>Step 1: Selecting on Mobile</strong>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="ks-companion-card">
-                    <div className="ks-companion-card-header">
-                      <div className="ks-companion-card-icon">📱</div>
-                      <div>
-                        <div className="ks-companion-card-title">Selecting Files on Mobile</div>
-                        <div className="ks-companion-card-sub">Add more files or tap "Review &amp; Continue" on your phone to confirm.</div>
+                    <div className="ks-companion-card">
+                      <div className="ks-companion-card-header">
+                        <div className="ks-companion-card-icon">📱</div>
+                        <div>
+                          <div className="ks-companion-card-title">Selecting Files on Mobile</div>
+                          <div className="ks-companion-card-sub">Add more files or tap "Review &amp; Continue" on your phone to confirm.</div>
+                        </div>
                       </div>
-                    </div>
-                    <div className="ks-companion-status-pill">
-                      <span className="ks-companion-dot" />
-                      <span>Step 1: Preparing documents on phone →</span>
+                      <div className="ks-companion-status-pill">
+                        <span className="ks-companion-dot" />
+                        <span>Step 1: Preparing documents on phone →</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )
+        })()}
 
         {/* ── SECTION 2: Confirm Doc (CONFIRMING) ── */}
         {state === 'CONFIRMING' && (
