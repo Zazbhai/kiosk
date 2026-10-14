@@ -1755,7 +1755,7 @@ export default function KioskSessionScreen() {
   const renderStepTabs = (currentStep: 'upload' | 'confirm' | 'settings' | 'review' | 'payment') => {
     const isStep1Connected = state === 'CLAIMED' || state === 'UPLOADING'
     const steps = [
-      { id: 'upload', num: 1, label: isStep1Connected ? 'Device Connected' : 'Upload' },
+      { id: 'upload', num: 1, label: isStep1Connected ? 'Phone Connected' : 'Upload' },
       { id: 'confirm', num: 2, label: 'Confirm Doc' },
       { id: 'settings', num: 3, label: 'Settings' },
       { id: 'review', num: 4, label: 'Review Order' },
@@ -2209,17 +2209,35 @@ export default function KioskSessionScreen() {
           </>
         )}
 
-        {/* ── STEP 1: Device Connected / Uploading State ── */}
-        {/* ── STEP 1: Device Connected / Uploading State ── */}
+        {/* ── STEP 1: Phone Connected / Uploading State ── */}
         {(state === 'CLAIMED' || state === 'UPLOADING') && (() => {
-          const isUploadingActive = state === 'UPLOADING' ||
-            Boolean(session?.progressData?.isUploading) ||
-            typeof session?.progressData?.uploadPercent === 'number' ||
-            (Boolean(session?.phase) && (
-              session!.phase.toLowerCase().includes('upload') ||
-              session!.phase.toLowerCase().includes('preparing') ||
-              session!.phase.toLowerCase().includes('processing')
-            ))
+          // Strictly distinguish between "Phone Connected" (idle browsing on phone)
+          // vs "Receiving Document" (phone is actively transmitting file bytes)
+          const hasExplicitUploading = Boolean(session?.progressData?.isUploading)
+          const hasUploadPercent = typeof session?.progressData?.uploadPercent === 'number' && session.progressData.uploadPercent > 0
+          const hasLoadedBytes = Boolean(session?.progressData?.loadedBytes && session.progressData.loadedBytes > 0)
+
+          const phaseText = (session?.phase || '').toLowerCase()
+          const isIdlePhase = phaseText.includes('scan') ||
+            phaseText.includes('opening') ||
+            phaseText.includes('choose') ||
+            phaseText.includes('select') ||
+            phaseText.includes('connected')
+
+          const isFileTransferPhase = (
+            phaseText.startsWith('uploading') ||
+            phaseText.includes('receiving') ||
+            phaseText.includes('converting') ||
+            phaseText.includes('processing ppt') ||
+            phaseText.includes('processing docx') ||
+            Boolean(session?.phase && /\d+%/.test(session.phase))
+          ) && !isIdlePhase
+
+          const hasSelectedFile = Boolean(session?.fileName || session?.progressData?.fileName)
+
+          // Kiosk only shows upload progress card when ACTUALLY receiving / processing the file
+          const isUploadingActive = (hasExplicitUploading || hasUploadPercent || hasLoadedBytes || (state === 'UPLOADING' && isFileTransferPhase)) &&
+            (hasSelectedFile || hasUploadPercent || hasLoadedBytes)
 
           const activeUploadPercent = Math.min(100, Math.max(
             0,
@@ -2227,7 +2245,7 @@ export default function KioskSessionScreen() {
               ? Math.round(session.progressData.uploadPercent)
               : (session?.phase && session.phase.match(/(\d+)%/)?.[1]
                 ? parseInt(session.phase.match(/(\d+)%/)?.[1], 10)
-                : (isUploadingActive ? 45 : 0))
+                : (isUploadingActive ? 5 : 0))
           ))
 
           return (
@@ -2287,11 +2305,11 @@ export default function KioskSessionScreen() {
                       <div className="ks-connected-icon-wrap">
                         <img
                           src="/phone-connected.svg"
-                          alt="Device Connected"
+                          alt="Phone Connected"
                           className="ks-connected-phone-svg"
                         />
                       </div>
-                      <h1 className="ks-connected-title">Device Connected</h1>
+                      <h1 className="ks-connected-title">Phone Connected</h1>
                       <p className="ks-connected-sub" style={{ fontSize: 16, color: '#64748b', margin: '6px 0 0', fontWeight: 500 }}>
                         Select your document on your phone to continue
                       </p>
