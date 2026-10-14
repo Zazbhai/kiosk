@@ -21,12 +21,21 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-try:
-    import cups  # type: ignore
-    CUPS_AVAILABLE = True
-except ImportError:
+# In Python 3.13+, pycups C extension contains a known fatal PyEval_RestoreThread GIL bug
+# where the Python thread state is NULL during C calls/callbacks, terminating the process with SIGSEGV.
+# On Linux, standard CUPS CLI tools (lp, lpstat, lpadmin, cancel) are 100% stable, fast, thread-isolated,
+# and completely immune to C-extension GIL issues.
+# Therefore, we bypass pycups C bindings on Python >= 3.13 or when DISABLE_PYCUPS=1.
+if sys.version_info >= (3, 13) or os.environ.get("DISABLE_PYCUPS", "").lower() in ("1", "true", "yes"):
     cups = None
     CUPS_AVAILABLE = False
+else:
+    try:
+        import cups  # type: ignore
+        CUPS_AVAILABLE = True
+    except ImportError:
+        cups = None
+        CUPS_AVAILABLE = False
 
 try:
     from config import DATA_DIR, TEMP_JOBS_DIR
@@ -248,7 +257,11 @@ class CupsController:
 
     @property
     def is_connected(self) -> bool:
-        return self._get_connection() is not None
+        if self._conn is not None:
+            return True
+        if sys.platform != "win32":
+            return shutil.which("lpstat") is not None
+        return False
 
     def purge_all_jobs(self, printer_name: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -672,10 +685,24 @@ class CupsController:
                 with _CUPS_LOCK:
                     self._conn = None
 
-        # Fallback via lpstat on Linux/Pi
+        # Native Linux CUPS CLI query via lpstat on Linux/Pi (100% thread-safe & Python 3.13 immune)
         if sys.platform != "win32":
             try:
                 out = subprocess.check_output(["lpstat", "-p", "-d"], text=True)
+                uris = {}
+                try:
+                    v_out = subprocess.check_output(["lpstat", "-v"], text=True, stderr=subprocess.DEVNULL)
+                    for v_line in v_out.splitlines():
+                        if "device for " in v_line:
+                            p_part, u_part = v_line.split("device for ", 1)[1].split(":", 1)
+                            uris[p_part.strip()] = u_part.strip()
+                except Exception:
+                    pass
+
+                usb_info = self.check_usb_printer()
+                usb_present = bool(usb_info.get("connected", False))
+                usb_model = usb_info.get("printerFound") or "Brother DCP-T420W"
+
                 printers = []
                 default_p = None
                 for line in out.splitlines():
@@ -690,24 +717,61 @@ class CupsController:
                             self.auto_recover_printer(p_name)
                             is_disabled = False
                         is_idle = "idle" in line.lower()
+                        uri = uris.get(p_name, "")
+                        is_usb = "usb:" in uri.lower() or "lp0" in uri.lower() or "direct" in uri.lower() or not uri
+                        is_net = any(k in uri.lower() for k in ["ipp:", "socket:", "http:", "lpd:", "wsd"])
+
+                        printer_online = (not is_disabled)
+                        if is_usb:
+                            if not usb_present:
+                                printer_online = False
+                            else:
+                                printer_online = True
+
+                        display_info = p_name
+                        if usb_model and p_name.lower() in ("printbooth_printer", "printer", "cups"):
+                            display_info = f"{usb_model} ({p_name})"
+                        elif usb_model:
+                            display_info = f"{p_name} ({usb_model})"
+
                         printers.append({
                             "name": p_name,
-                            "info": p_name,
-                            "state": "STOPPED" if is_disabled else ("IDLE" if is_idle else "PRINTING"),
+                            "info": display_info,
+                            "state": "READY" if printer_online else "OFFLINE",
                             "is_default": (p_name == default_p),
-                            "is_online": not is_disabled,
-                            "is_usb": True,
-                            "connection_type": "USB",
+                            "is_online": printer_online,
+                            "device_uri": uri,
+                            "is_usb": is_usb,
+                            "usb_connected": usb_present,
+                            "connection_type": "USB" if is_usb else ("NETWORK" if is_net else "CUPS"),
                             "is_virtual": False,
                         })
 
-                # If empty or offline, check USB presence
-                if (not printers or not any(p.get("is_online") for p in printers)) and self._is_usb_printer_present():
-                    self.auto_recover_printer(default_p or "PrintBooth_Printer")
+                if not default_p and printers:
+                    printers[0]["is_default"] = True
+                    default_p = printers[0]["name"]
 
-                return {"success": True, "printers": printers, "default": default_p}
-            except Exception:
-                pass
+                # If empty or offline, check USB presence
+                if (not printers or not any(p.get("is_online") for p in printers)) and usb_present:
+                    self.auto_recover_printer(default_p or "PrintBooth_Printer")
+                    if not printers:
+                        printers = [{
+                            "name": "PrintBooth_Printer",
+                            "info": usb_model,
+                            "state": "READY",
+                            "is_default": True,
+                            "is_online": True,
+                            "is_usb": True,
+                            "usb_connected": True,
+                            "connection_type": "USB",
+                            "is_virtual": False,
+                        }]
+                        default_p = "PrintBooth_Printer"
+
+                if printers:
+                    return {"success": True, "printers": printers, "default": default_p}
+            except Exception as e:
+                print(f"[CUPS Controller] lpstat error notice: {e}")
 
         # Windows native print enumeration (for local dev test)
         if sys.platform == "win32":
