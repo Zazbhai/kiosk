@@ -128,6 +128,7 @@ class KioskWsClient:
         self.print_queue = asyncio.Queue()  # Serialized synchronous print queue (no multithread overlapping)
         self._was_printer_online = False
         self._heartbeat_lock = asyncio.Lock()  # Synchronize heartbeats to prevent concurrent CUPS/lsusb telemetry stampede
+        self._active_prefetches = set()  # Prevent concurrent duplicate file downloads / conversions
         self._last_usb_connected: Optional[bool] = None
 
         # Clean boot: Purge orphaned temporary files from disk without cancelling active print spooler jobs
@@ -760,36 +761,41 @@ class KioskWsClient:
         if local_target.exists() and local_target.stat().st_size > 0:
             return
 
-        # Check if identical file already exists in TEMP_JOBS_DIR under a related order ID
-        for cand in TEMP_JOBS_DIR.glob(f"*_{file_name}"):
-            if cand.exists() and cand.stat().st_size > 0:
-                try:
-                    import shutil
-                    shutil.copyfile(cand, local_target)
-                    print(f"[WSS Kiosk Client] ✓ Reused locally cached binary for '{file_name}' ({local_target.stat().st_size} bytes)")
-                    break
-                except Exception:
-                    pass
-
-        if local_target.exists() and local_target.stat().st_size > 0:
+        prefetch_key = f"{order_id}_{file_name}"
+        if prefetch_key in self._active_prefetches:
             return
-
-        # Build download URL with query params for station authentication
-        raw_url = payload.get("fileUrl") or f"{self.api_url}/print/download/{order_id}"
-        if raw_url.startswith("http://") or raw_url.startswith("https://"):
-            base_dl_url = raw_url
-        elif raw_url.startswith("/"):
-            server_origin = re.sub(r"/api/?$", "", self.api_url)
-            base_dl_url = f"{server_origin}{raw_url}"
-        else:
-            base_dl_url = f"{self.api_url}/{raw_url}"
-
-        separator = "&" if "?" in base_dl_url else "?"
-        file_url = f"{base_dl_url}{separator}kioskId={urllib.parse.quote(self.kiosk_id)}"
-        if self.kiosk_secret:
-            file_url += f"&secret={urllib.parse.quote(self.kiosk_secret)}"
+        self._active_prefetches.add(prefetch_key)
 
         try:
+            # Check if identical file already exists in TEMP_JOBS_DIR under a related order ID
+            for cand in TEMP_JOBS_DIR.glob(f"*_{file_name}"):
+                if cand.exists() and cand.stat().st_size > 0:
+                    try:
+                        import shutil
+                        shutil.copyfile(cand, local_target)
+                        print(f"[WSS Kiosk Client] ✓ Reused locally cached binary for '{file_name}' ({local_target.stat().st_size} bytes)")
+                        break
+                    except Exception:
+                        pass
+
+            if local_target.exists() and local_target.stat().st_size > 0:
+                return
+
+            # Build download URL with query params for station authentication
+            raw_url = payload.get("fileUrl") or f"{self.api_url}/print/download/{order_id}"
+            if raw_url.startswith("http://") or raw_url.startswith("https://"):
+                base_dl_url = raw_url
+            elif raw_url.startswith("/"):
+                server_origin = re.sub(r"/api/?$", "", self.api_url)
+                base_dl_url = f"{server_origin}{raw_url}"
+            else:
+                base_dl_url = f"{self.api_url}/{raw_url}"
+
+            separator = "&" if "?" in base_dl_url else "?"
+            file_url = f"{base_dl_url}{separator}kioskId={urllib.parse.quote(self.kiosk_id)}"
+            if self.kiosk_secret:
+                file_url += f"&secret={urllib.parse.quote(self.kiosk_secret)}"
+
             print(f"[WSS Kiosk Client] ⚡ Pre-fetching document from {file_url}...")
             loop = asyncio.get_event_loop()
             def _download_with_auth():
@@ -814,14 +820,16 @@ class KioskWsClient:
                     ".odt", ".odp", ".ods", ".rtf", ".txt",
                     ".png", ".jpg", ".jpeg", ".webp"
                 ):
-                    print(f"[WSS Kiosk Client] ⚡ Pre-converting '{local_target.name}' to PDF in background...")
-                    def _preconvert():
-                        try:
-                            self.cups.prepare_printable_file(local_target)
-                            print(f"[WSS Kiosk Client] ✓ Pre-conversion ready for '{local_target.name}'")
-                        except Exception as err:
-                            print(f"[WSS Kiosk Client] Pre-convert notice: {err}")
-                    await loop.run_in_executor(None, _preconvert)
+                    conv_target = TEMP_JOBS_DIR / f"mono_{local_target.name}.pdf"
+                    if not (conv_target.exists() and conv_target.stat().st_size > 500):
+                        print(f"[WSS Kiosk Client] ⚡ Pre-converting '{local_target.name}' to PDF in background...")
+                        def _preconvert():
+                            try:
+                                self.cups.prepare_printable_file(local_target)
+                                print(f"[WSS Kiosk Client] ✓ Pre-conversion ready for '{local_target.name}'")
+                            except Exception as err:
+                                print(f"[WSS Kiosk Client] Pre-convert notice: {err}")
+                        await loop.run_in_executor(None, _preconvert)
         except Exception as e:
             if local_target.exists() and local_target.stat().st_size == 0:
                 try:
@@ -829,6 +837,8 @@ class KioskWsClient:
                 except Exception:
                     pass
             print(f"[WSS Kiosk Client] Pre-fetch notice: {e}")
+        finally:
+            self._active_prefetches.discard(prefetch_key)
 
     @staticmethod
     def _calculate_total_pages(payload: dict, copies: int = 1) -> int:
