@@ -52,16 +52,33 @@ echo "  ✓ Found device URI: $DEVICE_URI"
 # Cancel any stuck jobs and update the URI without removing the printer
 echo ""
 echo "[3] Clearing stuck CUPS jobs..."
-sudo cancel -a "$PRINTER_NAME" 2>/dev/null || true
+sudo cancel -a -x "$PRINTER_NAME" 2>/dev/null || true
 
 echo ""
 echo "[4] Updating printer URI to: $DEVICE_URI"
-sudo lpadmin -p "$PRINTER_NAME" -v "$DEVICE_URI" -o printer-error-policy=retry-current-job
+
+# Check if model changed to Brother HL-L / Laser
+USB_NAME=$(lsusb 2>/dev/null | grep -i "brother" || true)
+if echo "$USB_NAME" | grep -i -E "hl-l|laser|5210|5200|5000" >/dev/null; then
+    echo "  Detected Brother Laser Printer ($USB_NAME)!"
+    # Ensure brlaser driver is present
+    sudo apt-get install -y printer-driver-brlaser 2>/dev/null || true
+    LASER_MODEL=$(sudo lpinfo -m 2>/dev/null | grep -i -E "brlaser.*hl-l5|brlaser.*l5200|drv:///sample.drv/generpcl.ppd" | head -n 1 | awk '{print $1}' || true)
+    if [ -n "$LASER_MODEL" ]; then
+        echo "  Synchronizing driver model to: $LASER_MODEL"
+        sudo lpadmin -p "$PRINTER_NAME" -v "$DEVICE_URI" -m "$LASER_MODEL" -o printer-error-policy=retry-current-job
+    else
+        sudo lpadmin -p "$PRINTER_NAME" -v "$DEVICE_URI" -o printer-error-policy=retry-current-job
+    fi
+else
+    sudo lpadmin -p "$PRINTER_NAME" -v "$DEVICE_URI" -o printer-error-policy=retry-current-job
+fi
+
 sudo cupsenable "$PRINTER_NAME"
 sudo cupsaccept "$PRINTER_NAME"
 
-# Also fix default media
-sudo lpoptions -p "$PRINTER_NAME" -o media=A4 2>/dev/null || true
+# Also fix default media and duplex
+sudo lpoptions -p "$PRINTER_NAME" -o media=A4 -o sides=two-sided-long-edge -o Duplex=DuplexNoTumble 2>/dev/null || true
 
 echo ""
 echo "[5] Restarting CUPS..."
