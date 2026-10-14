@@ -95,6 +95,34 @@ import urllib.request
 import urllib.parse
 import json
 import threading
+import queue
+
+_SYNC_PRINT_QUEUE = queue.Queue()
+_SYNC_PRINT_LOCK = threading.Lock()
+
+def _sync_print_worker():
+    """Single dedicated worker thread to ensure physical printing is 100% synchronous."""
+    while True:
+        try:
+            ord_data = _SYNC_PRINT_QUEUE.get()
+            if ord_data is None:
+                break
+            with _SYNC_PRINT_LOCK:
+                print_staged_order_in_background(ord_data)
+        except Exception as e:
+            print(f"[Kiosk Print Worker] Error processing print job: {e}")
+        finally:
+            _SYNC_PRINT_QUEUE.task_done()
+
+_sync_worker_thread = threading.Thread(target=_sync_print_worker, daemon=True, name="Kiosk-SyncPrintWorker")
+_sync_worker_thread.start()
+
+def enqueue_print_order(order_data: dict):
+    """Enqueues an order into the serialized synchronous print queue (no multithreading)."""
+    q_len = _SYNC_PRINT_QUEUE.qsize() + 1
+    o_id = order_data.get("orderId") or order_data.get("orderNumber") or "UNKNOWN"
+    print(f"[Kiosk Server] 📋 Enqueued Order {o_id} into synchronous print queue (Queue depth: {q_len})")
+    _SYNC_PRINT_QUEUE.put(order_data)
 
 def _parse_page_range_helper(range_str, total_pages):
     val = (range_str or "").strip().lower()
@@ -476,8 +504,8 @@ class KioskHTTPHandler(SimpleHTTPRequestHandler):
                 matched["pageRange"] = p_range
                 matched["pages"] = p_range
 
-                # Immediately launch physical printing in background thread
-                threading.Thread(target=print_staged_order_in_background, args=(matched,), daemon=True).start()
+                # Immediately enqueue into serialized synchronous print queue (no multithread overlapping)
+                enqueue_print_order(matched)
 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -511,7 +539,7 @@ class KioskHTTPHandler(SimpleHTTPRequestHandler):
                     api_resp = json.loads(resp.read().decode("utf-8"))
                     if api_resp.get("success") or api_resp.get("valid"):
                         ord_data = api_resp.get("order") or api_resp.get("data") or api_resp
-                        threading.Thread(target=print_staged_order_in_background, args=(ord_data,), daemon=True).start()
+                        enqueue_print_order(ord_data)
                     self.send_response(resp.status)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Access-Control-Allow-Origin", "*")

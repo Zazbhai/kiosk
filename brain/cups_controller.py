@@ -38,6 +38,8 @@ TEMP_JOBS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Global lock to serialize PyMuPDF C-level operations across Python threads (Python 3.13 thread-safety)
 _MUPDF_LOCK = threading.Lock()
+# Hardware lock to strictly synchronize all physical printing operations across threads (no multithreading)
+_HARDWARE_PRINT_LOCK = threading.Lock()
 
 
 def claim_order_for_spooling(order_id: str, aliases: Optional[List[str]] = None, force: bool = False) -> bool:
@@ -1465,6 +1467,32 @@ class CupsController:
 
         return False
 
+    def _wait_for_job_spool(self, printer_name: str, job_id: Optional[str] = None, timeout: int = 60) -> bool:
+        """
+        Synchronously monitors CUPS until the job has completed and cleared from the queue,
+        guaranteeing synchronous execution before the next job or page can start.
+        """
+        start = time.time()
+        time.sleep(0.6)  # Give CUPS a brief instant to register the job ID
+        clean_id = job_id.strip() if job_id else None
+
+        while time.time() - start < timeout:
+            try:
+                cmd = ["lpstat", "-o", printer_name] if printer_name else ["lpstat", "-o"]
+                out = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL)
+                if not out.strip():
+                    print(f"[CUPS Spooler] ✓ Active queue for '{printer_name}' is completely clear. Hardware completed.")
+                    return True
+                if clean_id and clean_id not in out:
+                    print(f"[CUPS Spooler] ✓ Job '{clean_id}' has cleared from active queue. Synchronous page completed.")
+                    return True
+            except Exception:
+                return True
+            time.sleep(0.8)
+
+        print(f"[CUPS Spooler] Hardware sync wait timeout ({timeout}s) reached; proceeding with queue.")
+        return True
+
     def print_file(
         self,
         file_path: str,
@@ -1790,6 +1818,8 @@ class CupsController:
                     print(f"[CUPS CLI] Success output: {out.strip()}")
                     job_match = re.search(r"request id is ([^\s]+)", out)
                     submitted_job_id = job_match.group(1) if job_match else None
+                    # Synchronously wait for job to finish printing so pages and subsequent jobs do not overlap
+                    self._wait_for_job_spool(printer, job_id=submitted_job_id, timeout=60)
                     return {"success": True, "output": out.strip(), "printer": printer, "cupsJobId": submitted_job_id}
                 except subprocess.CalledProcessError as cpe:
                     cli_out = (cpe.output or "").strip()
@@ -1801,6 +1831,7 @@ class CupsController:
             if self._conn:
                 try:
                     job_id = self._conn.printFile(printer, str(target_path.resolve()), job_title, cups_opts)
+                    self._wait_for_job_spool(printer, job_id=str(job_id), timeout=60)
                     return {"success": True, "job_id": job_id, "printer": printer}
                 except Exception as e:
                     print(f"[CUPS] pycups print error: {e}")

@@ -89,6 +89,7 @@ class KioskWsClient:
         self.staged_jobs = {}  # Indexed by order_id and releasePin
         self.printed_orders = load_processed_orders()
         self.active_printing_orders = set()  # Currently executing print orders to prevent concurrent multi-dispatch
+        self.print_queue = asyncio.Queue()  # Serialized synchronous print queue (no multithread overlapping)
         self._was_printer_online = False
         self._last_usb_connected: Optional[bool] = None
 
@@ -173,9 +174,10 @@ class KioskWsClient:
                         receive_task = asyncio.create_task(self._receive_loop())
                         retention_task = asyncio.create_task(self._file_retention_loop())
                         poll_task = asyncio.create_task(self._http_poll_loop())
+                        queue_task = asyncio.create_task(self._process_print_queue())
 
                         done, pending = await asyncio.wait(
-                            [heartbeat_task, usb_monitor_task, receive_task, retention_task, poll_task],
+                            [heartbeat_task, usb_monitor_task, receive_task, retention_task, poll_task, queue_task],
                             return_when=asyncio.FIRST_COMPLETED
                         )
                         for t in pending:
@@ -192,9 +194,10 @@ class KioskWsClient:
                             receive_task = asyncio.create_task(self._receive_loop())
                             retention_task = asyncio.create_task(self._file_retention_loop())
                             poll_task = asyncio.create_task(self._http_poll_loop())
+                            queue_task = asyncio.create_task(self._process_print_queue())
 
                             done, pending = await asyncio.wait(
-                                [heartbeat_task, usb_monitor_task, receive_task, retention_task, poll_task],
+                                [heartbeat_task, usb_monitor_task, receive_task, retention_task, poll_task, queue_task],
                                 return_when=asyncio.FIRST_COMPLETED
                             )
                             for t in pending:
@@ -349,7 +352,7 @@ class KioskWsClient:
 
                         print(f"[WSS Kiosk Client] 📥 Picked up pending paid job via HTTP poll: {order_id} ({job.get('filename')})")
                         self.printed_orders.update(all_ids)
-                        asyncio.create_task(self._handle_print_order(order_id, job))
+                        await self.print_queue.put((order_id, job))
 
             except Exception:
                 # Non-blocking; network or backend might be temporarily unreachable
@@ -572,7 +575,8 @@ class KioskWsClient:
 
                     self.printed_orders.update(all_ids)
                     merged_payload = {**staged_job, **payload}
-                    asyncio.create_task(self._handle_print_order(order_id, merged_payload))
+                    await self.print_queue.put((order_id, merged_payload))
+                    print(f"[WSS Kiosk Client] 📋 Enqueued Order {order_id} into synchronous queue (Pending: {self.print_queue.qsize()})")
 
                 elif msg_type == "PRINT_EXECUTE":
                     print(f"[WSS Kiosk Client] 🖨 Order Event: PRINT_EXECUTE for Order {order_id}")
@@ -599,7 +603,8 @@ class KioskWsClient:
                         or {}
                     )
                     merged_payload = {**staged_job, **payload}
-                    asyncio.create_task(self._handle_print_order(order_id, merged_payload))
+                    await self.print_queue.put((order_id, merged_payload))
+                    print(f"[WSS Kiosk Client] 📋 Enqueued Order {order_id} into synchronous queue (Pending: {self.print_queue.qsize()})")
 
             except Exception as e:
                 print(f"[WSS Kiosk Client] Message parse error: {e}")
@@ -726,6 +731,25 @@ class KioskWsClient:
                     selected_count += 1
 
         return max(1, selected_count) * max(1, copies)
+
+    async def _process_print_queue(self):
+        """Worker that serializes all physical print jobs into a strictly synchronous pipeline (no multithreading)."""
+        print("[WSS Kiosk Client] 🛡 Synchronous Print Queue Worker active.")
+        while self.is_running:
+            try:
+                order_id, payload = await self.print_queue.get()
+                try:
+                    print(f"\n[WSS Kiosk Client] 🚀 Synchronous Worker processing Order {order_id} (Queue remaining: {self.print_queue.qsize()})...")
+                    await self._handle_print_order(order_id, payload)
+                except Exception as ex:
+                    print(f"[WSS Kiosk Client] Error processing queued order {order_id}: {ex}")
+                finally:
+                    self.print_queue.task_done()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[WSS Kiosk Client] Queue worker loop notice: {e}")
+                await asyncio.sleep(0.5)
 
     async def _handle_print_order(self, order_id: str, payload: dict):
         """Executes the physical print and streams progress back over WSS."""
