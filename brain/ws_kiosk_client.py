@@ -66,6 +66,37 @@ def acquire_singleton_lock():
         print(f"[WSS Kiosk Client] Singleton lock notice: {e}")
 
 
+def resolve_effective_page_range(*candidates) -> str:
+    """
+    Bulletproof page range resolver:
+    Scans candidates in order, prioritizing any explicit custom page selection (e.g. [2,3] or '1,3')
+    over generic defaults like 'ALL', '*', or empty strings.
+    """
+    for c in candidates:
+        if not c:
+            continue
+        if isinstance(c, (list, tuple, set)):
+            clean = [int(p) for p in c if str(p).isdigit() and int(p) > 0]
+            if clean:
+                return ",".join(str(p) for p in sorted(set(clean)))
+            continue
+        val = str(c).strip()
+        if not val or val.upper() in ("ALL", "*"):
+            continue
+        if val.startswith("[") and val.endswith("]"):
+            try:
+                parsed = json.loads(val)
+                if isinstance(parsed, list):
+                    clean = [int(p) for p in parsed if str(p).isdigit() and int(p) > 0]
+                    if clean:
+                        return ",".join(str(p) for p in sorted(set(clean)))
+            except Exception:
+                pass
+            continue
+        return val
+    return "ALL"
+
+
 class KioskWsClient:
     def __init__(self, kiosk_id: str = KIOSK_ID, api_url: str = API_URL):
         acquire_singleton_lock()
@@ -454,20 +485,39 @@ class KioskWsClient:
                     print(f"[WSS Kiosk Client] 📥 Staged print job received: Order {order_id} ({order_number}) | Release PIN / OTP: {release_pin} | File: {file_name}")
 
                     # Ensure user specified prints are explicitly resolved
-                    p_range = str(payload.get("pageRange") or payload.get("pages") or (payload.get("printSettings") or {}).get("pageRange") or "ALL").strip()
-                    doc_pages = int(payload.get("totalDocPages") or payload.get("docPageCount") or payload.get("pageCount") or 1)
-                    if not payload.get("selectedPages") or not isinstance(payload.get("selectedPages"), list):
-                        try:
-                            from cups_controller import CupsController
-                            payload["selectedPages"] = CupsController._parse_page_range(p_range, doc_pages)
-                        except Exception:
-                            pass
-                    if payload.get("selectedPages"):
-                        payload["pageCount"] = len(payload["selectedPages"])
-                        payload["totalDocPages"] = doc_pages
-                        payload["docPageCount"] = doc_pages
-                        payload["pageRange"] = p_range
-                        payload["pages"] = p_range
+                    first_file = (payload.get("files") or [{}])[0] if isinstance(payload.get("files"), list) and len(payload.get("files")) > 0 else {}
+                    ff_settings = first_file.get("settings") or {}
+                    p_settings = payload.get("printSettings") or payload.get("settings") or {}
+
+                    p_range = resolve_effective_page_range(
+                        payload.get("selectedPages"),
+                        payload.get("selected_pages"),
+                        p_settings.get("selectedPages"),
+                        p_settings.get("selected_pages"),
+                        first_file.get("selectedPages"),
+                        ff_settings.get("selectedPages"),
+                        payload.get("pageRange"),
+                        payload.get("pages"),
+                        p_settings.get("pageRange"),
+                        p_settings.get("pages"),
+                        first_file.get("pageRange"),
+                        first_file.get("pages"),
+                        ff_settings.get("pageRange"),
+                        ff_settings.get("pages"),
+                    )
+                    doc_pages = int(payload.get("totalDocPages") or payload.get("docPageCount") or payload.get("pageCount") or first_file.get("pageCount") or 1)
+                    try:
+                        from cups_controller import CupsController
+                        selected_list = CupsController._parse_page_range(p_range, doc_pages)
+                    except Exception:
+                        selected_list = list(range(1, doc_pages + 1))
+
+                    payload["selectedPages"] = selected_list
+                    payload["pageCount"] = len(selected_list)
+                    payload["totalDocPages"] = doc_pages
+                    payload["docPageCount"] = doc_pages
+                    payload["pageRange"] = p_range
+                    payload["pages"] = p_range
 
                     # Index in memory for instant local and network verification
                     if order_id:
@@ -548,6 +598,20 @@ class KioskWsClient:
                     mark_order_processed(order_id, aliases)
                     self.printed_orders.update(all_ids)
                     merged_payload = {**staged_job, **payload}
+                    merged_range = resolve_effective_page_range(
+                        payload.get("selectedPages"),
+                        payload.get("selected_pages"),
+                        payload.get("pageRange"),
+                        payload.get("pages"),
+                        staged_job.get("selectedPages"),
+                        staged_job.get("selected_pages"),
+                        staged_job.get("pageRange"),
+                        staged_job.get("pages"),
+                    )
+                    merged_payload["pageRange"] = merged_range
+                    merged_payload["pages"] = merged_range
+                    if staged_job.get("selectedPages") and not payload.get("selectedPages"):
+                        merged_payload["selectedPages"] = staged_job["selectedPages"]
                     asyncio.create_task(self._handle_print_order(order_id, merged_payload))
 
                 elif msg_type == "FILE_INCOMING":
@@ -591,6 +655,20 @@ class KioskWsClient:
 
                     self.printed_orders.update(all_ids)
                     merged_payload = {**staged_job, **payload}
+                    merged_range = resolve_effective_page_range(
+                        payload.get("selectedPages"),
+                        payload.get("selected_pages"),
+                        payload.get("pageRange"),
+                        payload.get("pages"),
+                        staged_job.get("selectedPages"),
+                        staged_job.get("selected_pages"),
+                        staged_job.get("pageRange"),
+                        staged_job.get("pages"),
+                    )
+                    merged_payload["pageRange"] = merged_range
+                    merged_payload["pages"] = merged_range
+                    if staged_job.get("selectedPages") and not payload.get("selectedPages"):
+                        merged_payload["selectedPages"] = staged_job["selectedPages"]
                     await self.print_queue.put((order_id, merged_payload))
                     print(f"[WSS Kiosk Client] 📋 Enqueued Order {order_id} into synchronous queue (Pending: {self.print_queue.qsize()})")
 
@@ -619,6 +697,20 @@ class KioskWsClient:
                         or {}
                     )
                     merged_payload = {**staged_job, **payload}
+                    merged_range = resolve_effective_page_range(
+                        payload.get("selectedPages"),
+                        payload.get("selected_pages"),
+                        payload.get("pageRange"),
+                        payload.get("pages"),
+                        staged_job.get("selectedPages"),
+                        staged_job.get("selected_pages"),
+                        staged_job.get("pageRange"),
+                        staged_job.get("pages"),
+                    )
+                    merged_payload["pageRange"] = merged_range
+                    merged_payload["pages"] = merged_range
+                    if staged_job.get("selectedPages") and not payload.get("selectedPages"):
+                        merged_payload["selectedPages"] = staged_job["selectedPages"]
                     await self.print_queue.put((order_id, merged_payload))
                     print(f"[WSS Kiosk Client] 📋 Enqueued Order {order_id} into synchronous queue (Pending: {self.print_queue.qsize()})")
 
@@ -719,7 +811,13 @@ class KioskWsClient:
                     pass
 
         # 2. Inspect pages / pageRange
-        raw_pages = str(payload.get("pageRange") or payload.get("pages") or "1").strip()
+        raw_pages = resolve_effective_page_range(
+            payload.get("selectedPages"),
+            payload.get("selected_pages"),
+            payload.get("pageRange"),
+            payload.get("pages"),
+            "1"
+        )
         if raw_pages.upper() in ("ALL", "*", ""):
             return 1 * max(1, copies)
 
@@ -795,28 +893,50 @@ class KioskWsClient:
     async def _execute_print_order_internal(self, order_id: str, payload: dict, aliases: list, all_ids: set):
         # Build the list of jobs to print (handles multi-file orders with distinct settings)
         jobs_to_print = []
-        if payload.get("subJobs") and isinstance(payload["subJobs"], list) and len(payload["subJobs"]) > 1:
+        if payload.get("subJobs") and isinstance(payload["subJobs"], list) and len(payload["subJobs"]) > 0:
             jobs_to_print = payload["subJobs"]
-        elif payload.get("files") and isinstance(payload["files"], list) and len(payload["files"]) > 1:
+        elif payload.get("files") and isinstance(payload["files"], list) and len(payload["files"]) > 0:
+            is_single = (len(payload["files"]) == 1)
             for idx, f in enumerate(payload["files"]):
-                f_id = f.get("orderId") or f"{order_id}_sub_{idx + 1}"
+                f_id = f.get("orderId") or (order_id if is_single else f"{order_id}_sub_{idx + 1}")
                 f_settings = f.get("settings") or {}
                 jobs_to_print.append({
                     **payload,
                     **f,
                     "orderId": f_id,
-                    "fileName": f.get("fileName") or f"Document_{idx + 1}.pdf",
+                    "fileName": f.get("fileName") or payload.get("fileName") or f"Document_{idx + 1}.pdf",
                     "copies": f_settings.get("copies") or f.get("copies") or payload.get("copies") or 1,
                     "colourMode": f_settings.get("colour") or f.get("colour") or payload.get("colourMode") or "BW",
                     "duplex": f_settings.get("duplex") or f.get("duplex") or payload.get("duplex") or "SINGLE",
                     "paperSize": f_settings.get("paperSize") or f.get("paperSize") or payload.get("paperSize") or "A4",
-                    "pageRange": f_settings.get("pages") or f_settings.get("pageRange") or f.get("pageRange") or f.get("pages") or payload.get("pageRange") or "ALL",
+                    "pageRange": resolve_effective_page_range(
+                        f_settings.get("selectedPages"),
+                        f_settings.get("selected_pages"),
+                        f.get("selectedPages"),
+                        f.get("selected_pages"),
+                        f_settings.get("pages"),
+                        f_settings.get("pageRange"),
+                        f.get("pageRange"),
+                        f.get("pages"),
+                        payload.get("selectedPages"),
+                        payload.get("selected_pages"),
+                        payload.get("pageRange"),
+                        payload.get("pages"),
+                    ),
+                    "selectedPages": (
+                        f_settings.get("selectedPages")
+                        or f.get("selectedPages")
+                        or payload.get("selectedPages")
+                        or f_settings.get("selected_pages")
+                        or f.get("selected_pages")
+                        or payload.get("selected_pages")
+                    ),
                     "scaling": f_settings.get("scaling") or f.get("scaling") or payload.get("scaling") or "FIT",
                     "orientation": f_settings.get("orientation") or f.get("orientation") or payload.get("orientation") or "AUTO",
                     "pagesPerSheet": f_settings.get("pagesPerSheet") or f.get("pagesPerSheet") or payload.get("pagesPerSheet") or 1,
                     "pageColours": f_settings.get("pageColours") or f.get("pageColours") or payload.get("pageColours"),
                     "pageCopies": f_settings.get("pageCopies") or f.get("pageCopies") or payload.get("pageCopies"),
-                    "fileUrl": f.get("fileUrl") or f"{self.api_url}/print/download/{f_id}",
+                    "fileUrl": f.get("fileUrl") or (payload.get("fileUrl") if is_single else f"{self.api_url}/print/download/{f_id}"),
                 })
         else:
             jobs_to_print = [payload]
@@ -841,7 +961,56 @@ class KioskWsClient:
                     duplex = "TWO_SIDED_SHORT"
                 else:
                     duplex = "SINGLE"
-            page_range = str(job_payload.get("pageRange") or job_payload.get("pages") or settings.get("pageRange") or settings.get("pages") or "ALL").strip()
+
+            first_f = (job_payload.get("files") or [{}])[0] if isinstance(job_payload.get("files"), list) and len(job_payload.get("files")) > 0 else {}
+            ff_set = first_f.get("settings") or {}
+
+            page_range = resolve_effective_page_range(
+                job_payload.get("selectedPages"),
+                job_payload.get("selected_pages"),
+                settings.get("selectedPages"),
+                settings.get("selected_pages"),
+                first_f.get("selectedPages"),
+                first_f.get("selected_pages"),
+                ff_set.get("selectedPages"),
+                ff_set.get("selected_pages"),
+                job_payload.get("pageRange"),
+                job_payload.get("pages"),
+                settings.get("pageRange"),
+                settings.get("pages"),
+                first_f.get("pageRange"),
+                first_f.get("pages"),
+                ff_set.get("pageRange"),
+                ff_set.get("pages"),
+            )
+
+            # Extract selected_pages_list to pass directly to CUPS controller
+            selected_pages_list = None
+            raw_sel = (
+                job_payload.get("selectedPages")
+                or job_payload.get("selected_pages")
+                or settings.get("selectedPages")
+                or settings.get("selected_pages")
+                or first_f.get("selectedPages")
+                or ff_set.get("selectedPages")
+            )
+            if raw_sel:
+                if isinstance(raw_sel, (list, tuple, set)):
+                    selected_pages_list = [int(p) for p in raw_sel if str(p).isdigit() and int(p) > 0]
+                elif isinstance(raw_sel, str) and raw_sel.strip().startswith("[") and raw_sel.strip().endswith("]"):
+                    try:
+                        arr = json.loads(raw_sel)
+                        if isinstance(arr, list):
+                            selected_pages_list = [int(p) for p in arr if str(p).isdigit() and int(p) > 0]
+                    except Exception:
+                        pass
+            if not selected_pages_list and page_range and page_range.upper() not in ("ALL", "*"):
+                try:
+                    from cups_controller import CupsController
+                    selected_pages_list = CupsController._parse_page_range(page_range, 9999)
+                except Exception:
+                    pass
+
             scaling = str(job_payload.get("scaling") or settings.get("scaling") or "FIT").strip()
             orientation = str(job_payload.get("orientation") or settings.get("orientation") or "AUTO").upper().strip()
             pages_per_sheet = int(job_payload.get("pagesPerSheet") or settings.get("pagesPerSheet") or 1)
@@ -935,6 +1104,7 @@ class KioskWsClient:
                         duplex=duplex,
                         paper_size=paper_size,
                         page_range=page_range,
+                        selected_pages=selected_pages_list,
                         scaling=scaling,
                         pages_per_sheet=pages_per_sheet,
                         printer_name=self.printer_name,

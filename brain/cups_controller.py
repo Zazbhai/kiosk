@@ -1175,13 +1175,26 @@ class CupsController:
         return options
 
     @staticmethod
-    def _parse_page_range(range_str: Optional[str], total_pages: int) -> List[int]:
+    def _parse_page_range(range_str: Any, total_pages: int) -> List[int]:
         """Parses human page ranges into 1-indexed page list. E.g. '1,3' -> [1, 3]"""
         if total_pages <= 0:
             return [1]
-        val = (range_str or "").strip().lower()
+        if isinstance(range_str, (list, tuple, set)):
+            clean = [int(p) for p in range_str if 1 <= int(p) <= total_pages]
+            return sorted(set(clean)) if clean else list(range(1, total_pages + 1))
+        val = (str(range_str) if range_str is not None else "").strip().lower()
         if val in ("", "all", "*"):
             return list(range(1, total_pages + 1))
+        if val.startswith("[") and val.endswith("]"):
+            try:
+                import json
+                arr = json.loads(val)
+                if isinstance(arr, list):
+                    clean = [int(p) for p in arr if 1 <= int(p) <= total_pages]
+                    if clean:
+                        return sorted(set(clean))
+            except Exception:
+                pass
         selected = set()
         for part in val.split(","):
             part = part.strip()
@@ -1506,6 +1519,7 @@ class CupsController:
         duplex: str = "SINGLE",
         paper_size: str = "A4",
         page_range: Optional[str] = None,
+        selected_pages: Optional[Any] = None,
         scaling: str = "FIT",
         pages_per_sheet: int = 1,
         printer_name: Optional[str] = None,
@@ -1590,7 +1604,14 @@ class CupsController:
         # Inspect pages
         is_pdf = suffix == ".pdf"
         total_pages = self._get_pdf_page_count(p_path) if is_pdf else 1
-        selected_pages = self._parse_page_range(page_range, total_pages)
+        if selected_pages is not None:
+            if isinstance(selected_pages, (list, tuple, set)):
+                clean_p = [int(p) for p in selected_pages if 1 <= int(p) <= total_pages]
+                selected_pages = sorted(set(clean_p)) if clean_p else self._parse_page_range(page_range, total_pages)
+            else:
+                selected_pages = self._parse_page_range(selected_pages, total_pages)
+        else:
+            selected_pages = self._parse_page_range(page_range, total_pages)
 
         # Map each selected page to its exact color mode
         page_modes: Dict[int, str] = {}
