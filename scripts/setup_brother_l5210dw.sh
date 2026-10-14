@@ -109,8 +109,10 @@ fi
 # Set as system default printer
 sudo lpadmin -d "$PRINTER_NAME"
 
-# Enable hardware duplex & A4 default
-sudo lpoptions -p "$PRINTER_NAME" -o media=A4 -o sides=two-sided-long-edge -o Duplex=DuplexNoTumble 2>/dev/null || true
+# Enable hardware duplex & A4 default system-wide
+sudo lpadmin -p "$PRINTER_NAME" -o Option1=True -o Duplexer=Installed -o Duplex=DuplexNoTumble -o BRDuplex=DuplexNoTumble -o sides=two-sided-long-edge -o media=A4 2>/dev/null || true
+sudo lpoptions -p "$PRINTER_NAME" -o Option1=True -o Duplexer=Installed -o Duplex=DuplexNoTumble -o BRDuplex=DuplexNoTumble -o sides=two-sided-long-edge -o media=A4 2>/dev/null || true
+lpoptions -p "$PRINTER_NAME" -o Option1=True -o Duplexer=Installed -o Duplex=DuplexNoTumble -o BRDuplex=DuplexNoTumble -o sides=two-sided-long-edge -o media=A4 2>/dev/null || true
 sudo cupsenable "$PRINTER_NAME"
 sudo cupsaccept "$PRINTER_NAME"
 

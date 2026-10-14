@@ -1267,9 +1267,7 @@ class CupsController:
             pass
 
         # Duplex / Double-Sided Configuration
-        # ONLY apply duplex options if double-sided is explicitly requested.
-        # NEVER pass Duplex=None / BRDuplex=None / sides=one-sided to non-duplex printers (like DCP-T420W)
-        # as it triggers PPD constraint validation errors in CUPS filters!
+        # Injects universal CUPS IPP, Brother PPD (BRDuplex, JCLDuplex), and hardware PCL (Option1, Duplexer) flags.
         is_double = False
         is_short_edge = False
         if isinstance(duplex, bool):
@@ -1291,9 +1289,35 @@ class CupsController:
             if is_short_edge:
                 options["sides"] = "two-sided-short-edge"
                 options["Duplex"] = "DuplexTumble"
+                options["BRDuplex"] = "DuplexTumble"
+                options["JCLDuplex"] = "DuplexTumble"
+                options["DuplexType"] = "2"
+                options["Option1"] = "True"
+                options["Duplexer"] = "Installed"
             else:
                 options["sides"] = "two-sided-long-edge"
                 options["Duplex"] = "DuplexNoTumble"
+                options["BRDuplex"] = "DuplexNoTumble"
+                options["JCLDuplex"] = "DuplexNoTumble"
+                options["DuplexType"] = "1"
+                options["Option1"] = "True"
+                options["Duplexer"] = "Installed"
+        else:
+            # For printers that have duplex capability (like Brother HL series), explicitly declare single-sided
+            # so the printer does not retain an active duplex hardware mode from a previous job.
+            # Avoid sending to known simplex-only ink tank printers (like DCP-T420W) where unknown keys trigger filter errors.
+            try:
+                usb_status = self.check_usb_printer()
+                model_str = str(usb_status.get("printerFound", "") or "").upper()
+                is_simplex_inktank = any(m in model_str for m in ["T420", "T220", "T310", "T510", "T520", "T720", "T820"])
+                if not is_simplex_inktank:
+                    options["sides"] = "one-sided"
+                    options["Duplex"] = "None"
+                    options["BRDuplex"] = "None"
+                    options["JCLDuplex"] = "None"
+            except Exception:
+                options["sides"] = "one-sided"
+                options["Duplex"] = "None"
 
         # Page Ranges
         if page_range and page_range.upper() not in ("ALL", ""):
