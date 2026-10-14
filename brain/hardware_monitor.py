@@ -373,16 +373,16 @@ class HardwareMonitor:
             is_online = bool(active.get("is_online", False))
             printer_status = active.get("state", "READY" if is_online else "OFFLINE")
 
-        # If USB hardware is physically disconnected, printer is definitely offline
-        if not is_usb_connected:
-            is_online = False
-            printer_status = "OFFLINE"
-        else:
-            # USB is physically connected: hardware is present and ready for jobs
+        cups_has_online = any(bool(p.get("is_online", False)) for p in printers) if printers else False
+
+        if is_usb_connected or cups_has_online:
             is_online = True
             printer_status = "READY"
             if not printers or active_printer_name in ("None", "CUPS Printer"):
                 active_printer_name = usb_info.get("printerFound") or "PrintBooth_Printer"
+        else:
+            is_online = False
+            printer_status = "OFFLINE"
 
         # If printer is reported OFFLINE on Linux, periodically trigger self-healing (every 20s)
         if not is_online and sys.platform != "win32":

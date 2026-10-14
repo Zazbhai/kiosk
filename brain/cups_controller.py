@@ -310,6 +310,12 @@ class CupsController:
                 "method": "win32_simulated",
             }
 
+        # Cache USB check result for 10 seconds to avoid hammering lsusb subprocess
+        now = time.time()
+        if hasattr(self, "_cached_usb_info") and hasattr(self, "_cached_usb_time"):
+            if now - getattr(self, "_cached_usb_time", 0) < 10 and self._cached_usb_info:
+                return self._cached_usb_info
+
         try:
             res = subprocess.run(["lsusb"], capture_output=True, text=True, timeout=3)
             raw_output = res.stdout if res.returncode == 0 else ""
@@ -380,7 +386,14 @@ class CupsController:
             has_lp_node = os.path.exists("/dev/usb/lp0") or os.path.exists("/dev/usb/lp1")
 
             is_connected = bool(matched_lines or has_lp_node)
-            return {
+            now = time.time()
+            if is_connected:
+                self._last_usb_success_time = now
+            elif hasattr(self, "_last_usb_success_time") and (now - getattr(self, "_last_usb_success_time", 0) < 40):
+                # Grace period: keep connected if it was detected within the last 40 seconds to prevent transient lsusb blips
+                is_connected = True
+
+            result = {
                 "connected": is_connected,
                 "printerFound": found_name or ("Printer (/dev/usb/lp0)" if has_lp_node else None),
                 "vendor": found_vendor or ("Generic" if is_connected else "Unknown"),
@@ -392,14 +405,22 @@ class CupsController:
                 "rawLsusb": raw_output.strip(),
                 "method": "lsusb",
             }
+            self._cached_usb_info = result
+            self._cached_usb_time = now
+            return result
         except Exception as e:
             has_lp = os.path.exists("/dev/usb/lp0")
-            return {
-                "connected": has_lp,
+            now = time.time()
+            is_conn = has_lp or (hasattr(self, "_last_usb_success_time") and (now - getattr(self, "_last_usb_success_time", 0) < 40))
+            fallback_res = {
+                "connected": is_conn,
                 "error": str(e),
                 "hasLpDeviceNode": has_lp,
                 "method": "lsusb_fallback",
             }
+            self._cached_usb_info = fallback_res
+            self._cached_usb_time = now
+            return fallback_res
 
     def _is_usb_printer_present(self) -> bool:
         """Helper checking if physical USB printer is enumerated on the Linux USB bus."""
