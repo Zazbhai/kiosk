@@ -45,9 +45,15 @@ if [ -n "$USB_PRINTERS" ]; then
         exec bash "$SCRIPT_DIR/setup_hp_smart_tank.sh"
     fi
 
-    # Specific specialized driver flow for Brother DCP-T420W
-    if echo "$USB_PRINTERS" | grep -i -E "DCP-T420W|04f9:0475|04f9:" >/dev/null 2>&1; then
-        echo "✓ Identified Brother DCP-T420W hardware! Launching dedicated driver installer..."
+    # Specific specialized driver flow for Brother HL-L5210DW / HL-L series laser (04f9:04e8)
+    if echo "$USB_PRINTERS" | grep -i -E "HL-L5210|HL-L5200|HL-L5000|04f9:04e8" >/dev/null 2>&1; then
+        echo "✓ Identified Brother HL-L5210DW Laser hardware! Launching dedicated laser driver installer..."
+        exec bash "$SCRIPT_DIR/setup_brother_l5210dw.sh"
+    fi
+
+    # Specific specialized driver flow for Brother DCP-T420W / DCP-T series
+    if echo "$USB_PRINTERS" | grep -i -E "DCP-T420W|DCP-T|04f9:0475" >/dev/null 2>&1; then
+        echo "✓ Identified Brother DCP-T series hardware! Launching dedicated driver installer..."
         exec bash "$SCRIPT_DIR/setup_brother_t420w.sh"
     fi
 else

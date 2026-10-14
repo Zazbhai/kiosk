@@ -136,6 +136,8 @@ class KioskWsClient:
         hw_init = self.monitor.get_hardware_status()
         self._last_usb_connected = bool(hw_init.get("usbConnected", False))
         init_printer = hw_init.get("printerName") or hw_init.get("activePrinter") or self.printer_name
+        if self.printer_name in ("auto", "None", "", None) and init_printer and init_printer not in ("auto", "None", "CUPS Printer"):
+            self.printer_name = init_printer
         init_model = hw_init.get("printerModel") or hw_init.get("usbDevice") or init_printer
         init_wifi = hw_init.get("wifiName") or "Offline"
         init_host = hw_init.get("hostname") or "kiosk"
@@ -258,6 +260,9 @@ class KioskWsClient:
                 hw = await loop.run_in_executor(None, self.monitor.get_hardware_status)
                 is_online = hw["isOnline"]
                 active_printer = hw.get("printerName") or hw.get("activePrinter") or self.printer_name
+                if active_printer and active_printer not in ("None", "auto", "CUPS Printer"):
+                    if self.printer_name in ("auto", "None", "", None) or not self.printer_name:
+                        self.printer_name = active_printer
                 printer_model = hw.get("printerModel") or hw.get("usbDevice") or active_printer
                 wifi_ssid = hw.get("wifiName") or "Offline"
                 hostname = hw.get("hostname") or "kiosk"
@@ -1112,7 +1117,7 @@ class KioskWsClient:
                         selected_pages=selected_pages_list,
                         scaling=scaling,
                         pages_per_sheet=pages_per_sheet,
-                        printer_name=self.printer_name,
+                        printer_name=(self.printer_name if self.printer_name and self.printer_name != "auto" else None),
                         job_title=f"Order {job_order_id} - {file_name}",
                         page_colours=page_colours,
                         page_copies=page_copies,

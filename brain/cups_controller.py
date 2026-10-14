@@ -781,7 +781,7 @@ class CupsController:
 
                 usb_info = self.check_usb_printer()
                 usb_present = bool(usb_info.get("connected", False))
-                usb_model = usb_info.get("printerFound") or "Brother DCP-T420W"
+                usb_model = usb_info.get("printerFound") or "PrintBooth Printer"
 
                 printers = []
                 default_p = None
@@ -885,13 +885,16 @@ class CupsController:
                 pass
 
         # Offline fallback (checks if physical USB hardware is present)
-        usb_on = self._is_usb_printer_present() if sys.platform != "win32" else False
+        usb_info = self.check_usb_printer()
+        usb_on = bool(usb_info.get("connected", False)) if sys.platform != "win32" else False
+        usb_model = usb_info.get("printerFound") or "PrintBooth Printer"
+        fallback_queue = "PrintBooth_Printer"
         return {
             "success": True,
             "printers": [
                 {
-                    "name": "Brother DCP-T420W Printer",
-                    "info": "Brother DCP-T420W (Raspberry Pi USB)",
+                    "name": fallback_queue,
+                    "info": f"{usb_model} (Raspberry Pi USB)",
                     "state": "READY" if usb_on else "OFFLINE",
                     "is_default": True,
                     "is_online": usb_on,
@@ -901,7 +904,7 @@ class CupsController:
                     "is_virtual": False,
                 }
             ],
-            "default": "Brother DCP-T420W Printer",
+            "default": fallback_queue,
         }
 
     def set_default_printer(self, printer_name: str) -> Dict[str, Any]:
@@ -1772,10 +1775,19 @@ class CupsController:
 
         # Resolve printer
         printers_info = self.get_printers()
+        valid_printers = [p.get("name") for p in printers_info.get("printers", []) if p.get("name")]
+        default_printer = printers_info.get("default")
+
+        # If a specific printer name was requested but doesn't exist in active CUPS queues, fallback to default or first available
+        if printer and valid_printers and printer not in valid_printers:
+            print(f"[CUPS Spooler] ⚠️ Requested queue '{printer}' does NOT exist in active CUPS queues: {valid_printers}. Falling back to '{default_printer or valid_printers[0]}'.")
+            printer = default_printer or valid_printers[0]
+
         if not printer:
-            printer = printers_info.get("default")
-            if not printer and printers_info.get("printers"):
-                printer = printers_info["printers"][0]["name"]
+            printer = default_printer or (valid_printers[0] if valid_printers else None)
+
+        if not printer and printers_info.get("printers"):
+            printer = printers_info["printers"][0]["name"]
 
         if not printer:
             return {"success": False, "error": "No CUPS printer available on this station"}
