@@ -29,6 +29,8 @@ class HardwareMonitor:
         self.estimated_paper = 100
         self.estimated_toner = 100
         self._last_recovery_time = 0
+        self._cached_hw_status = None
+        self._cached_hw_time = 0.0
 
     def get_cpu_temperature(self) -> float:
         """Reads Raspberry Pi SoC temperature in Celsius."""
@@ -356,6 +358,10 @@ class HardwareMonitor:
         """Combines printer spooler state and system vitals with auto-recovery and lsusb validation."""
         import time
 
+        now = time.time()
+        if self._cached_hw_status and (now - self._cached_hw_time < 2.5):
+            return dict(self._cached_hw_status)
+
         usb_info = self.cups.check_usb_printer()
         printers_info = self.cups.get_printers()
         printers = printers_info.get("printers", [])
@@ -386,7 +392,6 @@ class HardwareMonitor:
 
         # If printer is reported OFFLINE on Linux, periodically trigger self-healing (every 20s)
         if not is_online and sys.platform != "win32":
-            now = time.time()
             if now - self._last_recovery_time > 20:
                 self._last_recovery_time = now
                 rec_target = active_printer_name if active_printer_name != "None" else None
@@ -416,7 +421,7 @@ class HardwareMonitor:
         current_wifi_ssid = net_telemetry.get("wifi", {}).get("ssid") or "Offline"
         git_version = self.get_git_version()
 
-        return {
+        hw_result = {
             "isOnline": is_online,
             "printerStatus": printer_status,
             "activePrinter": active_printer_name,
@@ -441,6 +446,9 @@ class HardwareMonitor:
             "network": net_telemetry,
             "gitVersion": git_version,
         }
+        self._cached_hw_status = hw_result
+        self._cached_hw_time = now
+        return hw_result
 
     def get_git_version(self) -> Dict[str, Any]:
         """Reads current local git commit hash, branch, and autoupdate status."""

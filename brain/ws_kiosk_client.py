@@ -127,12 +127,14 @@ class KioskWsClient:
         self.active_printing_orders = set()  # Currently executing print orders to prevent concurrent multi-dispatch
         self.print_queue = asyncio.Queue()  # Serialized synchronous print queue (no multithread overlapping)
         self._was_printer_online = False
+        self._heartbeat_lock = asyncio.Lock()  # Synchronize heartbeats to prevent concurrent CUPS/lsusb telemetry stampede
         self._last_usb_connected: Optional[bool] = None
 
         # Clean boot: Purge orphaned temporary files from disk without cancelling active print spooler jobs
         purge_temp_job_files()
 
         hw_init = self.monitor.get_hardware_status()
+        self._last_usb_connected = bool(hw_init.get("usbConnected", False))
         init_printer = hw_init.get("printerName") or hw_init.get("activePrinter") or self.printer_name
         init_model = hw_init.get("printerModel") or hw_init.get("usbDevice") or init_printer
         init_wifi = hw_init.get("wifiName") or "Offline"
@@ -245,51 +247,52 @@ class KioskWsClient:
 
     async def _send_heartbeat(self):
         """Constructs and sends hardware heartbeat to API server."""
-        if not self.ws:
+        if not self.ws or self._heartbeat_lock.locked():
             return
-        try:
-            loop = asyncio.get_event_loop()
-            hw = await loop.run_in_executor(None, self.monitor.get_hardware_status)
-            is_online = hw["isOnline"]
-            active_printer = hw.get("printerName") or hw.get("activePrinter") or self.printer_name
-            printer_model = hw.get("printerModel") or hw.get("usbDevice") or active_printer
-            wifi_ssid = hw.get("wifiName") or "Offline"
-            hostname = hw.get("hostname") or "kiosk"
+        async with self._heartbeat_lock:
+            try:
+                loop = asyncio.get_event_loop()
+                hw = await loop.run_in_executor(None, self.monitor.get_hardware_status)
+                is_online = hw["isOnline"]
+                active_printer = hw.get("printerName") or hw.get("activePrinter") or self.printer_name
+                printer_model = hw.get("printerModel") or hw.get("usbDevice") or active_printer
+                wifi_ssid = hw.get("wifiName") or "Offline"
+                hostname = hw.get("hostname") or "kiosk"
 
-            if is_online != self._was_printer_online:
-                self._was_printer_online = is_online
-                if is_online:
-                    print(f"[WSS Kiosk Client] [ONLINE] Printer: {active_printer} ({printer_model}) | Wi-Fi: {wifi_ssid} | Host: {hostname}")
-                else:
-                    print(f"[WSS Kiosk Client] [OFFLINE] Printer offline: {active_printer}. Auto-recovering...")
+                if is_online != self._was_printer_online:
+                    self._was_printer_online = is_online
+                    if is_online:
+                        print(f"[WSS Kiosk Client] [ONLINE] Printer: {active_printer} ({printer_model}) | Wi-Fi: {wifi_ssid} | Host: {hostname}")
+                    else:
+                        print(f"[WSS Kiosk Client] [OFFLINE] Printer offline: {active_printer}. Auto-recovering...")
 
-            payload = {
-                "type": "KIOSK_HEARTBEAT",
-                "kioskId": self.kiosk_id,
-                "payload": {
-                    "status": "ONLINE" if is_online else "OFFLINE",
-                    "printerStatus": hw["printerStatus"],
-                    "activePrinter": active_printer,
-                    "printerName": active_printer,
-                    "printerModel": printer_model,
-                    "hostname": hostname,
-                    "wifiName": wifi_ssid,
-                    "connectedWifi": wifi_ssid,
-                    "allPrinters": hw.get("allPrinters", []),
-                    "paperLevel": hw["paperLevel"],
-                    "tonerLevel": hw["tonerLevel"],
-                    "usbConnected": hw.get("usbConnected", True),
-                    "usbDevice": hw.get("usbDevice") or printer_model,
-                    "usbInfo": hw.get("usbInfo"),
-                    "diagnostics": hw.get("diagnostics", {}),
-                    "network": hw.get("network", {}),
-                },
-                "timestamp": int(time.time() * 1000)
-            }
-            if self.ws:
-                await self.ws.send(json.dumps(payload))
-        except Exception as e:
-            print(f"[WSS Kiosk Client] Send heartbeat notice: {e}")
+                payload = {
+                    "type": "KIOSK_HEARTBEAT",
+                    "kioskId": self.kiosk_id,
+                    "payload": {
+                        "status": "ONLINE" if is_online else "OFFLINE",
+                        "printerStatus": hw["printerStatus"],
+                        "activePrinter": active_printer,
+                        "printerName": active_printer,
+                        "printerModel": printer_model,
+                        "hostname": hostname,
+                        "wifiName": wifi_ssid,
+                        "connectedWifi": wifi_ssid,
+                        "allPrinters": hw.get("allPrinters", []),
+                        "paperLevel": hw["paperLevel"],
+                        "tonerLevel": hw["tonerLevel"],
+                        "usbConnected": hw.get("usbConnected", True),
+                        "usbDevice": hw.get("usbDevice") or printer_model,
+                        "usbInfo": hw.get("usbInfo"),
+                        "diagnostics": hw.get("diagnostics", {}),
+                        "network": hw.get("network", {}),
+                    },
+                    "timestamp": int(time.time() * 1000)
+                }
+                if self.ws:
+                    await self.ws.send(json.dumps(payload))
+            except Exception as e:
+                print(f"[WSS Kiosk Client] Send heartbeat notice: {e}")
 
     async def _heartbeat_loop(self):
         """Sends live hardware telemetry every 10 seconds."""

@@ -40,6 +40,8 @@ TEMP_JOBS_DIR.mkdir(parents=True, exist_ok=True)
 _MUPDF_LOCK = threading.Lock()
 # Hardware lock to strictly synchronize all physical printing operations across threads (no multithreading)
 _HARDWARE_PRINT_LOCK = threading.Lock()
+# CUPS / pycups C-library lock to prevent PyEval_RestoreThread GIL crash and SIGSEGV across threads (Python 3.13)
+_CUPS_LOCK = threading.RLock()
 
 
 def claim_order_for_spooling(order_id: str, aliases: Optional[List[str]] = None, force: bool = False) -> bool:
@@ -207,26 +209,46 @@ class CupsController:
         self.host = host
         self.port = port
         self._conn = None
+        self._last_state5_recovery: Dict[str, float] = {}
         if CUPS_AVAILABLE:
-            try:
-                cups.setServer(self.host)
-                cups.setPort(self.port)
-                # Suppress interactive password prompts on stdin/terminal
+            with _CUPS_LOCK:
                 try:
-                    cups.setPasswordCB(lambda prompt: "")
-                except Exception:
-                    pass
-                self._conn = cups.Connection()
-            except Exception as e:
-                self._conn = None
-                self._init_error = str(e)
+                    cups.setServer(self.host)
+                    cups.setPort(self.port)
+                    # Suppress interactive password prompts on stdin/terminal
+                    try:
+                        cups.setPasswordCB(lambda prompt: "")
+                    except Exception:
+                        pass
+                    self._conn = cups.Connection()
+                except Exception as e:
+                    self._conn = None
+                    self._init_error = str(e)
         else:
             self._init_error = "pycups not installed; using system CLI fallback (lp / lpstat)"
-        self._last_state5_recovery: Dict[str, float] = {}
+
+    def _get_connection(self):
+        """Thread-safe acquisition or re-connection of pycups connection."""
+        if not CUPS_AVAILABLE:
+            return None
+        with _CUPS_LOCK:
+            if self._conn is None:
+                try:
+                    cups.setServer(self.host)
+                    cups.setPort(self.port)
+                    try:
+                        cups.setPasswordCB(lambda prompt: "")
+                    except Exception:
+                        pass
+                    self._conn = cups.Connection()
+                except Exception as e:
+                    self._conn = None
+                    self._init_error = str(e)
+            return self._conn
 
     @property
     def is_connected(self) -> bool:
-        return self._conn is not None
+        return self._get_connection() is not None
 
     def purge_all_jobs(self, printer_name: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -235,21 +257,25 @@ class CupsController:
         """
         actions = []
         # 1. pycups cancelJob for all existing jobs
-        if self._conn:
+        conn = self._get_connection()
+        if conn:
             try:
-                jobs = self._conn.getJobs(which_jobs="all", my_jobs=False)
-                for jid in list(jobs.keys()):
-                    try:
-                        self._conn.cancelJob(jid, purge_job=True)
-                        actions.append(f"Cancelled CUPS job #{jid}")
-                    except Exception:
+                with _CUPS_LOCK:
+                    jobs = conn.getJobs(which_jobs="all", my_jobs=False)
+                    for jid in list(jobs.keys()):
                         try:
-                            self._conn.cancelJob(jid)
+                            conn.cancelJob(jid, purge_job=True)
                             actions.append(f"Cancelled CUPS job #{jid}")
                         except Exception:
-                            pass
+                            try:
+                                conn.cancelJob(jid)
+                                actions.append(f"Cancelled CUPS job #{jid}")
+                            except Exception:
+                                pass
             except Exception as e:
                 actions.append(f"pycups jobs query notice: {e}")
+                with _CUPS_LOCK:
+                    self._conn = None
 
         # 2. Linux CLI cancel -a -x / cancel -a / lprm -
         if sys.platform != "win32":
@@ -476,10 +502,12 @@ class CupsController:
             actions.append("set retry-current-job error policy")
 
             # 4. If connection is alive in pycups, enable through API
-            if self._conn:
+            conn = self._get_connection()
+            if conn:
                 try:
-                    self._conn.enablePrinter(target)
-                    self._conn.acceptJobs(target)
+                    with _CUPS_LOCK:
+                        conn.enablePrinter(target)
+                        conn.acceptJobs(target)
                 except Exception:
                     pass
 
@@ -563,10 +591,12 @@ class CupsController:
 
     def get_printers(self) -> Dict[str, Any]:
         """Discovers and returns all configured CUPS printers and their states with self-healing."""
-        if self._conn:
+        conn = self._get_connection()
+        if conn:
             try:
-                raw_printers = self._conn.getPrinters()
-                default_p = self._conn.getDefault()
+                with _CUPS_LOCK:
+                    raw_printers = conn.getPrinters()
+                    default_p = conn.getDefault()
                 printers = []
                 for name, d in raw_printers.items():
                     state_code = d.get("printer-state", 3)
@@ -582,7 +612,8 @@ class CupsController:
                             self.auto_recover_printer(name)
                             try:
                                 # Re-fetch state after recovery
-                                raw_printers = self._conn.getPrinters()
+                                with _CUPS_LOCK:
+                                    raw_printers = conn.getPrinters()
                                 d = raw_printers.get(name, d)
                                 state_code = d.get("printer-state", 3)
                             except Exception:
@@ -638,7 +669,8 @@ class CupsController:
 
                 return {"success": True, "printers": printers, "default": default_p}
             except Exception:
-                pass
+                with _CUPS_LOCK:
+                    self._conn = None
 
         # Fallback via lpstat on Linux/Pi
         if sys.platform != "win32":
@@ -738,12 +770,16 @@ class CupsController:
         print(f"[CUPS Controller] Setting Raspberry Pi default printer to '{clean_name}'...")
 
         # 1. pycups setDefault
-        if self._conn:
+        conn = self._get_connection()
+        if conn:
             try:
-                self._conn.setDefault(clean_name)
+                with _CUPS_LOCK:
+                    conn.setDefault(clean_name)
                 actions.append("pycups setDefault")
             except Exception as e:
                 actions.append(f"pycups failed: {e}")
+                with _CUPS_LOCK:
+                    self._conn = None
 
         # 2. lpadmin on Linux (Raspberry Pi)
         if sys.platform != "win32":
@@ -1885,13 +1921,17 @@ class CupsController:
                     print(f"[CUPS CLI] lp execution error: {e}. Trying pycups fallback...")
 
             # Fallback to pycups if lp is unavailable or failed
-            if self._conn:
+            conn = self._get_connection()
+            if conn:
                 try:
-                    job_id = self._conn.printFile(printer, str(target_path.resolve()), job_title, cups_opts)
+                    with _CUPS_LOCK:
+                        job_id = conn.printFile(printer, str(target_path.resolve()), job_title, cups_opts)
                     self._wait_for_job_spool(printer, job_id=str(job_id), timeout=60)
                     return {"success": True, "job_id": job_id, "printer": printer}
                 except Exception as e:
                     print(f"[CUPS] pycups print error: {e}")
+                    with _CUPS_LOCK:
+                        self._conn = None
 
             if sys.platform != "win32":
                 return {
