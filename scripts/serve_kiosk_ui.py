@@ -560,11 +560,45 @@ class KioskHTTPHandler(SimpleHTTPRequestHandler):
         # Suppress noisy HTTP asset logs on Raspberry Pi to avoid SD card wear and CPU overhead
         pass
 
+import socket
+
+class ResilientServer(ServerClass):
+    allow_reuse_address = True
+
+    def server_bind(self):
+        try:
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        except Exception:
+            pass
+        if hasattr(socket, "SO_REUSEPORT"):
+            try:
+                self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except Exception:
+                pass
+        super().server_bind()
+
 def main():
     signal.signal(signal.SIGINT, lambda s, f: terminate_kiosk())
     signal.signal(signal.SIGTERM, lambda s, f: terminate_kiosk())
 
-    server = ServerClass(("0.0.0.0", PORT), KioskHTTPHandler)
+    server = None
+    max_retries = 10
+    for attempt in range(1, max_retries + 1):
+        try:
+            server = ResilientServer(("0.0.0.0", PORT), KioskHTTPHandler)
+            break
+        except OSError as e:
+            print(f"[Kiosk Server] ⚠️ Port {PORT} not ready ({e}). Attempting stale cleanup (attempt {attempt}/{max_retries})...")
+            try:
+                subprocess.run(["fuser", "-k", f"{PORT}/tcp"], capture_output=True, timeout=2)
+            except Exception:
+                pass
+            time.sleep(1.0)
+
+    if not server:
+        print(f"[Kiosk Server] ❌ Fatal: Failed to bind to port {PORT} after {max_retries} attempts!")
+        sys.exit(1)
+
     print(f"[Kiosk Server] Serving UI from {SERVE_DIR} on port {PORT} with Threading...")
     try:
         server.serve_forever()

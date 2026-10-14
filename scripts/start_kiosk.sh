@@ -161,23 +161,119 @@ fi
 # ── 10. Ensure Touchscreen UI HTTP server is running on port 5175 ────────────
 DISPLAY_URL="${KIOSK_DISPLAY_URL:-http://localhost:5175/?api=${TARGET_API}&kioskId=${STATION_ID}}"
 LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+UI_PID_FILE="/tmp/printbooth_ui.pid"
 
-if [ -d "$UI_DIR/dist" ]; then
-    if ! curl -s --connect-timeout 1 "http://localhost:5175" > /dev/null 2>&1; then
-        echo "[Start Kiosk] Serving pre-built Kiosk UI on port 5175..."
-        python3 "$SCRIPT_DIR/serve_kiosk_ui.py" 5175 "$UI_DIR/dist" >> "$UI_LOG" 2>&1 &
+# Resolve best Python binary (prefer project virtualenv with installed dependencies)
+PYTHON_BIN="python3"
+for candidate in "$BRAIN_DIR/venv/bin/python3" "$BRAIN_DIR/venv/bin/python" "$KIOSK_ROOT/venv/bin/python3" "$KIOSK_ROOT/venv/bin/python" "$(which python3 2>/dev/null)"; do
+    if [ -x "$candidate" ]; then
+        PYTHON_BIN="$candidate"
+        break
+    fi
+done
+
+is_ui_server_responding() {
+    curl -s --connect-timeout 2 "http://127.0.0.1:5175" > /dev/null 2>&1 || \
+    curl -s --connect-timeout 2 "http://localhost:5175" > /dev/null 2>&1
+}
+
+ensure_ui_server() {
+    # 1. Check if systemd service is active/supervised
+    if systemctl is-active --quiet printbooth-ui.service 2>/dev/null; then
+        echo "[Start Kiosk] ✓ printbooth-ui.service is active under systemd supervision."
+        return 0
+    elif systemctl is-enabled --quiet printbooth-ui.service 2>/dev/null; then
+        echo "[Start Kiosk] Starting printbooth-ui.service via systemd..."
+        sudo systemctl start printbooth-ui.service 2>/dev/null || true
+        for _i in {1..12}; do
+            if is_ui_server_responding; then
+                echo "[Start Kiosk] Local UI server healthy on port 5175 ✓"
+                return 0
+            fi
+            sleep 0.5
+        done
     fi
 
-    # Server readiness poll (up to 12s) to prevent Chromium ERR_CONNECTION_REFUSED
-    echo "[Start Kiosk] Verifying local UI server availability on port 5175..."
-    for _i in {1..24}; do
-        if curl -s --connect-timeout 1 "http://localhost:5175" > /dev/null 2>&1; then
-            echo "[Start Kiosk] Local UI server verified healthy ✓"
-            break
+    # 2. Check if already responding
+    if is_ui_server_responding; then
+        echo "[Start Kiosk] ✓ Local UI server is already active on port 5175."
+        return 0
+    fi
+
+    echo "[Start Kiosk] 🚀 Starting Local Touchscreen UI server on port 5175..."
+
+    # Ensure pre-built dist has up-to-date runtime config.json
+    if [ -d "$UI_DIR/dist" ]; then
+        cat << EOF > "$UI_DIR/dist/config.json"
+{
+  "apiUrl": "$TARGET_API",
+  "kioskId": "$STATION_ID"
+}
+EOF
+    fi
+
+    # Clean any stale or orphaned processes holding port 5175
+    fuser -k 5175/tcp 2>/dev/null || true
+    pkill -f "serve_kiosk_ui.py" 2>/dev/null || true
+    sleep 0.5
+
+    # Determine serve directory
+    SERVE_PATH="$UI_DIR/dist"
+    if [ ! -d "$SERVE_PATH" ]; then
+        echo "[Start Kiosk] ⚠️ $SERVE_PATH not found! Falling back to $UI_DIR..."
+        SERVE_PATH="$UI_DIR"
+    fi
+
+    # Launch serve_kiosk_ui.py in background with logging
+    "$PYTHON_BIN" "$SCRIPT_DIR/serve_kiosk_ui.py" 5175 "$SERVE_PATH" >> "$UI_LOG" 2>&1 &
+    UI_PID=$!
+    echo "$UI_PID" > "$UI_PID_FILE"
+
+    # Server readiness poll (up to 25s) to guarantee server is ready before Chromium starts
+    echo "[Start Kiosk] Verifying UI server availability on port 5175..."
+    for _i in {1..25}; do
+        if is_ui_server_responding; then
+            echo "[Start Kiosk] Local UI server verified healthy on port 5175 ✓"
+            return 0
         fi
-        sleep 0.5
+        # Check if process died prematurely and restart
+        if ! kill -0 "$UI_PID" 2>/dev/null && ! pgrep -f "serve_kiosk_ui.py" >/dev/null; then
+            echo "[Start Kiosk] ⚠️ serve_kiosk_ui.py process terminated unexpectedly! Attempting restart..."
+            "$PYTHON_BIN" "$SCRIPT_DIR/serve_kiosk_ui.py" 5175 "$SERVE_PATH" >> "$UI_LOG" 2>&1 &
+            UI_PID=$!
+            echo "$UI_PID" > "$UI_PID_FILE"
+        fi
+        sleep 1
     done
-fi
+
+    # If failed, output debug diagnostics from UI log
+    echo "[Start Kiosk] ❌ ERROR: UI server failed to respond on port 5175 within 25s!"
+    echo "[Start Kiosk] ─── Last 15 lines of $UI_LOG ───"
+    tail -n 15 "$UI_LOG" 2>/dev/null || true
+    echo "[Start Kiosk] ────────────────────────────────────"
+
+    # Emergency Fallback: If vite is available, try running vite dev server
+    if [ -f "$UI_DIR/package.json" ] && command -v npx >/dev/null 2>&1; then
+        echo "[Start Kiosk] 🛡️ Attempting emergency fallback via Vite dev server on port 5175..."
+        (
+            cd "$UI_DIR" || exit 1
+            npx -y vite --host 0.0.0.0 --port 5175 >> "$UI_LOG" 2>&1 &
+            echo $! > "$UI_PID_FILE"
+        )
+        for _i in {1..20}; do
+            if is_ui_server_responding; then
+                echo "[Start Kiosk] Vite fallback server active on port 5175 ✓"
+                return 0
+            fi
+            sleep 1
+        done
+    fi
+
+    return 1
+}
+
+# Ensure local UI server is running
+ensure_ui_server
 
 if [[ "$DISPLAY_URL" =~ ^https?:// ]] && [[ "$DISPLAY_URL" != *"localhost"* ]] && [[ "$DISPLAY_URL" != *"127.0.0.1"* ]]; then
     if ! curl -s --connect-timeout 2 "$DISPLAY_URL" > /dev/null 2>&1; then
@@ -264,7 +360,9 @@ cleanup_and_exit() {
         kill "$POPUP_WATCHDOG_PID" 2>/dev/null || true
     fi
     pkill -f "$CHROMIUM_CMD" 2>/dev/null || true
-    pkill -f serve_kiosk_ui.py 2>/dev/null || true
+    if ! systemctl is-active --quiet printbooth-ui.service 2>/dev/null; then
+        pkill -f serve_kiosk_ui.py 2>/dev/null || true
+    fi
     pkill -f unclutter 2>/dev/null || true
     exit 0
 }
@@ -389,6 +487,9 @@ while [ "$EXIT_REQUESTED" -eq 0 ]; do
         xsetroot -solid "#06110D" 2>/dev/null || true
     fi
     sleep 1
+
+    # Ensure UI server on port 5175 is active and healthy before relaunching Chromium
+    ensure_ui_server
 done
 
 cleanup_and_exit

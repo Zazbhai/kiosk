@@ -804,7 +804,7 @@ export default function KioskSessionScreen() {
     }
 
     poll()
-    pollRef.current = setInterval(poll, 1200)
+    pollRef.current = setInterval(poll, 600)
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)
     }
@@ -1178,6 +1178,16 @@ export default function KioskSessionScreen() {
     })
   }, [totalAmount, syncProgress])
 
+  const handleProBackToReview = useCallback(() => {
+    setActiveStateOverride(null)
+    setSession(prev => prev ? { ...prev, state: 'REVIEWING', upiQrValue: '', upiIntentUrl: '', paymentUrl: '', qrAmount: undefined } : null)
+    syncProgress({
+      state: 'REVIEWING',
+      phase: 'Reviewing Order on Touchscreen',
+      phaseStep: 4,
+    })
+  }, [syncProgress])
+
   const handleProBackToSettings = useCallback(() => {
     setActiveStateOverride(null)
     setSession(prev => prev ? { ...prev, state: 'CONFIGURING', upiQrValue: '', upiIntentUrl: '', paymentUrl: '', qrAmount: undefined } : null)
@@ -1209,7 +1219,7 @@ export default function KioskSessionScreen() {
 
   const handleUniversalBack = useCallback(() => {
     if (state === 'PAYING') {
-      handleProBackToSettings()
+      handleProBackToReview()
     } else if (state === 'REVIEWING') {
       handleProBackToSettings()
     } else if (state === 'CONFIGURING') {
@@ -1219,7 +1229,7 @@ export default function KioskSessionScreen() {
     } else if (state === 'OTP_READY') {
       handleProBackToSettings()
     }
-  }, [state, handleProBackToSettings, handleProBackToDoc, handleCancelAndNewUpload])
+  }, [state, handleProBackToReview, handleProBackToSettings, handleProBackToDoc, handleCancelAndNewUpload])
 
   const isWaiting = state === 'QR_READY'
   const isPrinting = state === 'PRINTING'

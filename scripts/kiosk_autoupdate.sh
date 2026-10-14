@@ -335,6 +335,10 @@ if [ "$REQUEST_RESTART" = true ]; then
 
     # 1. Systemd Service Restart (Appliance Mode)
     if command -v systemctl >/dev/null 2>&1; then
+        if systemctl is-active --quiet printbooth-ui.service 2>/dev/null; then
+            log "  • Restarting printbooth-ui.service..."
+            sudo systemctl restart printbooth-ui.service 2>/dev/null || true
+        fi
         if systemctl is-active --quiet printbooth-display.service 2>/dev/null; then
             log "  • Restarting printbooth-display.service..."
             sudo systemctl restart printbooth-display.service 2>/dev/null || true

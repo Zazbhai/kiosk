@@ -1,0 +1,17 @@
+[Unit]
+Description=PrintBooth Touchscreen Kiosk UI Server (Port 5175)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=kiosk
+WorkingDirectory=/home/kiosk/kiosk/scripts
+ExecStart=/home/kiosk/kiosk/brain/venv/bin/python /home/kiosk/kiosk/scripts/serve_kiosk_ui.py 5175 /home/kiosk/kiosk/ui/dist
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

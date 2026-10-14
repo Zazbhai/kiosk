@@ -58,13 +58,35 @@ EnvironmentFile=-$KIOSK_ROOT/.env
 WantedBy=multi-user.target
 EOF
 
-# 4. Create printbooth-display.service
-echo -e "\n[3/4] Installing /etc/systemd/system/printbooth-display.service..."
+# 4. Create printbooth-ui.service (Port 5175 Web Server)
+echo -e "\n[3/5] Installing /etc/systemd/system/printbooth-ui.service..."
+sudo tee /etc/systemd/system/printbooth-ui.service > /dev/null << EOF
+[Unit]
+Description=PrintBooth Touchscreen Kiosk UI Server (Port 5175)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=$CURRENT_USER
+WorkingDirectory=$SCRIPT_DIR
+ExecStart=$PYTHON_BIN $SCRIPT_DIR/serve_kiosk_ui.py 5175 $UI_DIR/dist
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 5. Create printbooth-display.service
+echo -e "\n[4/5] Installing /etc/systemd/system/printbooth-display.service..."
 sudo tee /etc/systemd/system/printbooth-display.service > /dev/null << EOF
 [Unit]
 Description=PrintBooth Touchscreen Kiosk Display
-After=graphical.target printbooth-brain.service
-Wants=printbooth-brain.service
+After=graphical.target printbooth-brain.service printbooth-ui.service
+Wants=printbooth-brain.service printbooth-ui.service
 
 [Service]
 Type=simple
@@ -80,8 +102,8 @@ RestartSec=5
 WantedBy=graphical.target
 EOF
 
-# 5. Reload systemd, clean stale processes, and enable services
-echo -e "\n[4/4] Terminating any stale background Python client instances..."
+# 6. Reload systemd, clean stale processes, and enable services
+echo -e "\n[5/5] Terminating any stale background Python client instances..."
 sudo pkill -f "ws_kiosk_client.py" 2>/dev/null || true
 sudo pkill -f "daemon.py" 2>/dev/null || true
 rm -f /tmp/printbooth_ws_client.pid 2>/dev/null || true
@@ -92,11 +114,13 @@ sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$BRAIN_DIR/data" 2>/dev/null || tru
 sudo chmod -R 775 "$BRAIN_DIR/data" 2>/dev/null || true
 
 sudo systemctl daemon-reload
+sudo systemctl enable printbooth-ui.service
 sudo systemctl enable printbooth-brain.service
 sudo systemctl enable printbooth-display.service
 
-echo -e "\n✓ printbooth-brain.service and printbooth-display.service installed and enabled!"
+echo -e "\n✓ printbooth-ui.service, printbooth-brain.service and printbooth-display.service installed and enabled!"
 echo "To start services now, run:"
+echo "  sudo systemctl restart printbooth-ui"
 echo "  sudo systemctl restart printbooth-brain"
 echo "  sudo systemctl restart printbooth-display"
 echo "════════════════════════════════════════════════════════"
