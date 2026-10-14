@@ -784,18 +784,8 @@ class KioskWsClient:
         self._active_prefetches.add(prefetch_key)
 
         try:
-            # Check if identical file already exists in TEMP_JOBS_DIR under a related order ID
-            for cand in TEMP_JOBS_DIR.glob(f"*_{file_name}"):
-                if cand.exists() and cand.stat().st_size > 0:
-                    try:
-                        import shutil
-                        shutil.copyfile(cand, local_target)
-                        print(f"[WSS Kiosk Client] ✓ Reused locally cached binary for '{file_name}' ({local_target.stat().st_size} bytes)")
-                        break
-                    except Exception:
-                        pass
-
             if local_target.exists() and local_target.stat().st_size > 0:
+                print(f"[WSS Kiosk Client] ✓ Document '{file_name}' already cached for {order_id} ({local_target.stat().st_size} bytes)")
                 return
 
             # Build download URL with query params for station authentication
@@ -1086,15 +1076,16 @@ class KioskWsClient:
                 await self._prefetch_document(job_order_id, job_payload)
 
             if not local_target.exists() or local_target.stat().st_size == 0:
-                # Fallback to master file or any matching cached binary in TEMP_JOBS_DIR
-                master_target = TEMP_JOBS_DIR / f"{order_id}_{file_name}"
-                if master_target.exists() and master_target.stat().st_size > 0:
-                    local_target = master_target
+                is_sub = "_sub_" in job_order_id
+                if not is_sub:
+                    master_target = TEMP_JOBS_DIR / f"{order_id}_{file_name}"
+                    if master_target.exists() and master_target.stat().st_size > 0:
+                        local_target = master_target
                 else:
-                    for cand in TEMP_JOBS_DIR.glob(f"*_{file_name}"):
+                    for cand in TEMP_JOBS_DIR.glob(f"{job_order_id}_*"):
                         if cand.exists() and cand.stat().st_size > 0:
                             local_target = cand
-                            print(f"[WSS Kiosk Client] ✓ Fallback matched cached document: '{cand.name}'")
+                            print(f"[WSS Kiosk Client] ✓ Fallback matched sub-job cached document: '{cand.name}'")
                             break
 
             if not local_target.exists() or local_target.stat().st_size == 0:
