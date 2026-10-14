@@ -192,9 +192,12 @@ def main():
             "color",
             "bw",
             "all-tests",
+            "all",
         ],
         help="Run a specific test directly from the command line",
     )
+    parser.add_argument("--all", action="store_true", help="Execute all tests sequentially in one go")
+    parser.add_argument("--delay", type=int, default=4, help="Seconds to wait between sequential test jobs (default: 4s)")
     parser.add_argument("--printer", default=PRINTER_NAME, help="Target CUPS printer name")
     parser.add_argument("--list-options", action="store_true", help="List all PPD attributes supported by the printer")
     args = parser.parse_args()
@@ -338,7 +341,24 @@ def main():
         },
     }
 
+    def run_all_tests():
+        print(f"\n🚀 [ALL-IN-ONE] Executing all {len(test_map)} tests sequentially with {args.delay}s delay between jobs...")
+        success_count = 0
+        for idx, (k, item) in enumerate(sorted(test_map.items(), key=lambda x: int(x[0])), 1):
+            print(f"\n[{idx}/{len(test_map)}] Launching test: {item['name']}")
+            execute_print_job(cups, printer_name, test_pdf, item["name"], item["options"])
+            success_count += 1
+            if idx < len(test_map) and args.delay > 0:
+                print(f"Waiting {args.delay}s for spooler before next test...")
+                import time
+                time.sleep(args.delay)
+        print(f"\n✓ Completed all {success_count} printer format tests.")
+
     # If test passed via CLI flag
+    if args.all or args.test in ("all", "all-tests"):
+        run_all_tests()
+        return
+
     if args.test:
         selected_key = None
         for k, item in test_map.items():
@@ -349,11 +369,6 @@ def main():
             item = test_map[selected_key]
             execute_print_job(cups, printer_name, test_pdf, item["name"], item["options"])
             return
-        elif args.test == "all-tests":
-            print("\nExecuting all tests sequentially...")
-            for k, item in test_map.items():
-                execute_print_job(cups, printer_name, test_pdf, item["name"], item["options"])
-            return
 
     # Interactive Menu
     while True:
@@ -363,21 +378,24 @@ def main():
         print("═" * 70)
         for k, item in sorted(test_map.items(), key=lambda x: int(x[0])):
             print(f"  [{k:>2}] {item['name']}")
+        print("  [ A] Run ALL tests in one go (sequential batch)")
         print("  [ P] View Printer's Native Supported PPD Options (lpoptions)")
         print("  [ Q] Quit")
         print("═" * 70)
 
-        choice = input("Select a test number (1-12, P, Q): ").strip().upper()
+        choice = input("Select a test number (1-12, A, P, Q): ").strip().upper()
         if choice in ("Q", "QUIT", "EXIT"):
             print("Exiting test suite.")
             break
+        elif choice == "A":
+            run_all_tests()
         elif choice == "P":
             list_cups_ppd_options(printer_name)
         elif choice in test_map:
             item = test_map[choice]
             execute_print_job(cups, printer_name, test_pdf, item["name"], item["options"])
         else:
-            print("Invalid selection. Please choose a number between 1 and 12.")
+            print("Invalid selection. Please choose a number between 1 and 12, or 'A' for all.")
 
 
 if __name__ == "__main__":
