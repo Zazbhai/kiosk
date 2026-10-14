@@ -139,6 +139,7 @@ export interface LiveSession {
   phoneDisconnected?: boolean
   phoneDisconnectedAt?: number
   phoneGraceRemainingSec?: number
+  isBackwardNav?: boolean
 }
 
 // ─── Phase Metadata ──────────────────────────────────────────────────────────
@@ -784,6 +785,30 @@ export default function KioskSessionScreen() {
         setSession(prev => {
           if (!prev) return { ...s, qrUrl: effectiveQrUrl, token: effectiveToken, kioskVariant: s.kioskVariant }
           
+          // State regression guard: Never regress from PAYING or PRINTING to an earlier state like REVIEWING/CONFIGURING
+          // unless isBackwardNav is explicitly signaled from user interaction.
+          const isRegressingFromPayment = (prev.state === 'PAYING' || prev.state === 'OTP_READY') &&
+            ['REVIEWING', 'CONFIGURING', 'CONFIRMING', 'UPLOADING'].includes(s.state) &&
+            !s.isBackwardNav
+          const isRegressingFromPrinting = prev.state === 'PRINTING' && s.state !== 'PRINTING' && s.state !== 'DONE'
+
+          if (isRegressingFromPayment || isRegressingFromPrinting) {
+            console.log(`[KioskSessionScreen] 🛡️ Ignored polling state regression: ${prev.state} -> ${s.state}`)
+            return {
+              ...prev,
+              ...s,
+              state: prev.state,
+              phase: prev.phase,
+              phaseStep: prev.phaseStep,
+              upiQrValue: prev.upiQrValue || s.upiQrValue,
+              upiIntentUrl: prev.upiIntentUrl || s.upiIntentUrl,
+              paymentUrl: prev.paymentUrl || s.paymentUrl,
+              qrAmount: prev.qrAmount || s.qrAmount,
+              amount: prev.amount || s.amount,
+              orderId: prev.orderId || s.orderId,
+            }
+          }
+
           const isStateChanged = prev.state !== s.state
           if (isStateChanged) {
             setStateChanged(true)
