@@ -737,7 +737,19 @@ export default function KioskSessionScreen() {
           setKioskVariant(s.kioskVariant)
         }
 
-        if (s.state === 'QR_READY' || data.isInactiveTimeout || s.state === 'EXPIRED') {
+        // Active document and state detection
+        const hasActiveDoc = Boolean(s.document) || Boolean(s.files && s.files.length > 0) || Boolean(currentSession?.document) || Boolean(currentSession?.files && currentSession.files.length > 0)
+        const isInteractiveSession = Boolean(
+          (currentSession && ['CLAIMED', 'UPLOADING', 'CONFIRMING', 'CONFIGURING', 'REVIEWING', 'PAYING', 'PRINTING'].includes(currentSession.state)) ||
+          ['CLAIMED', 'UPLOADING', 'CONFIRMING', 'CONFIGURING', 'REVIEWING', 'PAYING', 'PRINTING'].includes(s.state)
+        )
+        const isLocallyActive = (Date.now() - lastSectionActivityTimeRef.current) < 300000
+
+        // Only transition to QR_READY if the session is genuinely idle and has no active customer documents
+        const shouldResetToIdle = (s.state === 'QR_READY' && !isInteractiveSession && !hasActiveDoc) ||
+          ((data.isInactiveTimeout || s.state === 'EXPIRED') && !hasActiveDoc && !isLocallyActive && !isInteractiveSession)
+
+        if (shouldResetToIdle) {
           if (currentSession?.state !== 'QR_READY' || (effectiveToken && currentSession?.token !== effectiveToken)) {
             setSession({
               sessionId: s.sessionId || `init-${kioskId}`,
@@ -798,6 +810,9 @@ export default function KioskSessionScreen() {
           return {
             ...prev,
             ...s,
+            // Keep existing document if incoming poll doesn't include it
+            document: s.document || prev.document,
+            files: (s.files && s.files.length > 0) ? s.files : prev.files,
             lastPhoneActivityAt: s.lastPhoneActivityAt || prev.lastPhoneActivityAt,
             phoneDisconnected: s.phoneDisconnected !== undefined ? s.phoneDisconnected : prev.phoneDisconnected,
             phoneGraceRemainingSec: s.phoneGraceRemainingSec !== undefined ? s.phoneGraceRemainingSec : prev.phoneGraceRemainingSec,
@@ -817,7 +832,6 @@ export default function KioskSessionScreen() {
         }
 
         // Phone Disconnect handling: only count down if session has no document and phone truly left
-        const hasActiveDoc = Boolean(s.document) || Boolean(s.files && s.files.length > 0)
         const isDisconnected = Boolean(s.phoneDisconnected || data.phoneDisconnected) && !hasActiveDoc
         const isPrePrint = s.state !== 'PRINTING' && s.state !== 'DONE' && s.state !== 'CANCELLED'
 
@@ -828,14 +842,18 @@ export default function KioskSessionScreen() {
           setPhoneDisconnectCountdown(null)
         }
 
-        if (typeof data.inactivityRemainingSec === 'number') {
-          setInactivitySecondsLeft(data.inactivityRemainingSec)
-          if (data.resetAt) {
-            lastSectionActivityTimeRef.current = data.resetAt - (5 * 60 * 1000)
-          }
+        // Inactivity Countdown: maintain a robust local 5-minute countdown from real phone/touch interaction
+        if (s.lastPhoneActivityAt && s.lastPhoneActivityAt > lastSectionActivityTimeRef.current) {
+          lastSectionActivityTimeRef.current = s.lastPhoneActivityAt
         }
+        const localRemaining = Math.max(0, Math.ceil((300000 - (Date.now() - lastSectionActivityTimeRef.current)) / 1000))
+        setInactivitySecondsLeft(localRemaining)
 
-        if (s.state === 'CANCELLED' || data.isPhoneInactive || data.isPhoneDisconnectedExpired || data.isInactiveTimeout) {
+        // Cancellation guard: strictly ignore premature cancellations if customer has active document or interactive flow
+        if (s.state === 'CANCELLED' && !hasActiveDoc && !isInteractiveSession) {
+          setPhoneDisconnectCountdown(null)
+          handleCancelAndNewUpload()
+        } else if ((data.isPhoneInactive || data.isPhoneDisconnectedExpired || data.isInactiveTimeout) && !hasActiveDoc && !isInteractiveSession && !isLocallyActive) {
           setPhoneDisconnectCountdown(null)
           handleCancelAndNewUpload()
         }
