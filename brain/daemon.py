@@ -67,9 +67,7 @@ class KioskBrainDaemon:
         self.processed_orders = load_processed_orders()
         self._was_printer_online = False
 
-        # BOOT PURGE 1: Clear any lingering ghost jobs in the CUPS hardware spooler from previous boot/sessions
-        print("[Kiosk Brain] 🧹 Sanitizing CUPS hardware queue on startup (cancelling all ghost jobs)...")
-        self.cups.purge_all_jobs(self.printer_name)
+        # BOOT PURGE 1: Ensure orphaned temporary files are cleaned without killing in-flight print jobs
 
         # BOOT PURGE 2: Securely purge any orphaned temporary document files from disk
         purge_temp_job_files()

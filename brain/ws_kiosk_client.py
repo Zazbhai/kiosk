@@ -92,8 +92,7 @@ class KioskWsClient:
         self._was_printer_online = False
         self._last_usb_connected: Optional[bool] = None
 
-        # Clean boot: Flush stale CUPS hardware queue and orphaned files
-        self.cups.purge_all_jobs(self.printer_name)
+        # Clean boot: Purge orphaned temporary files from disk without cancelling active print spooler jobs
         purge_temp_job_files()
 
         hw_init = self.monitor.get_hardware_status()

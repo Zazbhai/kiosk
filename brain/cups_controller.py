@@ -417,10 +417,8 @@ class CupsController:
         actions = []
 
         try:
-            # 1. Ensure kernel usblp module is loaded
-            if not os.path.exists("/dev/usb/lp0") and self._is_usb_printer_present():
-                subprocess.run(["sudo", "-n", "modprobe", "usblp"], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
-                actions.append("modprobe usblp")
+            # 1. Ensure kernel usblp module is UNLOADED so CUPS libusb backend has full access to the USB printer
+            subprocess.run(["sudo", "-n", "rmmod", "usblp"], capture_output=True, stdin=subprocess.DEVNULL, timeout=2)
 
             # 2. Re-enable ALL CUPS queues and accept incoming jobs
             # Using stdin=subprocess.DEVNULL and sudo -n completely prevents interactive password prompts
@@ -487,10 +485,8 @@ class CupsController:
                                 active_uri = parts[1]
                                 break
 
-                    if not active_uri and os.path.exists("/dev/usb/lp0"):
-                        active_uri = "usb:/dev/usb/lp0"
-
-                    if active_uri:
+                    # NOTE: NEVER fallback to raw 'usb:/dev/usb/lp0' character device as it breaks CUPS raster drivers!
+                    if active_uri and not active_uri.startswith("usb:/dev/"):
                         subprocess.run(
                             ["sudo", "-n", "lpadmin", "-p", target, "-v", active_uri],
                             capture_output=True,
@@ -1765,8 +1761,8 @@ class CupsController:
                             if os.path.exists(br_bin):
                                 try:
                                     corm_arg = "FullColor" if is_color else "Mono"
-                                    subprocess.run([br_bin, "-corm", corm_arg, "-copies", str(clean_copies)], timeout=3, capture_output=True)
-                                    subprocess.run(["sudo", br_bin, "-corm", corm_arg, "-copies", str(clean_copies)], timeout=3, capture_output=True)
+                                    subprocess.run([br_bin, "-corm", corm_arg, "-copies", str(clean_copies)], timeout=3, capture_output=True, stdin=subprocess.DEVNULL)
+                                    subprocess.run(["sudo", "-n", br_bin, "-corm", corm_arg, "-copies", str(clean_copies)], timeout=3, capture_output=True, stdin=subprocess.DEVNULL)
                                     print(f"[CUPS] Brother hardware configured via {br_bin}: -corm {corm_arg} -copies {clean_copies}")
                                 except Exception as e:
                                     print(f"[CUPS] Brother hardware config notice: {e}")

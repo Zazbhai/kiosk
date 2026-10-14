@@ -42,7 +42,6 @@ sudo tee /etc/systemd/system/printbooth-brain.service > /dev/null << EOF
 Description=PrintBooth Kiosk Brain IoT Daemon
 After=network-online.target cups.service
 Wants=network-online.target cups.service
-Requires=cups.service
 
 [Service]
 Type=simple
