@@ -586,7 +586,12 @@ class KioskWsClient:
                         existing = self.staged_jobs.get(release_pin)
                         if existing and isinstance(existing, dict) and (existing.get("orderId") != order_id or existing.get("fileName") != payload.get("fileName")):
                             if not existing.get("subJobs"):
-                                existing["subJobs"] = [existing.copy()]
+                                # If existing was an individual sub-job, wrap it.
+                                # If existing was a master order with files array, do NOT wrap master order as a sub-job!
+                                if not existing.get("files") and "_sub_" in str(existing.get("orderId", "")):
+                                    existing["subJobs"] = [existing.copy()]
+                                else:
+                                    existing["subJobs"] = []
                             if not any(sj.get("orderId") == order_id for sj in existing["subJobs"]):
                                 existing["subJobs"].append(payload)
                             self.staged_jobs[release_pin] = existing
@@ -692,6 +697,17 @@ class KioskWsClient:
                         print(f"[WSS Kiosk Client] ℹ Payment confirmed for Order {order_id}. Awaiting PRINT_EXECUTE dispatch...")
                         continue
 
+                    # Multi-file orders are dispatched as individual sub-jobs via PRINT_EXECUTE with their exact documents & settings.
+                    # Never auto-dispatch the master order batch on PAYMENT_CAPTURED when multiple files are present!
+                    has_multi_files = (
+                        (payload.get("files") and isinstance(payload["files"], list) and len(payload["files"]) > 1)
+                        or (staged_job.get("files") and isinstance(staged_job["files"], list) and len(staged_job["files"]) > 1)
+                        or bool(staged_job.get("subJobs") and len(staged_job["subJobs"]) > 1)
+                    )
+                    if has_multi_files:
+                        print(f"[WSS Kiosk Client] ℹ Multi-file order {order_id} confirmed paid. Awaiting individual sub-job PRINT_EXECUTE dispatches...")
+                        continue
+
                     # When payment is confirmed at kiosk (UPI QR or companion), execute print immediately!
                     # The PIN remains available as an order receipt / pickup reference, but does not block printing.
                     print(f"[WSS Kiosk Client] 💰 Payment confirmed for Order {order_id}. Auto-dispatching physical print...")
@@ -739,8 +755,18 @@ class KioskWsClient:
                         print(f"[WSS Kiosk Client] ℹ Order {order_id} currently printing on hardware. Skipping concurrent duplicate PRINT_EXECUTE.")
                         continue
 
-                    # Always claim spooling for PRINT_EXECUTE with force=True so earlier payment/staged claims never block execution
-                    self.cups.claim_order_for_spooling(order_id, aliases, force=True)
+                    # Deduplication: respect earlier claims unless explicit force reprint is requested
+                    if not force_reprint:
+                        if self._is_order_busy_or_printed(order_id, aliases):
+                            print(f"[WSS Kiosk Client] ℹ Order {order_id} already spooled/printed. Skipping duplicate PRINT_EXECUTE.")
+                            continue
+                        if not self.cups.claim_order_for_spooling(order_id, aliases, force=False):
+                            print(f"[WSS Kiosk Client] ℹ Order {order_id} already claimed for spooling. Skipping duplicate PRINT_EXECUTE.")
+                            self.printed_orders.update(all_ids)
+                            continue
+                    else:
+                        self.cups.claim_order_for_spooling(order_id, aliases, force=True)
+
                     self.printed_orders.update(all_ids)
                     staged_job = (
                         self.staged_jobs.get(order_id)
@@ -749,6 +775,11 @@ class KioskWsClient:
                         or {}
                     )
                     merged_payload = {**staged_job, **payload}
+                    # Sub-jobs must NEVER inherit files or subJobs arrays from master staged_job
+                    if "_sub_" in str(order_id) or payload.get("fileIndex") or (payload.get("masterOrderId") and payload.get("masterOrderId") != order_id):
+                        merged_payload.pop("files", None)
+                        merged_payload.pop("subJobs", None)
+
                     merged_range = resolve_effective_page_range(
                         payload.get("selectedPages"),
                         payload.get("selected_pages"),
@@ -940,22 +971,53 @@ class KioskWsClient:
                 self.active_printing_orders.discard(i)
 
     async def _execute_print_order_internal(self, order_id: str, payload: dict, aliases: list, all_ids: set):
+        # Check if this order is a sub-job:
+        # A sub-job MUST strictly print only itself and NEVER re-expand payload["files"] or payload["subJobs"]!
+        is_sub_job = ("_sub_" in str(order_id)) or bool(payload.get("fileIndex")) or bool(
+            payload.get("masterOrderId") and str(payload.get("masterOrderId")).strip() != str(order_id).strip()
+        )
+
         # Build the list of jobs to print (handles multi-file orders with distinct settings)
         jobs_to_print = []
-        if payload.get("subJobs") and isinstance(payload["subJobs"], list) and len(payload["subJobs"]) > 0:
-            jobs_to_print = payload["subJobs"]
+        if is_sub_job:
+            # Individual sub-job: print ONLY this document
+            jobs_to_print = [payload]
+        elif payload.get("subJobs") and isinstance(payload["subJobs"], list) and len(payload["subJobs"]) > 0:
+            # Filter out any accidental master orders that have files arrays
+            jobs_to_print = [sj for sj in payload["subJobs"] if not (sj.get("files") and len(sj.get("files", [])) > 1)]
+            if not jobs_to_print:
+                jobs_to_print = payload["subJobs"]
         elif payload.get("files") and isinstance(payload["files"], list) and len(payload["files"]) > 0:
             is_single = (len(payload["files"]) == 1)
             for idx, f in enumerate(payload["files"]):
                 f_id = f.get("orderId") or (order_id if is_single else f"{order_id}_sub_{idx + 1}")
                 f_settings = f.get("settings") or {}
+                # Strict copy count: use the file's explicit copies if set, otherwise 1.
+                # NEVER fall back to master payload.get("copies") for multi-file items!
+                f_copies = 1
+                if f_settings.get("copies") is not None:
+                    try:
+                        f_copies = max(1, int(f_settings["copies"]))
+                    except (ValueError, TypeError):
+                        f_copies = 1
+                elif f.get("copies") is not None:
+                    try:
+                        f_copies = max(1, int(f["copies"]))
+                    except (ValueError, TypeError):
+                        f_copies = 1
+                elif is_single:
+                    try:
+                        f_copies = max(1, int(payload.get("copies") or 1))
+                    except (ValueError, TypeError):
+                        f_copies = 1
+
                 jobs_to_print.append({
                     **payload,
                     **f,
                     "orderId": f_id,
                     "fileName": f.get("fileName") or payload.get("fileName") or f"Document_{idx + 1}.pdf",
-                    "copies": f_settings.get("copies") or f.get("copies") or payload.get("copies") or 1,
-                    "colourMode": f_settings.get("colour") or f.get("colour") or payload.get("colourMode") or "BW",
+                    "copies": f_copies,
+                    "colourMode": f_settings.get("colour") or f.get("colour") or (payload.get("colourMode") if is_single else "BW"),
                     "duplex": f_settings.get("duplex") or f.get("duplex") or payload.get("duplex") or "SINGLE",
                     "paperSize": f_settings.get("paperSize") or f.get("paperSize") or payload.get("paperSize") or "A4",
                     "pageRange": resolve_effective_page_range(
@@ -967,24 +1029,24 @@ class KioskWsClient:
                         f_settings.get("pageRange"),
                         f.get("pageRange"),
                         f.get("pages"),
-                        payload.get("selectedPages"),
-                        payload.get("selected_pages"),
-                        payload.get("pageRange"),
-                        payload.get("pages"),
+                        (payload.get("selectedPages") if is_single else None),
+                        (payload.get("selected_pages") if is_single else None),
+                        (payload.get("pageRange") if is_single else None),
+                        (payload.get("pages") if is_single else None),
                     ),
                     "selectedPages": (
                         f_settings.get("selectedPages")
                         or f.get("selectedPages")
-                        or payload.get("selectedPages")
+                        or (payload.get("selectedPages") if is_single else None)
                         or f_settings.get("selected_pages")
                         or f.get("selected_pages")
-                        or payload.get("selected_pages")
+                        or (payload.get("selected_pages") if is_single else None)
                     ),
                     "scaling": f_settings.get("scaling") or f.get("scaling") or payload.get("scaling") or "FIT",
                     "orientation": f_settings.get("orientation") or f.get("orientation") or payload.get("orientation") or "AUTO",
                     "pagesPerSheet": f_settings.get("pagesPerSheet") or f.get("pagesPerSheet") or payload.get("pagesPerSheet") or 1,
-                    "pageColours": f_settings.get("pageColours") or f.get("pageColours") or payload.get("pageColours"),
-                    "pageCopies": f_settings.get("pageCopies") or f.get("pageCopies") or payload.get("pageCopies"),
+                    "pageColours": f_settings.get("pageColours") or f.get("pageColours") or (payload.get("pageColours") if is_single else None),
+                    "pageCopies": f_settings.get("pageCopies") or f.get("pageCopies") or (payload.get("pageCopies") if is_single else None),
                     "fileUrl": f.get("fileUrl") or (payload.get("fileUrl") if is_single else f"{self.api_url}/print/download/{f_id}"),
                 })
         else:
@@ -994,7 +1056,8 @@ class KioskWsClient:
             job_order_id = job_payload.get("orderId") or f"{order_id}_sub_{j_idx + 1}"
             settings = job_payload.get("printSettings") or job_payload.get("settings") or {}
             file_name = job_payload.get("fileName") or settings.get("fileName") or f"document_{j_idx + 1}.pdf"
-            copies = max(1, int(job_payload.get("copies") or settings.get("copies") or 1))
+            raw_copies = job_payload.get("copies") if job_payload.get("copies") is not None else settings.get("copies")
+            copies = max(1, int(raw_copies or 1))
             raw_col = str(job_payload.get("colourMode") or job_payload.get("colour") or settings.get("colourMode") or settings.get("colour") or "BW").upper().replace("&", "")
             colour_mode = "COLOUR" if ("COLOUR" in raw_col or "COLOR" in raw_col) else "BW"
             paper_size = str(job_payload.get("paperSize") or settings.get("paperSize") or "A4").upper().strip()
@@ -1165,6 +1228,9 @@ class KioskWsClient:
                     )
                 )
                 print(f"[WSS Kiosk Client] CUPS Spooler response for [{j_idx + 1}/{len(jobs_to_print)}]: {result}")
+                if isinstance(result, dict) and result.get("success"):
+                    self.cups.claim_order_for_spooling(job_order_id, force=True)
+                    self.printed_orders.add(str(job_order_id).strip())
             except Exception as e:
                 print(f"[WSS Kiosk Client] CUPS dispatch error: {e}")
                 result = {"success": False, "error": str(e)}

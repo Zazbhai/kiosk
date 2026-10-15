@@ -2100,9 +2100,11 @@ class CupsController:
                             if os.path.exists(br_bin):
                                 try:
                                     corm_arg = "FullColor" if is_color else "Mono"
-                                    subprocess.run([br_bin, "-corm", corm_arg, "-copies", str(clean_copies)], timeout=3, capture_output=True, stdin=subprocess.DEVNULL)
-                                    subprocess.run(["sudo", "-n", br_bin, "-corm", corm_arg, "-copies", str(clean_copies)], timeout=3, capture_output=True, stdin=subprocess.DEVNULL)
-                                    print(f"[CUPS] Brother hardware configured via {br_bin}: -corm {corm_arg} -copies {clean_copies}")
+                                    # ALWAYS set brprintconf -copies 1: CUPS 'lp -n' controls job copies.
+                                    # Passing copies > 1 to brprintconf modifies Brother driver config and causes multiplication!
+                                    subprocess.run([br_bin, "-corm", corm_arg, "-copies", "1"], timeout=3, capture_output=True, stdin=subprocess.DEVNULL)
+                                    subprocess.run(["sudo", "-n", br_bin, "-corm", corm_arg, "-copies", "1"], timeout=3, capture_output=True, stdin=subprocess.DEVNULL)
+                                    print(f"[CUPS] Brother hardware configured via {br_bin}: -corm {corm_arg} -copies 1 (CUPS job -n {clean_copies})")
                                 except Exception as e:
                                     print(f"[CUPS] Brother hardware config notice: {e}")
                                 break
