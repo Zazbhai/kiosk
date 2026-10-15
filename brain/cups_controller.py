@@ -1521,6 +1521,22 @@ class CupsController:
             except Exception:
                 pass
 
+        # Method 4: Pure Python regex page counter (zero dependencies, works without pymupdf/pypdf/pdfinfo)
+        try:
+            with open(str(path), "rb") as f:
+                content = f.read()
+            import re
+            matches = re.findall(rb"/Type\s*/Page\b(?!\s*s)", content)
+            if matches:
+                return len(matches)
+            counts = re.findall(rb"/Count\s+(\d+)", content)
+            if counts:
+                nums = [int(c) for c in counts if int(c) > 0]
+                if nums:
+                    return max(nums)
+        except Exception:
+            pass
+
         return 1
 
     @staticmethod
@@ -1921,7 +1937,10 @@ class CupsController:
         # Inspect pages
         is_pdf = suffix == ".pdf"
         total_pages = self._get_pdf_page_count(p_path) if is_pdf else 1
-        if selected_pages is not None:
+        is_all_pages = not page_range or str(page_range).strip().upper() in ("ALL", "*")
+        if is_all_pages:
+            selected_pages = list(range(1, total_pages + 1))
+        elif selected_pages is not None:
             if isinstance(selected_pages, (list, tuple, set)):
                 clean_p = [int(p) for p in selected_pages if 1 <= int(p) <= total_pages]
                 selected_pages = sorted(set(clean_p)) if clean_p else self._parse_page_range(page_range, total_pages)
@@ -2076,8 +2095,8 @@ class CupsController:
 
         # If user selected a subset of pages in a multi-page PDF, extract those exact pages
         # so CUPS and printer hardware receive ONLY the pages the user requested!
-        effective_range = page_range
-        if is_pdf and selected_pages and len(selected_pages) < total_pages:
+        effective_range = None if is_all_pages else page_range
+        if is_pdf and not is_all_pages and selected_pages and len(selected_pages) < total_pages:
             range_tag = "_".join(str(x) for x in selected_pages[:4])
             unique_suffix = f"{os.getpid()}_{int(time.time() * 1000) % 100000}"
             extracted_name = f"extracted_{p_path.stem}_p{range_tag}_{unique_suffix}.pdf"

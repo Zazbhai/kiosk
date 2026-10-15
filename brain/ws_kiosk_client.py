@@ -74,31 +74,59 @@ def acquire_singleton_lock():
 def resolve_effective_page_range(*candidates) -> str:
     """
     Bulletproof page range resolver:
-    Scans candidates in order, prioritizing any explicit custom page selection (e.g. [2,3] or '1,3')
-    over generic defaults like 'ALL', '*', or empty strings.
+    1. If any candidate specifies an explicit custom subset (e.g. '2-4', '1,3', [2,3]), use that.
+    2. If any candidate explicitly specifies 'ALL' or '*', return 'ALL' (never let fallback [1] override it).
+    3. If only a single-element [1] candidate exists alongside 'ALL', 'ALL' takes precedence.
+    4. Defaults to 'ALL'.
     """
+    has_explicit_all = False
+    # Pre-scan for explicit 'ALL' or '*'
+    for c in candidates:
+        if not c:
+            continue
+        if isinstance(c, str):
+            val = c.strip().upper()
+            if val in ("ALL", "*"):
+                has_explicit_all = True
+                break
+
     for c in candidates:
         if not c:
             continue
         if isinstance(c, (list, tuple, set)):
             clean = [int(p) for p in c if str(p).isdigit() and int(p) > 0]
             if clean:
-                return ",".join(str(p) for p in sorted(set(clean)))
+                if len(clean) > 1 or clean != [1]:
+                    return ",".join(str(p) for p in sorted(set(clean)))
+                if not has_explicit_all:
+                    return "1"
             continue
+
         val = str(c).strip()
-        if not val or val.upper() in ("ALL", "*"):
+        if not val:
             continue
+        if val.upper() in ("ALL", "*"):
+            continue
+
         if val.startswith("[") and val.endswith("]"):
             try:
                 parsed = json.loads(val)
                 if isinstance(parsed, list):
                     clean = [int(p) for p in parsed if str(p).isdigit() and int(p) > 0]
                     if clean:
-                        return ",".join(str(p) for p in sorted(set(clean)))
+                        if len(clean) > 1 or clean != [1]:
+                            return ",".join(str(p) for p in sorted(set(clean)))
+                        if not has_explicit_all:
+                            return "1"
             except Exception:
                 pass
             continue
-        return val
+
+        # Check for explicit range or numbers
+        if any(char.isdigit() for char in val):
+            if val != "1" or not has_explicit_all:
+                return val
+
     return "ALL"
 
 
@@ -556,12 +584,6 @@ class KioskWsClient:
                     p_settings = payload.get("printSettings") or payload.get("settings") or {}
 
                     p_range = resolve_effective_page_range(
-                        payload.get("selectedPages"),
-                        payload.get("selected_pages"),
-                        p_settings.get("selectedPages"),
-                        p_settings.get("selected_pages"),
-                        first_file.get("selectedPages"),
-                        ff_settings.get("selectedPages"),
                         payload.get("pageRange"),
                         payload.get("pages"),
                         p_settings.get("pageRange"),
@@ -570,6 +592,12 @@ class KioskWsClient:
                         first_file.get("pages"),
                         ff_settings.get("pageRange"),
                         ff_settings.get("pages"),
+                        payload.get("selectedPages"),
+                        payload.get("selected_pages"),
+                        p_settings.get("selectedPages"),
+                        p_settings.get("selected_pages"),
+                        first_file.get("selectedPages"),
+                        ff_settings.get("selectedPages"),
                     )
                     doc_pages = int(payload.get("totalDocPages") or payload.get("docPageCount") or payload.get("pageCount") or first_file.get("pageCount") or 1)
                     try:
@@ -673,18 +701,21 @@ class KioskWsClient:
                         merged_payload.pop("subJobs", None)
 
                     merged_range = resolve_effective_page_range(
-                        payload.get("selectedPages"),
-                        payload.get("selected_pages"),
                         payload.get("pageRange"),
                         payload.get("pages"),
-                        staged_job.get("selectedPages"),
-                        staged_job.get("selected_pages"),
                         staged_job.get("pageRange"),
                         staged_job.get("pages"),
+                        payload.get("selectedPages"),
+                        payload.get("selected_pages"),
+                        staged_job.get("selectedPages"),
+                        staged_job.get("selected_pages"),
                     )
                     merged_payload["pageRange"] = merged_range
                     merged_payload["pages"] = merged_range
-                    if staged_job.get("selectedPages") and not payload.get("selectedPages"):
+                    if merged_range.upper() in ("ALL", "*"):
+                        merged_payload.pop("selectedPages", None)
+                        merged_payload.pop("selected_pages", None)
+                    elif staged_job.get("selectedPages") and not payload.get("selectedPages"):
                         merged_payload["selectedPages"] = staged_job["selectedPages"]
                     asyncio.create_task(self._handle_print_order(order_id, merged_payload))
 
@@ -742,18 +773,21 @@ class KioskWsClient:
                     self.printed_orders.update(all_ids)
                     merged_payload = {**staged_job, **payload}
                     merged_range = resolve_effective_page_range(
-                        payload.get("selectedPages"),
-                        payload.get("selected_pages"),
                         payload.get("pageRange"),
                         payload.get("pages"),
-                        staged_job.get("selectedPages"),
-                        staged_job.get("selected_pages"),
                         staged_job.get("pageRange"),
                         staged_job.get("pages"),
+                        payload.get("selectedPages"),
+                        payload.get("selected_pages"),
+                        staged_job.get("selectedPages"),
+                        staged_job.get("selected_pages"),
                     )
                     merged_payload["pageRange"] = merged_range
                     merged_payload["pages"] = merged_range
-                    if staged_job.get("selectedPages") and not payload.get("selectedPages"):
+                    if merged_range.upper() in ("ALL", "*"):
+                        merged_payload.pop("selectedPages", None)
+                        merged_payload.pop("selected_pages", None)
+                    elif staged_job.get("selectedPages") and not payload.get("selectedPages"):
                         merged_payload["selectedPages"] = staged_job["selectedPages"]
                     await self.print_queue.put((order_id, merged_payload))
                     print(f"[WSS Kiosk Client] 📋 Enqueued Order {order_id} into synchronous queue (Pending: {self.print_queue.qsize()})")
@@ -797,18 +831,21 @@ class KioskWsClient:
                         merged_payload.pop("subJobs", None)
 
                     merged_range = resolve_effective_page_range(
-                        payload.get("selectedPages"),
-                        payload.get("selected_pages"),
                         payload.get("pageRange"),
                         payload.get("pages"),
-                        staged_job.get("selectedPages"),
-                        staged_job.get("selected_pages"),
                         staged_job.get("pageRange"),
                         staged_job.get("pages"),
+                        payload.get("selectedPages"),
+                        payload.get("selected_pages"),
+                        staged_job.get("selectedPages"),
+                        staged_job.get("selected_pages"),
                     )
                     merged_payload["pageRange"] = merged_range
                     merged_payload["pages"] = merged_range
-                    if staged_job.get("selectedPages") and not payload.get("selectedPages"):
+                    if merged_range.upper() in ("ALL", "*"):
+                        merged_payload.pop("selectedPages", None)
+                        merged_payload.pop("selected_pages", None)
+                    elif staged_job.get("selectedPages") and not payload.get("selectedPages"):
                         merged_payload["selectedPages"] = staged_job["selectedPages"]
                     await self.print_queue.put((order_id, merged_payload))
                     print(f"[WSS Kiosk Client] 📋 Enqueued Order {order_id} into synchronous queue (Pending: {self.print_queue.qsize()})")
@@ -1104,14 +1141,6 @@ class KioskWsClient:
             ff_set = first_f.get("settings") or {}
 
             page_range = resolve_effective_page_range(
-                job_payload.get("selectedPages"),
-                job_payload.get("selected_pages"),
-                settings.get("selectedPages"),
-                settings.get("selected_pages"),
-                first_f.get("selectedPages"),
-                first_f.get("selected_pages"),
-                ff_set.get("selectedPages"),
-                ff_set.get("selected_pages"),
                 job_payload.get("pageRange"),
                 job_payload.get("pages"),
                 settings.get("pageRange"),
@@ -1120,34 +1149,49 @@ class KioskWsClient:
                 first_f.get("pages"),
                 ff_set.get("pageRange"),
                 ff_set.get("pages"),
+                job_payload.get("selectedPages"),
+                job_payload.get("selected_pages"),
+                settings.get("selectedPages"),
+                settings.get("selected_pages"),
+                first_f.get("selectedPages"),
+                first_f.get("selected_pages"),
+                ff_set.get("selectedPages"),
+                ff_set.get("selected_pages"),
             )
 
             # Extract selected_pages_list to pass directly to CUPS controller
             selected_pages_list = None
-            raw_sel = (
-                job_payload.get("selectedPages")
-                or job_payload.get("selected_pages")
-                or settings.get("selectedPages")
-                or settings.get("selected_pages")
-                or first_f.get("selectedPages")
-                or ff_set.get("selectedPages")
-            )
-            if raw_sel:
-                if isinstance(raw_sel, (list, tuple, set)):
-                    selected_pages_list = [int(p) for p in raw_sel if str(p).isdigit() and int(p) > 0]
-                elif isinstance(raw_sel, str) and raw_sel.strip().startswith("[") and raw_sel.strip().endswith("]"):
+            if not page_range or page_range.upper() in ("ALL", "*"):
+                selected_pages_list = None  # None signals all pages to CUPS!
+            else:
+                raw_sel = (
+                    job_payload.get("selectedPages")
+                    or job_payload.get("selected_pages")
+                    or settings.get("selectedPages")
+                    or settings.get("selected_pages")
+                    or first_f.get("selectedPages")
+                    or ff_set.get("selectedPages")
+                )
+                if raw_sel:
+                    if isinstance(raw_sel, (list, tuple, set)):
+                        clean = [int(p) for p in raw_sel if str(p).isdigit() and int(p) > 0]
+                        if clean and (len(clean) > 1 or clean != [1] or page_range == "1"):
+                            selected_pages_list = clean
+                    elif isinstance(raw_sel, str) and raw_sel.strip().startswith("[") and raw_sel.strip().endswith("]"):
+                        try:
+                            arr = json.loads(raw_sel)
+                            if isinstance(arr, list):
+                                clean = [int(p) for p in arr if str(p).isdigit() and int(p) > 0]
+                                if clean and (len(clean) > 1 or clean != [1] or page_range == "1"):
+                                    selected_pages_list = clean
+                        except Exception:
+                            pass
+                if not selected_pages_list and page_range and page_range.upper() not in ("ALL", "*"):
                     try:
-                        arr = json.loads(raw_sel)
-                        if isinstance(arr, list):
-                            selected_pages_list = [int(p) for p in arr if str(p).isdigit() and int(p) > 0]
+                        from cups_controller import CupsController
+                        selected_pages_list = CupsController._parse_page_range(page_range, 9999)
                     except Exception:
                         pass
-            if not selected_pages_list and page_range and page_range.upper() not in ("ALL", "*"):
-                try:
-                    from cups_controller import CupsController
-                    selected_pages_list = CupsController._parse_page_range(page_range, 9999)
-                except Exception:
-                    pass
 
             scaling = str(job_payload.get("scaling") or settings.get("scaling") or "FIT").strip()
             orientation = str(job_payload.get("orientation") or settings.get("orientation") or "AUTO").upper().strip()
