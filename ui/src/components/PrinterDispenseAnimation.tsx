@@ -118,7 +118,7 @@ export default function PrinterDispenseAnimation({
         { transform: T(land - 0.8, fr), offset: 0.92, easing: 'ease-in' },
         { transform: fin, offset: 1 },
       ],
-      { duration: 750, fill: 'forwards' }
+      { duration: 850, fill: 'forwards' }
     ).finished.then(() => {
       p.style.transform = fin
       p.style.willChange = 'auto'
@@ -126,7 +126,7 @@ export default function PrinterDispenseAnimation({
     })
   }, [])
 
-  // Paper feeder sheet sliding into top input slot (rapid mechanical feed)
+  // Paper feeder sheet sliding into top input slot (smooth mechanical feed)
   const feedSheet = useCallback(() => {
     const printer = printerRef.current
     if (!printer) return
@@ -140,7 +140,7 @@ export default function PrinterDispenseAnimation({
         { transform: 'translate(-50%,0) rotate(-6deg)', offset: 0.15 },
         { transform: 'translate(-50%,150%) rotate(0deg)' },
       ],
-      { duration: 550, easing: 'cubic-bezier(.5,0,.8,.7)' }
+      { duration: 800, easing: 'cubic-bezier(.5,0,.8,.7)' }
     ).finished.then(() => f.remove())
   }, [])
 
@@ -152,7 +152,7 @@ export default function PrinterDispenseAnimation({
 
   // Calibrated real-hardware animation lifecycle:
   // - 8s hardware boot, fuser roller warm-up, and CUPS spool receive
-  // - 2s per page physical laser print speed
+  // - 4s per page physical laser print speed
   // - Realtime LCD telemetry updates
   useEffect(() => {
     if (hasStartedRef.current) return
@@ -181,8 +181,8 @@ export default function PrinterDispenseAnimation({
       setIsBootingClass(false)
       setIsRigOn(true)
 
-      // ── PHASE 2: Page-by-Page Physical Print Loop (2 seconds per page) ──
-      const pagePrintDuration = 2000
+      // ── PHASE 2: Page-by-Page Physical Print Loop (4 seconds per page) ──
+      const pagePrintDuration = 4000
 
       for (let pageIdx = 1; pageIdx <= totalSheetsToPrint; pageIdx++) {
         if (isCancelled) return
@@ -223,11 +223,11 @@ export default function PrinterDispenseAnimation({
           }
         }
 
-        await wait(150)
+        await wait(300)
         if (isCancelled) return
 
-        // Cover sliding reveal & rapid paper ejection (1550ms for 2s page cycle)
-        const adjustedDuration = pagePrintDuration - 450
+        // Cover sliding reveal & smooth paper ejection (3400ms for 4s page cycle)
+        const adjustedDuration = pagePrintDuration - 600
         const coverEl = paperEl.querySelector('.cover')
         if (coverEl) {
           coverEl.animate(
@@ -257,8 +257,8 @@ export default function PrinterDispenseAnimation({
         // Gravity drop into output tray with mechanical bounce
         dropPaper(paperEl, pageIdx - 1)
 
-        // Micro-pause before the next feed begins (150ms) -> total ~2000ms per sheet
-        await wait(150)
+        // Micro-pause before the next feed begins (300ms) -> total 4000ms per sheet
+        await wait(300)
         if (isCancelled) return
       }
 

@@ -253,7 +253,7 @@
 
 .ks-mono-stage .printer.printing .lcd i:after,
 .ks-mono-stage .printer.booting .lcd i:after {
-  animation: ksMonoProg 2s linear infinite;
+  animation: ksMonoProg 4s linear infinite;
 }
 
 .ks-mono-stage .vent {
