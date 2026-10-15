@@ -811,6 +811,12 @@ class KioskWsClient:
 
         prefetch_key = f"{order_id}_{file_name}"
         if prefetch_key in self._active_prefetches:
+            # An active download is already in progress for this document!
+            # Wait up to 35 seconds for the download stream to finish writing to disk.
+            for _ in range(70):
+                await asyncio.sleep(0.5)
+                if local_target.exists() and local_target.stat().st_size > 0:
+                    return
             return
         self._active_prefetches.add(prefetch_key)
 
