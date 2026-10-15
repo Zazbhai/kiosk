@@ -1088,10 +1088,29 @@ export default function KioskSessionScreen() {
     if (selectedPageRange && selectedPageRange !== 'ALL') return selectedPageRange
     if (session?.settings?.pageRange && session.settings.pageRange !== 'ALL') return session.settings.pageRange
     if (session?.settings?.pages && session.settings.pages !== 'ALL') return session.settings.pages
+    if (session?.document?.pageRange && session.document.pageRange !== 'ALL') return session.document.pageRange
+    if (session?.document?.pages && session.document.pages !== 'ALL') return session.document.pages
+    if (session?.files?.[0]?.settings?.pageRange && session.files[0].settings.pageRange !== 'ALL') return session.files[0].settings.pageRange
+    if (session?.files?.[0]?.settings?.pages && session.files[0].settings.pages !== 'ALL') return session.files[0].settings.pages
+    if (session?.files?.[0]?.pageRange && session.files[0].pageRange !== 'ALL') return session.files[0].pageRange
+    if (session?.files?.[0]?.pages && session.files[0].pages !== 'ALL') return session.files[0].pages
+    if (Array.isArray(session?.settings?.selectedPages) && session.settings.selectedPages.length > 0) {
+      return session.settings.selectedPages.join(',')
+    }
     if ((session as any)?.pageRange && (session as any).pageRange !== 'ALL') return (session as any).pageRange
     if ((session as any)?.pages && (session as any).pages !== 'ALL') return (session as any).pages
     return 'ALL'
-  }, [selectedPageRange, session?.settings?.pageRange, session?.settings?.pages, (session as any)?.pageRange, (session as any)?.pages])
+  }, [
+    selectedPageRange,
+    session?.settings?.pageRange,
+    session?.settings?.pages,
+    session?.settings?.selectedPages,
+    session?.document?.pageRange,
+    session?.document?.pages,
+    session?.files,
+    (session as any)?.pageRange,
+    (session as any)?.pages,
+  ])
 
   const isCustomPages = effectivePageRange.trim().toUpperCase() !== 'ALL' && effectivePageRange.trim().length > 0
   const selectedPageNumbers = useMemo(() => {

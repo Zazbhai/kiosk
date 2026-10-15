@@ -19,26 +19,56 @@ export interface FileSettings {
 }
 
 export function parsePageRange(val: string, total: number): number[] {
-  if (!val || val.trim().toUpperCase() === 'ALL') {
-    return Array.from({ length: Math.max(1, total) }, (_, i) => i + 1)
+  let maxTotal = Math.max(1, isNaN(Number(total)) ? 1 : Number(total))
+  if (!val || typeof val !== 'string' || val.trim().toUpperCase() === 'ALL' || val.trim() === '*') {
+    return Array.from({ length: maxTotal }, (_, i) => i + 1)
   }
+
+  const clean = val.trim()
+  if (clean.startsWith('[') && clean.endsWith(']')) {
+    try {
+      const arr = JSON.parse(clean)
+      if (Array.isArray(arr) && arr.length > 0) {
+        const nums = arr.map(Number).filter(n => !isNaN(n) && n >= 1)
+        if (nums.length > 0) {
+          maxTotal = Math.max(maxTotal, ...nums)
+          const valid = nums.filter(n => n <= maxTotal)
+          if (valid.length > 0) return Array.from(new Set(valid)).sort((a, b) => a - b)
+        }
+      }
+    } catch {}
+  }
+
+  // Pre-scan clean string for explicit page numbers to expand maxTotal if document pageCount was not yet passed
+  const allNums: number[] = []
+  const matches = clean.match(/\d+/g)
+  if (matches) {
+    for (const m of matches) {
+      const num = parseInt(m, 10)
+      if (!isNaN(num) && num >= 1) allNums.push(num)
+    }
+  }
+  if (allNums.length > 0) {
+    maxTotal = Math.max(maxTotal, ...allNums)
+  }
+
   const selected = new Set<number>()
-  const parts = val.split(',').map(s => s.trim()).filter(Boolean)
+  const parts = clean.split(',').map(s => s.trim()).filter(Boolean)
   for (const part of parts) {
     if (part.includes('-')) {
       const [startStr, endStr] = part.split('-').map(s => s.trim())
       const start = Math.max(1, parseInt(startStr, 10) || 1)
-      const end = Math.min(total, parseInt(endStr, 10) || total)
+      const end = Math.min(maxTotal, parseInt(endStr, 10) || maxTotal)
       if (start <= end) {
         for (let i = start; i <= end; i++) selected.add(i)
       }
     } else {
       const p = parseInt(part, 10)
-      if (!isNaN(p) && p >= 1 && p <= total) selected.add(p)
+      if (!isNaN(p) && p >= 1 && p <= maxTotal) selected.add(p)
     }
   }
   const res = Array.from(selected).sort((a, b) => a - b)
-  return res.length > 0 ? res : Array.from({ length: Math.max(1, total) }, (_, i) => i + 1)
+  return res.length > 0 ? res : Array.from({ length: maxTotal }, (_, i) => i + 1)
 }
 
 export function formatPageRange(pages: number[], total: number): string {
