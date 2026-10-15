@@ -659,6 +659,11 @@ class KioskWsClient:
                     mark_order_processed(order_id, aliases)
                     self.printed_orders.update(all_ids)
                     merged_payload = {**staged_job, **payload}
+                    # Sub-jobs must NEVER inherit files or subJobs arrays from master staged_job
+                    if "_sub_" in str(order_id) or payload.get("fileIndex") or (payload.get("masterOrderId") and payload.get("masterOrderId") != order_id):
+                        merged_payload.pop("files", None)
+                        merged_payload.pop("subJobs", None)
+
                     merged_range = resolve_effective_page_range(
                         payload.get("selectedPages"),
                         payload.get("selected_pages"),
@@ -998,8 +1003,7 @@ class KioskWsClient:
             for idx, f in enumerate(payload["files"]):
                 f_id = f.get("orderId") or (order_id if is_single else f"{order_id}_sub_{idx + 1}")
                 f_settings = f.get("settings") or {}
-                # Strict copy count: use the file's explicit copies if set, otherwise 1.
-                # NEVER fall back to master payload.get("copies") for multi-file items!
+                # Strict copy count: use the file's explicit copies if set, otherwise fallback to payload copies or 1.
                 f_copies = 1
                 if f_settings.get("copies") is not None:
                     try:
@@ -1011,7 +1015,7 @@ class KioskWsClient:
                         f_copies = max(1, int(f["copies"]))
                     except (ValueError, TypeError):
                         f_copies = 1
-                elif is_single:
+                elif payload.get("copies") is not None:
                     try:
                         f_copies = max(1, int(payload.get("copies") or 1))
                     except (ValueError, TypeError):

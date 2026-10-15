@@ -2112,28 +2112,33 @@ class CupsController:
                     pass
 
                 try:
-                    cmd = ["lp", "-c", "-d", printer]
-                    # ALWAYS explicitly pass -n <copies> (even for 1 copy) so CUPS CLI never falls back to an unwanted queue default!
-                    cmd.extend(["-n", str(clean_copies)])
+                    outputs = []
+                    last_job_id = None
+                    for copy_idx in range(1, clean_copies + 1):
+                        cmd = ["lp", "-c", "-d", printer, "-n", "1"]
 
-                    if effective_range and effective_range.upper() not in ("ALL", ""):
-                        clean_range = str(effective_range).replace(" ", "")
-                        cmd.extend(["-P", clean_range])
+                        if effective_range and effective_range.upper() not in ("ALL", ""):
+                            clean_range = str(effective_range).replace(" ", "")
+                            cmd.extend(["-P", clean_range])
 
-                    for k, v in cups_opts.items():
-                        if k == "copies":
-                            continue
-                        cmd.extend(["-o", f"{k}={v}"])
+                        for k, v in cups_opts.items():
+                            if k == "copies":
+                                continue
+                            cmd.extend(["-o", f"{k}={v}"])
 
-                    cmd.append(str(target_path.resolve()))
-                    print(f"[CUPS CLI] Executing: {' '.join(cmd)}")
-                    out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
-                    print(f"[CUPS CLI] Success output: {out.strip()}")
-                    job_match = re.search(r"request id is ([^\s]+)", out)
-                    submitted_job_id = job_match.group(1) if job_match else None
-                    # Synchronously wait for job to finish printing so pages and subsequent jobs do not overlap
-                    self._wait_for_job_spool(printer, job_id=submitted_job_id, timeout=90, expected_pages=len(selected_pages))
-                    return {"success": True, "output": out.strip(), "printer": printer, "cupsJobId": submitted_job_id}
+                        cmd.append(str(target_path.resolve()))
+                        print(f"[CUPS CLI] Submitting Copy {copy_idx}/{clean_copies}: {' '.join(cmd)}")
+                        out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
+                        print(f"[CUPS CLI] Success output: {out.strip()}")
+                        outputs.append(out.strip())
+                        job_match = re.search(r"request id is ([^\s]+)", out)
+                        submitted_job_id = job_match.group(1) if job_match else None
+                        last_job_id = submitted_job_id or last_job_id
+                        # If more copies follow, wait for this copy to finish spooling
+                        if copy_idx < clean_copies:
+                            self._wait_for_job_spool(printer, job_id=submitted_job_id, timeout=90, expected_pages=len(selected_pages))
+
+                    return {"success": True, "output": "; ".join(outputs), "printer": printer, "cupsJobId": last_job_id}
                 except subprocess.CalledProcessError as cpe:
                     cli_out = (cpe.output or "").strip()
                     print(f"[CUPS CLI] lp execution error: {cpe} (Output: '{cli_out}'). Trying pycups fallback...")
