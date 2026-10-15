@@ -447,6 +447,14 @@ class KioskWsClient:
                             except Exception:
                                 pass
 
+                        # If this is a master order with multiple files, do NOT queue it monolithically!
+                        # Multi-file orders are dispatched as individual sub-jobs.
+                        job_files = job.get("files") or (job.get("printSettings") or {}).get("files") or []
+                        if isinstance(job_files, list) and len(job_files) > 1:
+                            print(f"[WSS Kiosk Client] ℹ Skipping monolithic poll enqueue for multi-file order {order_id} ({len(job_files)} files). Sub-jobs are dispatched individually.")
+                            loop.run_in_executor(None, _notify_server_completed)
+                            continue
+
                         if self._is_order_busy_or_printed(order_id, aliases):
                             loop.run_in_executor(None, _notify_server_completed)
                             continue
@@ -704,10 +712,13 @@ class KioskWsClient:
 
                     # Multi-file orders are dispatched as individual sub-jobs via PRINT_EXECUTE with their exact documents & settings.
                     # Never auto-dispatch the master order batch on PAYMENT_CAPTURED when multiple files are present!
+                    p_files = payload.get("files") or (payload.get("printSettings") or {}).get("files") or []
+                    s_files = staged_job.get("files") or (staged_job.get("printSettings") or {}).get("files") or []
                     has_multi_files = (
-                        (payload.get("files") and isinstance(payload["files"], list) and len(payload["files"]) > 1)
-                        or (staged_job.get("files") and isinstance(staged_job["files"], list) and len(staged_job["files"]) > 1)
+                        (isinstance(p_files, list) and len(p_files) > 1)
+                        or (isinstance(s_files, list) and len(s_files) > 1)
                         or bool(staged_job.get("subJobs") and len(staged_job["subJobs"]) > 1)
+                        or bool(payload.get("subJobs") and len(payload["subJobs"]) > 1)
                     )
                     if has_multi_files:
                         print(f"[WSS Kiosk Client] ℹ Multi-file order {order_id} confirmed paid. Awaiting individual sub-job PRINT_EXECUTE dispatches...")
@@ -1064,6 +1075,11 @@ class KioskWsClient:
 
         for j_idx, job_payload in enumerate(jobs_to_print):
             job_order_id = job_payload.get("orderId") or f"{order_id}_sub_{j_idx + 1}"
+            # Deduplication guard: if this sub-item was already spooled, skip it!
+            if not is_sub_job and len(jobs_to_print) > 1:
+                if self._is_order_busy_or_printed(job_order_id) or not self.cups.claim_order_for_spooling(job_order_id, force=False):
+                    print(f"[WSS Kiosk Client] ℹ Sub-item {job_order_id} already spooled/printed. Skipping duplicate.")
+                    continue
             settings = job_payload.get("printSettings") or job_payload.get("settings") or {}
             file_name = job_payload.get("fileName") or settings.get("fileName") or f"document_{j_idx + 1}.pdf"
             raw_copies = job_payload.get("copies") if job_payload.get("copies") is not None else settings.get("copies")

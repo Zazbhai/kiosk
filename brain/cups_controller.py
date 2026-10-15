@@ -130,6 +130,39 @@ def claim_order_for_spooling(order_id: str, aliases: Optional[List[str]] = None,
                                 pass
                         return False
 
+                # Cross-check: If this is a master order, block if any of its sub-jobs (_sub_) are already claimed
+                clean_oid = str(order_id).strip()
+                if "_sub_" not in clean_oid:
+                    sub_prefix = f"{clean_oid}_sub_"
+                    for ck in claims.keys():
+                        if str(ck).startswith(sub_prefix):
+                            print(
+                                f"[CUPS Spooler] [BLOCKED] Prevented duplicate print! Master order '{order_id}' "
+                                f"sub-job '{ck}' was already spooled."
+                            )
+                            if sys.platform != "win32":
+                                try:
+                                    import fcntl
+                                    fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+                                except Exception:
+                                    pass
+                            return False
+                else:
+                    # If this is a sub-job, block if the master order was already claimed as a batch
+                    master_part = clean_oid.split("_sub_")[0]
+                    if master_part in claims:
+                        print(
+                            f"[CUPS Spooler] [BLOCKED] Prevented duplicate print! Sub-job '{order_id}' "
+                            f"master order '{master_part}' was already spooled as a batch."
+                        )
+                        if sys.platform != "win32":
+                            try:
+                                import fcntl
+                                fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+                            except Exception:
+                                pass
+                        return False
+
             # Register/overwrite claim with current PID & timestamp
             now_iso = time.strftime("%Y-%m-%d %H:%M:%S")
             now_ts = time.time()
