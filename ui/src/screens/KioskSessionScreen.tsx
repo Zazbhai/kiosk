@@ -682,6 +682,7 @@ export default function KioskSessionScreen() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       })
+      setActiveStateOverride('PRINTING')
       setSession(prev => (prev ? { ...prev, state: 'PRINTING', phase: 'Printing document…' } : null))
     } finally {
       setIsActionPending(false)
@@ -749,13 +750,28 @@ export default function KioskSessionScreen() {
           setKioskVariant(s.kioskVariant)
         }
 
+        const isSameSession = Boolean(
+          currentSession?.sessionId &&
+          s.sessionId &&
+          !currentSession.sessionId.startsWith('init-') &&
+          !s.sessionId.startsWith('init-') &&
+          currentSession.sessionId === s.sessionId
+        )
+
         // Active document and state detection
-        const hasActiveDoc = Boolean(s.document) || Boolean(s.files && s.files.length > 0) || Boolean(currentSession?.document) || Boolean(currentSession?.files && currentSession.files.length > 0)
+        const hasActiveDoc = Boolean(s.document) || Boolean(s.files && s.files.length > 0) || (isSameSession && (Boolean(currentSession?.document) || Boolean(currentSession?.files && currentSession.files.length > 0)))
         const isInteractiveSession = Boolean(
-          (currentSession && ['CLAIMED', 'UPLOADING', 'CONFIRMING', 'CONFIGURING', 'REVIEWING', 'PAYING', 'PRINTING'].includes(currentSession.state)) ||
-          ['CLAIMED', 'UPLOADING', 'CONFIRMING', 'CONFIGURING', 'REVIEWING', 'PAYING', 'PRINTING'].includes(s.state)
+          ['CLAIMED', 'UPLOADING', 'CONFIRMING', 'CONFIGURING', 'REVIEWING', 'PAYING'].includes(s.state) ||
+          (isSameSession && currentSession && ['CLAIMED', 'UPLOADING', 'CONFIRMING', 'CONFIGURING', 'REVIEWING', 'PAYING'].includes(currentSession.state)) ||
+          (s.state === 'PRINTING') ||
+          (isSameSession && currentSession?.state === 'PRINTING' && activeStateOverride === 'PRINTING')
         )
         const isLocallyActive = (Date.now() - lastSectionActivityTimeRef.current) < 300000
+
+        // If incoming session is PRINTING and activeStateOverride is not already DONE, latch activeStateOverride to PRINTING
+        if (s.state === 'PRINTING' && activeStateOverride !== 'DONE' && activeStateOverride !== 'PRINTING') {
+          setActiveStateOverride('PRINTING')
+        }
 
         // Only transition to QR_READY if the session is genuinely idle and has no active customer documents
         const shouldResetToIdle = (s.state === 'QR_READY' && !isInteractiveSession && !hasActiveDoc) ||
@@ -796,14 +812,25 @@ export default function KioskSessionScreen() {
         setSession(prev => {
           if (!prev) return { ...s, qrUrl: effectiveQrUrl, token: effectiveToken, kioskVariant: s.kioskVariant }
           
+          const isSameSessionInPrev = Boolean(
+            prev.sessionId &&
+            s.sessionId &&
+            !prev.sessionId.startsWith('init-') &&
+            !s.sessionId.startsWith('init-') &&
+            prev.sessionId === s.sessionId
+          )
+
           // State regression guard: Never regress from PAYING or PRINTING to an earlier state like REVIEWING/CONFIGURING
           // unless an explicit, fresh user backward navigation occurred strictly AFTER entering payment.
-          const isExplicitFreshBackwardNav = Boolean(s.isBackwardNav) &&
+          const isExplicitFreshBackwardNav = isSameSessionInPrev && Boolean(s.isBackwardNav) &&
             Boolean(s.currentSectionEnteredAt && prev.currentSectionEnteredAt && s.currentSectionEnteredAt > prev.currentSectionEnteredAt)
-          const isRegressingFromPayment = (prev.state === 'PAYING' || prev.state === 'OTP_READY') &&
+          const isRegressingFromPayment = isSameSessionInPrev &&
+            (prev.state === 'PAYING' || prev.state === 'OTP_READY') &&
             ['REVIEWING', 'CONFIGURING', 'CONFIRMING', 'UPLOADING'].includes(s.state) &&
             !isExplicitFreshBackwardNav
-          const isRegressingFromPrinting = prev.state === 'PRINTING' && s.state !== 'PRINTING' && s.state !== 'DONE'
+          const isRegressingFromPrinting = isSameSessionInPrev &&
+            prev.state === 'PRINTING' &&
+            ['REVIEWING', 'CONFIGURING', 'CONFIRMING', 'UPLOADING', 'PAYING', 'OTP_READY'].includes(s.state)
 
           if (isRegressingFromPayment || isRegressingFromPrinting) {
             console.log(`[KioskSessionScreen] 🛡️ Ignored polling state regression: ${prev.state} -> ${s.state}`)
@@ -3011,6 +3038,7 @@ export default function KioskSessionScreen() {
                     clearTimeout(rotateTimerRef.current)
                     rotateTimerRef.current = null
                   }
+                  setActiveStateOverride(null)
                   createSession(true)
                 }}
                 className="ks-pro-btn ks-pro-btn--primary"

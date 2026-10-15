@@ -96,9 +96,6 @@ export default function PrinterDispenseAnimation({
   const isColor = colourMode === 'COLOUR' || colourMode === 'color'
   const mode: 'mono' | 'color' = isColor ? 'color' : 'mono'
 
-  // Total physical pages to dispense
-  const totalSheetsToPrint = Math.max(1, (sheets || 1) * (copies || 1))
-
   // Gravity drop physics from MONO P1
   const dropPaper = useCallback((p: HTMLElement, k: number) => {
     const fx = R(-0.8, 0.8)
@@ -148,7 +145,14 @@ export default function PrinterDispenseAnimation({
   docPagesRef.current = docPages
   const onCompleteRef = useRef(onComplete)
   onCompleteRef.current = onComplete
+  const sheetsRef = useRef(sheets)
+  sheetsRef.current = sheets
+  const copiesRef = useRef(copies)
+  copiesRef.current = copies
+  const colourModeRef = useRef(colourMode)
+  colourModeRef.current = colourMode
   const hasStartedRef = useRef(false)
+  const hasCompletedRef = useRef(false)
 
   // Calibrated real-hardware animation lifecycle:
   // - 8s hardware boot, fuser roller warm-up, and CUPS spool receive
@@ -160,128 +164,169 @@ export default function PrinterDispenseAnimation({
     let isCancelled = false
     const rig = rigRef.current
 
+    const initialSheets = Number(sheetsRef.current) || 1
+    const initialCopies = Number(copiesRef.current) || 1
+    const totalSheets = Math.max(1, Math.min(30, initialSheets * initialCopies))
+    const isCol = colourModeRef.current === 'COLOUR' || colourModeRef.current === 'color'
+    const activeMode: 'mono' | 'color' = isCol ? 'color' : 'mono'
+
+    // Master safety timeout: guarantees print completes even if Web Animation API hangs
+    const maxSafetyTimeoutMs = 8000 + (totalSheets * 4500) + 4000
+    const safetyTimer = setTimeout(() => {
+      if (!isCancelled && !hasCompletedRef.current) {
+        console.warn('[PrinterDispenseAnimation] ⚠️ Master safety timeout reached — completing print cycle')
+        hasCompletedRef.current = true
+        setIsPrintingClass(false)
+        setIsRigOn(false)
+        setIsReady(true)
+        setLcdStatus('DONE')
+        onCompleteRef.current?.()
+      }
+    }, maxSafetyTimeoutMs)
+
     async function executePrintRun() {
-      // ── PHASE 1: Hardware Warmup & Spooling (8 seconds) ──
-      setIsBootingClass(true)
-      setIsPrintingClass(true)
-      setLcdStatus('WARM UP')
-      setLcdNumber('008')
+      try {
+        // ── PHASE 1: Hardware Warmup & Spooling (8 seconds) ──
+        setIsBootingClass(true)
+        setIsPrintingClass(true)
+        setLcdStatus('WARM UP')
+        setLcdNumber('008')
 
-      // Real hardware countdown for 8s warm-up & spooling
-      for (let sec = 8; sec > 0; sec--) {
-        if (isCancelled) return
-        setLcdNumber(String(sec).padStart(3, '0'))
-        if (sec <= 4) {
-          setLcdStatus('SPOOL')
-        }
-        await wait(1000)
-      }
-      if (isCancelled) return
-
-      setIsBootingClass(false)
-      setIsRigOn(true)
-
-      // ── PHASE 2: Page-by-Page Physical Print Loop (4 seconds per page) ──
-      const pagePrintDuration = 4000
-
-      for (let pageIdx = 1; pageIdx <= totalSheetsToPrint; pageIdx++) {
-        if (isCancelled) return
-
-        setLcdStatus('PRINTING')
-        setLcdNumber(String(pageIdx).padStart(3, '0'))
-
-        // Feed input sheet from top stack
-        feedSheet()
-
-        // Create printed output paper
-        const paperEl = document.createElement('div')
-        paperEl.className = 'paper'
-        paperEl.dataset.m = mode
-
-        // Check if thumbnail preview is available for this sheet
-        const previewUrl = docPages?.[(pageIdx - 1) % (docPages.length || 1)]?.url
-        if (previewUrl && previewUrl.trim()) {
-          paperEl.innerHTML = `
-            <div class="paper-preview-container">
-              <img src="${previewUrl}" alt="" class="paper-preview-img" style="${!isColor ? 'filter: grayscale(100%) contrast(108%);' : ''}" />
-              <div class="paper-meta-strip">
-                <span class="paper-no">NO.${String(pageIdx).padStart(3, '0')}</span>
-                <span class="paper-accent"></span>
-              </div>
-            </div>
-            <div class="cover"></div>
-          `
-        } else {
-          paperEl.innerHTML = generateArt(pageIdx, mode) + '<div class="cover"></div>'
-        }
-
-        if (rig) {
-          rig.appendChild(paperEl)
-          const allPapers = rig.querySelectorAll('.paper')
-          if (allPapers.length > 15) {
-            allPapers[0].remove()
+        for (let sec = 8; sec > 0; sec--) {
+          if (isCancelled) return
+          setLcdNumber(String(sec).padStart(3, '0'))
+          if (sec <= 4) {
+            setLcdStatus('SPOOL')
           }
+          await wait(1000)
+        }
+        if (isCancelled) return
+
+        setIsBootingClass(false)
+        setIsRigOn(true)
+
+        // ── PHASE 2: Page-by-Page Physical Print Loop (4 seconds per page) ──
+        const pagePrintDuration = 4000
+
+        for (let pageIdx = 1; pageIdx <= totalSheets; pageIdx++) {
+          if (isCancelled) return
+
+          setLcdStatus('PRINTING')
+          setLcdNumber(String(pageIdx).padStart(3, '0'))
+
+          // Feed input sheet from top stack
+          feedSheet()
+
+          // Create printed output paper
+          const paperEl = document.createElement('div')
+          paperEl.className = 'paper'
+          paperEl.dataset.m = activeMode
+
+          // Check if thumbnail preview is available for this sheet
+          const currentPages = docPagesRef.current
+          const previewUrl = currentPages?.[(pageIdx - 1) % (currentPages.length || 1)]?.url
+          if (previewUrl && previewUrl.trim()) {
+            paperEl.innerHTML = `
+              <div class="paper-preview-container">
+                <img src="${previewUrl}" alt="" class="paper-preview-img" style="${activeMode === 'mono' ? 'filter: grayscale(100%) contrast(108%);' : ''}" />
+                <div class="paper-meta-strip">
+                  <span class="paper-no">NO.${String(pageIdx).padStart(3, '0')}</span>
+                  <span class="paper-accent"></span>
+                </div>
+              </div>
+              <div class="cover"></div>
+            `
+          } else {
+            paperEl.innerHTML = generateArt(pageIdx, activeMode) + '<div class="cover"></div>'
+          }
+
+          if (rig) {
+            rig.appendChild(paperEl)
+            const allPapers = rig.querySelectorAll('.paper')
+            if (allPapers.length > 15) {
+              allPapers[0].remove()
+            }
+          }
+
+          await wait(300)
+          if (isCancelled) return
+
+          // Cover sliding reveal & smooth paper ejection (3400ms for 4s page cycle)
+          const adjustedDuration = pagePrintDuration - 600
+          const coverEl = paperEl.querySelector('.cover')
+          if (coverEl) {
+            try {
+              coverEl.animate(
+                [
+                  { transform: 'translateY(0)' },
+                  { transform: 'translateY(-102%)', offset: 0.82 },
+                  { transform: 'translateY(-102%)' },
+                ],
+                { duration: adjustedDuration, easing: 'cubic-bezier(.45,.05,.35,1)', fill: 'forwards' }
+              )
+            } catch {}
+          }
+
+          try {
+            const ejectionAnim = paperEl.animate(
+              [
+                { transform: 'translate(0,-100%)' },
+                { transform: 'translate(0,0%)' },
+              ],
+              { duration: adjustedDuration, easing: 'cubic-bezier(.45,.05,.35,1)', fill: 'forwards' }
+            )
+
+            await Promise.race([
+              ejectionAnim.finished.catch(() => {}),
+              wait(adjustedDuration + 300),
+            ])
+            ejectionAnim.cancel()
+          } catch {}
+
+          if (isCancelled) return
+          paperEl.style.transform = 'translate(0,0%)'
+
+          // Gravity drop into output tray with mechanical bounce
+          dropPaper(paperEl, pageIdx - 1)
+
+          // Micro-pause before the next feed begins (300ms) -> total 4000ms per sheet
+          await wait(300)
+          if (isCancelled) return
         }
 
-        await wait(300)
+        // ── PHASE 3: Print Complete ──
+        setIsPrintingClass(false)
+        setIsRigOn(false)
+        setIsReady(true)
+        setLcdStatus('DONE')
+        setLcdNumber(String(totalSheets).padStart(3, '0'))
+
+        // Settle time for customer to observe finished pages in output tray
+        await wait(1500)
         if (isCancelled) return
 
-        // Cover sliding reveal & smooth paper ejection (3400ms for 4s page cycle)
-        const adjustedDuration = pagePrintDuration - 600
-        const coverEl = paperEl.querySelector('.cover')
-        if (coverEl) {
-          coverEl.animate(
-            [
-              { transform: 'translateY(0)' },
-              { transform: 'translateY(-102%)', offset: 0.82 },
-              { transform: 'translateY(-102%)' },
-            ],
-            { duration: adjustedDuration, easing: 'cubic-bezier(.45,.05,.35,1)', fill: 'forwards' }
-          )
+        if (!hasCompletedRef.current) {
+          hasCompletedRef.current = true
+          clearTimeout(safetyTimer)
+          onCompleteRef.current?.()
         }
-
-        const ejectionAnim = paperEl.animate(
-          [
-            { transform: 'translate(0,-100%)' },
-            { transform: 'translate(0,0%)' },
-          ],
-          { duration: adjustedDuration, easing: 'cubic-bezier(.45,.05,.35,1)', fill: 'forwards' }
-        )
-
-        await ejectionAnim.finished
-        if (isCancelled) return
-
-        paperEl.style.transform = 'translate(0,0%)'
-        ejectionAnim.cancel()
-
-        // Gravity drop into output tray with mechanical bounce
-        dropPaper(paperEl, pageIdx - 1)
-
-        // Micro-pause before the next feed begins (300ms) -> total 4000ms per sheet
-        await wait(300)
-        if (isCancelled) return
+      } catch (err) {
+        console.error('[PrinterDispenseAnimation] Error in print run:', err)
+        if (!isCancelled && !hasCompletedRef.current) {
+          hasCompletedRef.current = true
+          clearTimeout(safetyTimer)
+          onCompleteRef.current?.()
+        }
       }
-
-      // ── PHASE 3: Print Complete ──
-      setIsPrintingClass(false)
-      setIsRigOn(false)
-      setIsReady(true)
-      setLcdStatus('DONE')
-      setLcdNumber(String(totalSheetsToPrint).padStart(3, '0'))
-
-      // Settle time for customer to observe finished pages in output tray
-      await wait(1500)
-      if (isCancelled) return
-
-      onCompleteRef.current?.()
     }
 
     executePrintRun()
 
     return () => {
       isCancelled = true
+      clearTimeout(safetyTimer)
     }
-  }, [totalSheetsToPrint, mode, feedSheet, dropPaper])
+  }, [])
 
   return (
     <div className="ks-mono-stage" data-mode={mode}>
