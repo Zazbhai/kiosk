@@ -16,6 +16,7 @@ export interface PrinterDispenseAnimationProps {
   isComplete?: boolean
   phaseMessage?: string
   onComplete?: () => void
+  onClose?: () => void
   docPages?: DocPageItem[]
 }
 
@@ -79,6 +80,7 @@ export default function PrinterDispenseAnimation({
   copies = 1,
   colourMode = 'mono',
   onComplete,
+  onClose,
   docPages,
 }: PrinterDispenseAnimationProps) {
   const printerRef = useRef<HTMLDivElement>(null)
@@ -145,6 +147,8 @@ export default function PrinterDispenseAnimation({
   docPagesRef.current = docPages
   const onCompleteRef = useRef(onComplete)
   onCompleteRef.current = onComplete
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
   const sheetsRef = useRef(sheets)
   sheetsRef.current = sheets
   const copiesRef = useRef(copies)
@@ -153,6 +157,29 @@ export default function PrinterDispenseAnimation({
   colourModeRef.current = colourMode
   const hasStartedRef = useRef(false)
   const hasCompletedRef = useRef(false)
+  const safetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Direct Close / Skip Action: instantly finishes animation and calls completion handler
+  const handleClose = useCallback(() => {
+    if (hasCompletedRef.current) return
+    hasCompletedRef.current = true
+    setIsPrintingClass(false)
+    setIsBootingClass(false)
+    setIsRigOn(false)
+    setIsReady(true)
+    setLcdStatus('DONE')
+
+    if (safetyTimerRef.current) {
+      clearTimeout(safetyTimerRef.current)
+      safetyTimerRef.current = null
+    }
+
+    if (onCloseRef.current) {
+      onCloseRef.current()
+    } else {
+      onCompleteRef.current?.()
+    }
+  }, [])
 
   // Calibrated real-hardware animation lifecycle:
   // - 8s hardware boot, fuser roller warm-up, and CUPS spool receive
@@ -172,7 +199,7 @@ export default function PrinterDispenseAnimation({
 
     // Master safety timeout: guarantees print completes even if Web Animation API hangs
     const maxSafetyTimeoutMs = 8000 + (totalSheets * 4500) + 4000
-    const safetyTimer = setTimeout(() => {
+    safetyTimerRef.current = setTimeout(() => {
       if (!isCancelled && !hasCompletedRef.current) {
         console.warn('[PrinterDispenseAnimation] ⚠️ Master safety timeout reached — completing print cycle')
         hasCompletedRef.current = true
@@ -193,14 +220,14 @@ export default function PrinterDispenseAnimation({
         setLcdNumber('008')
 
         for (let sec = 8; sec > 0; sec--) {
-          if (isCancelled) return
+          if (isCancelled || hasCompletedRef.current) return
           setLcdNumber(String(sec).padStart(3, '0'))
           if (sec <= 4) {
             setLcdStatus('SPOOL')
           }
           await wait(1000)
         }
-        if (isCancelled) return
+        if (isCancelled || hasCompletedRef.current) return
 
         setIsBootingClass(false)
         setIsRigOn(true)
@@ -209,7 +236,7 @@ export default function PrinterDispenseAnimation({
         const pagePrintDuration = 4000
 
         for (let pageIdx = 1; pageIdx <= totalSheets; pageIdx++) {
-          if (isCancelled) return
+          if (isCancelled || hasCompletedRef.current) return
 
           setLcdStatus('PRINTING')
           setLcdNumber(String(pageIdx).padStart(3, '0'))
@@ -249,7 +276,7 @@ export default function PrinterDispenseAnimation({
           }
 
           await wait(300)
-          if (isCancelled) return
+          if (isCancelled || hasCompletedRef.current) return
 
           // Cover sliding reveal & smooth paper ejection (3400ms for 4s page cycle)
           const adjustedDuration = pagePrintDuration - 600
@@ -283,7 +310,7 @@ export default function PrinterDispenseAnimation({
             ejectionAnim.cancel()
           } catch {}
 
-          if (isCancelled) return
+          if (isCancelled || hasCompletedRef.current) return
           paperEl.style.transform = 'translate(0,0%)'
 
           // Gravity drop into output tray with mechanical bounce
@@ -291,10 +318,11 @@ export default function PrinterDispenseAnimation({
 
           // Micro-pause before the next feed begins (300ms) -> total 4000ms per sheet
           await wait(300)
-          if (isCancelled) return
+          if (isCancelled || hasCompletedRef.current) return
         }
 
         // ── PHASE 3: Print Complete ──
+        if (isCancelled || hasCompletedRef.current) return
         setIsPrintingClass(false)
         setIsRigOn(false)
         setIsReady(true)
@@ -303,18 +331,18 @@ export default function PrinterDispenseAnimation({
 
         // Settle time for customer to observe finished pages in output tray
         await wait(1500)
-        if (isCancelled) return
+        if (isCancelled || hasCompletedRef.current) return
 
         if (!hasCompletedRef.current) {
           hasCompletedRef.current = true
-          clearTimeout(safetyTimer)
+          if (safetyTimerRef.current) clearTimeout(safetyTimerRef.current)
           onCompleteRef.current?.()
         }
       } catch (err) {
         console.error('[PrinterDispenseAnimation] Error in print run:', err)
         if (!isCancelled && !hasCompletedRef.current) {
           hasCompletedRef.current = true
-          clearTimeout(safetyTimer)
+          if (safetyTimerRef.current) clearTimeout(safetyTimerRef.current)
           onCompleteRef.current?.()
         }
       }
@@ -324,12 +352,34 @@ export default function PrinterDispenseAnimation({
 
     return () => {
       isCancelled = true
-      clearTimeout(safetyTimer)
+      if (safetyTimerRef.current) clearTimeout(safetyTimerRef.current)
     }
   }, [])
 
   return (
     <div className="ks-mono-stage" data-mode={mode}>
+      {/* ---------- close button ---------- */}
+      <button
+        type="button"
+        className="ks-dispense-close-btn"
+        onClick={handleClose}
+        aria-label="Close animation and collect prints"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          className="ks-dispense-close-icon"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+        <span>Close</span>
+      </button>
+
       {/* ---------- printer ---------- */}
       <div
         className={`printer ${isPrintingClass ? 'printing' : ''} ${isBootingClass ? 'booting' : ''}`}

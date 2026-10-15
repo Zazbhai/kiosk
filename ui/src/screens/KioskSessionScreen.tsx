@@ -3011,6 +3011,7 @@ export default function KioskSessionScreen() {
               )
             }
             onComplete={handlePrintComplete}
+            onClose={handlePrintComplete}
             docPages={filteredDocPages.length > 0 ? filteredDocPages : docPages}
           />
         )}
