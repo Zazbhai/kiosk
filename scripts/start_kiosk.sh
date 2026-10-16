@@ -17,6 +17,15 @@ BRAIN_DIR="$KIOSK_ROOT/brain"
 UI_DIR="$KIOSK_ROOT/ui"
 CURRENT_USER="$(id -un 2>/dev/null || echo "kiosk")"
 
+# ── 0. Apply CUPS permissions & sudoers on every boot (idempotent) ─────────────
+# Ensures the kiosk user can always run CUPS commands without password prompts.
+# This runs once per boot and is fast after the first run (files already exist).
+if [ -f "$SCRIPT_DIR/fix_cups_permissions.sh" ]; then
+    echo "[Start Kiosk] Applying CUPS permissions and sudoers rules (boot)..."
+    sudo bash "$SCRIPT_DIR/fix_cups_permissions.sh" >> "/tmp/printbooth_cups_boot.log" 2>&1 || true
+    echo "[Start Kiosk] CUPS permissions applied."
+fi
+
 # ── 1. Single Instance Guard (Mutex) ─────────────────────────────────────────
 # Prevents concurrent execution races (e.g. systemd service + desktop autostart)
 LOCK_FILE="/tmp/start_kiosk_${CURRENT_USER}.lock"
