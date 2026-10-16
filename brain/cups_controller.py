@@ -72,11 +72,56 @@ def claim_order_for_spooling(order_id: str, aliases: Optional[List[str]] = None,
         return True
 
     all_keys = [str(order_id).strip()]
-    # Sub-orders (e.g. ORD-123_sub_1) must never claim or check the master order ID as an alias
-    if aliases and "_sub_" not in str(order_id):
+    is_sub = "_sub_" in str(order_id)
+    sub_suffix = f"_sub_{str(order_id).split('_sub_')[1]}" if is_sub else ""
+
+    if aliases:
         for a in aliases:
-            if a and str(a).strip() and not _is_pin(str(a)):
-                all_keys.append(str(a).strip())
+            a_str = str(a).strip()
+            if not a_str or _is_pin(a_str):
+                continue
+            if is_sub:
+                if a_str.endswith(sub_suffix):
+                    if a_str not in all_keys:
+                        all_keys.append(a_str)
+                elif "_sub_" not in a_str:
+                    cand = f"{a_str}{sub_suffix}"
+                    if cand not in all_keys:
+                        all_keys.append(cand)
+            else:
+                if "_sub_" not in a_str and a_str not in all_keys:
+                    all_keys.append(a_str)
+
+    # Cross-reference staged_orders.json to discover any linked aliases across processes
+    staged_file = DATA_DIR / "staged_orders.json"
+    if staged_file.exists():
+        try:
+            with open(staged_file, "r", encoding="utf-8") as sf:
+                staged_data = json.load(sf)
+            if isinstance(staged_data, dict):
+                lookup_keys = list(all_keys)
+                if is_sub:
+                    lookup_keys.append(str(order_id).split("_sub_")[0])
+                for lk in lookup_keys:
+                    entry = staged_data.get(lk)
+                    if isinstance(entry, dict):
+                        found_ids = [
+                            entry.get("orderId"),
+                            entry.get("orderNumber"),
+                            entry.get("masterOrderId"),
+                        ]
+                        for fid in found_ids:
+                            if fid and str(fid).strip() and not _is_pin(str(fid)):
+                                fid_clean = str(fid).strip()
+                                if is_sub:
+                                    sub_fid = f"{fid_clean}{sub_suffix}" if "_sub_" not in fid_clean else fid_clean
+                                    if sub_fid.endswith(sub_suffix) and sub_fid not in all_keys:
+                                        all_keys.append(sub_fid)
+                                else:
+                                    if "_sub_" not in fid_clean and fid_clean not in all_keys:
+                                        all_keys.append(fid_clean)
+        except Exception:
+            pass
 
     lock_file = DATA_DIR / ".spool_claims.lock"
     claims_file = DATA_DIR / ".spool_claims.json"
@@ -175,6 +220,11 @@ def claim_order_for_spooling(order_id: str, aliases: Optional[List[str]] = None,
 
             with open(claims_file, "w", encoding="utf-8") as cf:
                 json.dump(claims, cf, indent=2)
+                cf.flush()
+                try:
+                    os.fsync(cf.fileno())
+                except Exception:
+                    pass
 
             if sys.platform != "win32":
                 try:
@@ -185,8 +235,10 @@ def claim_order_for_spooling(order_id: str, aliases: Optional[List[str]] = None,
 
             return True
     except Exception as e:
-        print(f"[CUPS Spooler] Claim check notice ({e})")
-        return True
+        # Fail CLOSED: a corrupt/unwritable claim store must block the duplicate,
+        # never allow it. Fail-open here caused double physical prints.
+        print(f"[CUPS Spooler] Claim check notice ({e}) — blocking duplicate to be safe.")
+        return False
 
 
 def unclaim_order(order_id: str, aliases: Optional[List[str]] = None) -> bool:
@@ -205,10 +257,22 @@ def unclaim_order(order_id: str, aliases: Optional[List[str]] = None) -> bool:
         return True
 
     all_keys = [str(order_id).strip()]
+    is_sub = "_sub_" in str(order_id)
+    sub_suffix = f"_sub_{str(order_id).split('_sub_')[1]}" if is_sub else ""
+
     if aliases:
         for a in aliases:
-            if a and str(a).strip() and not _is_pin(str(a)):
-                all_keys.append(str(a).strip())
+            a_str = str(a).strip()
+            if not a_str or _is_pin(a_str):
+                continue
+            if is_sub:
+                if a_str.endswith(sub_suffix):
+                    all_keys.append(a_str)
+                elif "_sub_" not in a_str:
+                    all_keys.append(f"{a_str}{sub_suffix}")
+            else:
+                if "_sub_" not in a_str:
+                    all_keys.append(a_str)
 
     lock_file = DATA_DIR / ".spool_claims.lock"
     claims_file = DATA_DIR / ".spool_claims.json"

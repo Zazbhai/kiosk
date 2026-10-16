@@ -203,6 +203,11 @@ def print_staged_order_in_background(order: dict):
         pin = str(order.get("releasePin") or order.get("otp") or order.get("pickupCode") or "")
         aliases = [a for a in [order_number, pin] if a and a != order_id]
 
+        # Concurrency & Deduplication Guard: Never print if already claimed or spooled by ws_kiosk_client
+        if local_cups and not local_cups.claim_order_for_spooling(order_id, aliases, force=False):
+            print(f"[Kiosk Server] ℹ Order {order_id} already claimed or spooled by another process. Skipping duplicate print.")
+            return
+
         jobs_to_process = []
         if order.get("subJobs") and isinstance(order["subJobs"], list) and len(order["subJobs"]) > 1:
             jobs_to_process = order["subJobs"]
@@ -231,6 +236,11 @@ def print_staged_order_in_background(order: dict):
 
         for j_idx, job_item in enumerate(jobs_to_process):
             sub_id = str(job_item.get("orderId") or f"{order_id}_sub_{j_idx + 1}")
+            if len(jobs_to_process) > 1 and local_cups:
+                sub_aliases = [f"{a}_sub_{j_idx + 1}" for a in aliases if "_sub_" not in a]
+                if not local_cups.claim_order_for_spooling(sub_id, sub_aliases, force=False):
+                    print(f"[Kiosk Server] ℹ Sub-item {sub_id} already claimed/spooled. Skipping duplicate.")
+                    continue
             settings = job_item.get("printSettings") or job_item.get("settings") or {}
             file_name = str(job_item.get("fileName") or settings.get("fileName") or f"document_{j_idx + 1}.pdf")
             copies = max(1, int(job_item.get("copies") or settings.get("copies") or 1))
@@ -611,7 +621,11 @@ class KioskHTTPHandler(SimpleHTTPRequestHandler):
                     api_resp = json.loads(resp.read().decode("utf-8"))
                     if api_resp.get("success") or api_resp.get("valid"):
                         ord_data = api_resp.get("order") or api_resp.get("data") or api_resp
-                        enqueue_print_order(ord_data)
+                        # When central API verifies the PIN, handleVerifyPinLogic dispatches PIN_VERIFIED
+                        # over the WebSocket relay to ws_kiosk_client.py for physical spooling.
+                        # Only enqueue locally if the central backend explicitly indicates local dispatch or relay was offline!
+                        if api_resp.get("dispatchedLocally") or (api_resp.get("kioskRelayed") is False):
+                            enqueue_print_order(ord_data)
                     self.send_response(resp.status)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Access-Control-Allow-Origin", "*")

@@ -191,19 +191,39 @@ class KioskWsClient:
             headers["Authorization"] = f"Bearer {self.kiosk_secret}"
         return headers
 
-    def _extract_clean_aliases(self, order_id: str, order_number: Optional[str]) -> List[str]:
+    def _extract_clean_aliases(self, order_id: str, order_number: Optional[str] = None, payload: Optional[dict] = None) -> List[str]:
         if not order_id:
             return []
+        clean_id = str(order_id).strip()
         # For sub-orders (e.g. ORD-123_sub_1), the master order number ORD-123 must NEVER be treated as an alias!
         # Otherwise, sub_1 printing will cause sub_2, sub_3... to be rejected as duplicate orders!
-        if "_sub_" in str(order_id):
+        if "_sub_" in clean_id:
             return []
-        if not order_number or str(order_number).strip() == str(order_id).strip():
-            return []
-        s = str(order_number).strip()
-        if s.isdigit() and len(s) <= 6:
-            return []
-        return [s]
+
+        aliases = set()
+        if order_number and str(order_number).strip() and str(order_number).strip() != clean_id:
+            s = str(order_number).strip()
+            if not (s.isdigit() and len(s) <= 6):
+                aliases.add(s)
+
+        # Inspect provided payload for alternate identifiers (orderNumber, orderId, job_id, etc.)
+        if payload and isinstance(payload, dict):
+            for k in ("orderNumber", "order_number", "orderId", "job_id", "masterOrderId", "clientTxnId"):
+                val = str(payload.get(k) or "").strip()
+                if val and val != clean_id and not (val.isdigit() and len(val) <= 6):
+                    aliases.add(val)
+
+        # Inspect memory staged jobs to link cross-referenced IDs (e.g. ORD-... vs PB-...)
+        candidates_to_check = {clean_id} | set(aliases)
+        for cid in list(candidates_to_check):
+            staged = self.staged_jobs.get(cid)
+            if staged and isinstance(staged, dict):
+                for k in ("orderNumber", "order_number", "orderId", "job_id", "masterOrderId", "clientTxnId"):
+                    val = str(staged.get(k) or "").strip()
+                    if val and val != clean_id and not (val.isdigit() and len(val) <= 6):
+                        aliases.add(val)
+
+        return list(aliases)
 
     def _is_order_busy_or_printed(self, order_id: str, aliases: Optional[List[str]] = None) -> bool:
         """Atomically checks if an order is currently printing, already spooled, or marked processed."""
@@ -458,7 +478,7 @@ class KioskWsClient:
                         order_id = job.get("orderId") or job.get("job_id")
                         order_number = job.get("orderNumber")
                         release_pin = job.get("releasePin") or job.get("otp") or job.get("pickupCode")
-                        aliases = self._extract_clean_aliases(order_id, order_number)
+                        aliases = self._extract_clean_aliases(order_id, order_number, job)
                         all_ids = {order_id} | set(aliases)
 
                         def _notify_server_completed(oid=order_id):
@@ -675,7 +695,7 @@ class KioskWsClient:
                     if not release_pin:
                         release_pin = staged_job.get("releasePin") or staged_job.get("otp") or staged_job.get("pickupCode")
 
-                    aliases = self._extract_clean_aliases(order_id, order_number)
+                    aliases = self._extract_clean_aliases(order_id, order_number, payload)
                     all_ids = {order_id} | set(aliases)
 
                     if payload.get("dispatchedLocally") and not payload.get("forceKioskPrint"):
@@ -717,7 +737,8 @@ class KioskWsClient:
                         merged_payload.pop("selected_pages", None)
                     elif staged_job.get("selectedPages") and not payload.get("selectedPages"):
                         merged_payload["selectedPages"] = staged_job["selectedPages"]
-                    asyncio.create_task(self._handle_print_order(order_id, merged_payload))
+                    await self.print_queue.put((order_id, merged_payload))
+                    print(f"[WSS Kiosk Client] 📋 Enqueued Order {order_id} (PIN Verified) into synchronous queue (Pending: {self.print_queue.qsize()})")
 
                 elif msg_type == "FILE_INCOMING":
                     print(f"[WSS Kiosk Client] 📄 Incoming file received via WS: {payload.get('fileName')} (Order: {order_id})")
@@ -734,69 +755,42 @@ class KioskWsClient:
                         or {}
                     )
 
-                    # For kiosk sessions (direct payment), PAYMENT_CAPTURED is an informative event.
-                    # The central API will dispatch PRINT_EXECUTE containing the full document and settings.
-                    # Only proceed here if we have a staged job already waiting with document payload.
-                    if not staged_job and not payload.get("fileUrl") and not payload.get("filePath"):
-                        print(f"[WSS Kiosk Client] ℹ Payment confirmed for Order {order_id}. Awaiting PRINT_EXECUTE dispatch...")
-                        continue
+                    # Mark staged job as paid
+                    if staged_job:
+                        staged_job["status"] = "PAID"
 
-                    # Multi-file orders are dispatched as individual sub-jobs via PRINT_EXECUTE with their exact documents & settings.
-                    # Never auto-dispatch the master order batch on PAYMENT_CAPTURED when multiple files are present!
-                    p_files = payload.get("files") or (payload.get("printSettings") or {}).get("files") or []
-                    s_files = staged_job.get("files") or (staged_job.get("printSettings") or {}).get("files") or []
-                    has_multi_files = (
-                        (isinstance(p_files, list) and len(p_files) > 1)
-                        or (isinstance(s_files, list) and len(s_files) > 1)
-                        or bool(staged_job.get("subJobs") and len(staged_job["subJobs"]) > 1)
-                        or bool(payload.get("subJobs") and len(payload["subJobs"]) > 1)
-                    )
-                    if has_multi_files:
-                        print(f"[WSS Kiosk Client] ℹ Multi-file order {order_id} confirmed paid. Awaiting individual sub-job PRINT_EXECUTE dispatches...")
-                        continue
+                    aliases = self._extract_clean_aliases(order_id, order_number, payload)
 
-                    # When payment is confirmed at kiosk (UPI QR or companion), execute print immediately!
-                    # The PIN remains available as an order receipt / pickup reference, but does not block printing.
-                    print(f"[WSS Kiosk Client] 💰 Payment confirmed for Order {order_id}. Auto-dispatching physical print...")
-
-                    aliases = self._extract_clean_aliases(order_id, order_number)
-                    all_ids = {order_id} | set(aliases)
-                    if self._is_order_busy_or_printed(order_id, aliases):
-                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already printing or spooled. Skipping duplicate PAYMENT_CAPTURED.")
-                        continue
-
-                    if not self.cups.claim_order_for_spooling(order_id, aliases, force=False):
-                        print(f"[WSS Kiosk Client] ℹ Order {order_id} already claimed/spooled. Skipping duplicate PAYMENT_CAPTURED.")
-                        self.printed_orders.update(all_ids)
-                        continue
-
-                    self.printed_orders.update(all_ids)
+                    # PAYMENT_CAPTURED is an informative event confirming payment receipt.
+                    # The central API dispatches PRINT_EXECUTE with full, authoritative document settings.
+                    # We pre-fetch the document in the background so it is instantly ready on disk when PRINT_EXECUTE arrives.
                     merged_payload = {**staged_job, **payload}
-                    merged_range = resolve_effective_page_range(
-                        payload.get("pageRange"),
-                        payload.get("pages"),
-                        staged_job.get("pageRange"),
-                        staged_job.get("pages"),
-                        payload.get("selectedPages"),
-                        payload.get("selected_pages"),
-                        staged_job.get("selectedPages"),
-                        staged_job.get("selected_pages"),
-                    )
-                    merged_payload["pageRange"] = merged_range
-                    merged_payload["pages"] = merged_range
-                    if merged_range.upper() in ("ALL", "*"):
-                        merged_payload.pop("selectedPages", None)
-                        merged_payload.pop("selected_pages", None)
-                    elif staged_job.get("selectedPages") and not payload.get("selectedPages"):
-                        merged_payload["selectedPages"] = staged_job["selectedPages"]
-                    await self.print_queue.put((order_id, merged_payload))
-                    print(f"[WSS Kiosk Client] 📋 Enqueued Order {order_id} into synchronous queue (Pending: {self.print_queue.qsize()})")
+                    if merged_payload.get("fileUrl") or merged_payload.get("filePath") or staged_job.get("fileName"):
+                        asyncio.create_task(self._prefetch_document(order_id, merged_payload))
+
+                    # If forceAutoPrint is explicitly set (e.g. headless offline mode without central server PRINT_EXECUTE)
+                    if payload.get("forceAutoPrint"):
+                        all_ids = {order_id} | set(aliases)
+                        if self._is_order_busy_or_printed(order_id, aliases):
+                            print(f"[WSS Kiosk Client] ℹ Order {order_id} already printing or spooled. Skipping duplicate PAYMENT_CAPTURED.")
+                            continue
+
+                        if not self.cups.claim_order_for_spooling(order_id, aliases, force=False):
+                            print(f"[WSS Kiosk Client] ℹ Order {order_id} already claimed/spooled. Skipping duplicate PAYMENT_CAPTURED.")
+                            self.printed_orders.update(all_ids)
+                            continue
+
+                        self.printed_orders.update(all_ids)
+                        await self.print_queue.put((order_id, merged_payload))
+                        print(f"[WSS Kiosk Client] 📋 Enqueued Order {order_id} into synchronous queue (forceAutoPrint)")
+                    else:
+                        print(f"[WSS Kiosk Client] ℹ Payment confirmed for Order {order_id}. Document pre-fetching in background; awaiting PRINT_EXECUTE dispatch...")
 
                 elif msg_type == "PRINT_EXECUTE":
                     print(f"[WSS Kiosk Client] 🖨 Order Event: PRINT_EXECUTE for Order {order_id}")
                     order_number = payload.get("orderNumber") or msg.get("orderNumber")
                     release_pin = payload.get("releasePin") or payload.get("otp") or payload.get("pickupCode")
-                    aliases = self._extract_clean_aliases(order_id, order_number)
+                    aliases = self._extract_clean_aliases(order_id, order_number, payload)
                     all_ids = {order_id} | set(aliases)
 
                     force_reprint = bool(payload.get("forceReprint") or payload.get("adminForce"))
@@ -1114,7 +1108,8 @@ class KioskWsClient:
             job_order_id = job_payload.get("orderId") or f"{order_id}_sub_{j_idx + 1}"
             # Deduplication guard: if this sub-item was already spooled, skip it!
             if not is_sub_job and len(jobs_to_print) > 1:
-                if self._is_order_busy_or_printed(job_order_id) or not self.cups.claim_order_for_spooling(job_order_id, force=False):
+                job_aliases = self._extract_clean_aliases(job_order_id, job_payload.get("orderNumber"), job_payload)
+                if self._is_order_busy_or_printed(job_order_id, job_aliases) or not self.cups.claim_order_for_spooling(job_order_id, job_aliases, force=False):
                     print(f"[WSS Kiosk Client] ℹ Sub-item {job_order_id} already spooled/printed. Skipping duplicate.")
                     continue
             settings = job_payload.get("printSettings") or job_payload.get("settings") or {}
