@@ -10,6 +10,7 @@ Provides cached hardware status with thread pooling for high-performance Raspber
 import sys
 import os
 import time
+import shutil
 import signal
 import subprocess
 from pathlib import Path
@@ -243,8 +244,10 @@ def print_staged_order_in_background(order: dict):
                     continue
             settings = job_item.get("printSettings") or job_item.get("settings") or {}
             file_name = str(job_item.get("fileName") or settings.get("fileName") or f"document_{j_idx + 1}.pdf")
+            # Sanitize filename to prevent path traversal attacks
+            file_name = Path(file_name).name  # strips directory components, ../ etc.
             copies = max(1, int(job_item.get("copies") or settings.get("copies") or 1))
-            raw_c = str(job_item.get("colourMode") or job_item.get("colour") or settings.get("colourMode") or settings.get("colour") or "BW").upper().replace("&", "")
+            raw_c = str(job_item.get("colourMode") or job_item.get("colour") or settings.get("colourMode") or settings.get("colour") or "BW").upper().replace("&", "").replace("&AMP;", "")
             colour_mode = "COLOUR" if ("COLOR" in raw_c or "COLOUR" in raw_c) else "BW"
             duplex = str(job_item.get("duplex") or settings.get("duplex") or "SINGLE").upper()
             paper_size = str(job_item.get("paperSize") or settings.get("paperSize") or "A4").upper()
@@ -271,8 +274,6 @@ def print_staged_order_in_background(order: dict):
             if not local_target.exists() or local_target.stat().st_size == 0:
                 print(f"[Kiosk Server] 📥 Downloading '{file_name}' for Order {sub_id}...")
                 dl_url = f"{API_URL}/print/download/{sub_id}?kioskId={urllib.parse.quote(KIOSK_ID)}"
-                if KIOSK_SECRET:
-                    dl_url += f"&secret={urllib.parse.quote(KIOSK_SECRET)}"
                 headers = {
                     "User-Agent": "Mozilla/5.0 (X11; Linux armv7l) AppleWebKit/537.36 Chrome/120.0.0.0 PrintBooth-Kiosk/1.0",
                     "X-Kiosk-Id": KIOSK_ID,
@@ -282,15 +283,24 @@ def print_staged_order_in_background(order: dict):
                     headers["X-Kiosk-Secret"] = KIOSK_SECRET
                 try:
                     req = urllib.request.Request(dl_url, headers=headers)
-                    with urllib.request.urlopen(req, timeout=20) as resp, open(local_target, "wb") as f:
-                        f.write(resp.read())
+                    MAX_DOWNLOAD = 200 * 1024 * 1024  # 200 MB cap
+                    with urllib.request.urlopen(req, timeout=20) as resp:
+                        cl = int(resp.headers.get("Content-Length") or 0)
+                        if cl > MAX_DOWNLOAD:
+                            raise ValueError(f"Download too large: {cl} bytes (max {MAX_DOWNLOAD})")
+                        shutil.copyfileobj(resp, f := open(local_target, "wb"), length=8192)
+                        f.close()
                     print(f"[Kiosk Server] ✓ Downloaded {file_name} ({local_target.stat().st_size} bytes)")
                 except Exception as dl_err:
                     print(f"[Kiosk Server] Download for {sub_id} failed, trying master {order_id}: {dl_err}")
                     dl_url = f"{API_URL}/print/download/{order_id}?kioskId={urllib.parse.quote(KIOSK_ID)}"
                     req = urllib.request.Request(dl_url, headers=headers)
-                    with urllib.request.urlopen(req, timeout=20) as resp, open(local_target, "wb") as f:
-                        f.write(resp.read())
+                    with urllib.request.urlopen(req, timeout=20) as resp:
+                        cl = int(resp.headers.get("Content-Length") or 0)
+                        if cl > MAX_DOWNLOAD:
+                            raise ValueError(f"Download too large: {cl} bytes (max {MAX_DOWNLOAD})")
+                        shutil.copyfileobj(resp, f := open(local_target, "wb"), length=8192)
+                        f.close()
 
             if local_target.exists() and local_cups:
                 # Office conversion for PPT and DOCX documents

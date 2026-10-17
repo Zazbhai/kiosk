@@ -114,11 +114,12 @@ sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$BRAIN_DIR/data" 2>/dev/null || tru
 sudo chmod -R 775 "$BRAIN_DIR/data" 2>/dev/null || true
 
 sudo systemctl daemon-reload
+sudo systemctl enable printbooth-cups-setup.service
 sudo systemctl enable printbooth-ui.service
 sudo systemctl enable printbooth-brain.service
 sudo systemctl enable printbooth-display.service
 
-echo -e "\n✓ printbooth-ui.service, printbooth-brain.service and printbooth-display.service installed and enabled!"
+echo -e "\n✓ printbooth-cups-setup.service, printbooth-ui.service, printbooth-brain.service and printbooth-display.service installed and enabled!"
 echo "To start services now, run:"
 echo "  sudo systemctl restart printbooth-ui"
 echo "  sudo systemctl restart printbooth-brain"

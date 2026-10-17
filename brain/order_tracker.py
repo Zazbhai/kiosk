@@ -214,25 +214,40 @@ def save_staged_order(order: Dict[str, Any]):
                     except Exception:
                         staged = {}
 
-                # Index order by PIN, orderId, and orderNumber
+                # Index order by PIN, orderId, and orderNumber with prefixed keys to prevent collisions
+                # e.g. PIN "1234" won't collide with orderNumber "1234" because keys are "pin_1234" vs "onum_1234"
+                # Numeric orderIds also get "oid_" prefix to prevent collision with PIN keys
                 if pin:
-                    existing = staged.get(pin)
+                    pin_key = f"pin_{pin}"
+                    existing = staged.get(pin_key)
                     if existing and isinstance(existing, dict) and (existing.get("orderId") != order_id or existing.get("fileName") != order.get("fileName")):
                         # Group multiple files / sub-jobs sharing the same PIN
                         if not existing.get("subJobs"):
                             existing["subJobs"] = [existing.copy()]
                         if not any(sj.get("orderId") == order_id for sj in existing["subJobs"]):
                             existing["subJobs"].append(order)
-                        staged[pin] = existing
+                        staged[pin_key] = existing
                     else:
-                        staged[pin] = order
+                        staged[pin_key] = order
                 if order_id:
-                    staged[order_id] = order
+                    # Numeric orderIds get "oid_" prefix to prevent collision with bare PIN values
+                    if _is_numeric_pin(order_id):
+                        staged[f"oid_{order_id}"] = order
+                    else:
+                        staged[order_id] = order
                 order_num = str(order.get("orderNumber") or "").strip()
-                if order_num:
-                    staged[order_num] = order
+                if order_num and not _is_numeric_pin(order_num):
+                    staged[f"onum_{order_num}"] = order
 
-                STAGED_ORDERS_FILE.write_text(json.dumps(staged, indent=2), encoding="utf-8")
+                tmp_staged = DATA_DIR / ".staged_tmp.json"
+                with open(tmp_staged, "w", encoding="utf-8") as tf:
+                    json.dump(staged, tf, indent=2)
+                    tf.flush()
+                    try:
+                        os.fsync(tf.fileno())
+                    except Exception:
+                        pass
+                tmp_staged.replace(STAGED_ORDERS_FILE)
                 print(f"[Order Tracker] [STAGED] Staged order locally: Order {order_id} | PIN {pin}")
             finally:
                 _release_lock(lf)
@@ -253,7 +268,7 @@ def get_staged_order_by_pin(pin: str) -> Optional[Dict[str, Any]]:
                 staged = json.loads(STAGED_ORDERS_FILE.read_text(encoding="utf-8"))
                 if not isinstance(staged, dict):
                     return None
-                return staged.get(clean_pin)
+                return staged.get(f"pin_{clean_pin}")
             finally:
                 _release_lock(lf)
     except Exception as e:
@@ -275,13 +290,16 @@ def remove_staged_order(pin: str, order_id: Optional[str] = None):
                     return
                 keys_to_del = set()
                 if pin:
-                    keys_to_del.add(pin)
+                    keys_to_del.add(f"pin_{pin}")
                 for k, v in list(staged.items()):
                     if not isinstance(v, dict):
                         continue
-                    if k == pin or v.get("releasePin") == pin or v.get("otp") == pin or v.get("pickupCode") == pin:
+                    # Remove prefixed pin keys
+                    if k.startswith("pin_") and v.get("releasePin") == pin:
                         keys_to_del.add(k)
-                    if order_id and (k == order_id or v.get("orderId") == order_id or v.get("masterOrderId") == order_id):
+                    elif k == pin or v.get("releasePin") == pin or v.get("otp") == pin or v.get("pickupCode") == pin:
+                        keys_to_del.add(k)
+                    if order_id and (k == order_id or k == f"oid_{order_id}" or v.get("orderId") == order_id or v.get("masterOrderId") == order_id):
                         keys_to_del.add(k)
                     if v.get("subJobs"):
                         for sj in v["subJobs"]:
@@ -289,7 +307,15 @@ def remove_staged_order(pin: str, order_id: Optional[str] = None):
                                 keys_to_del.add(sj["orderId"])
                 for k in keys_to_del:
                     staged.pop(k, None)
-                STAGED_ORDERS_FILE.write_text(json.dumps(staged, indent=2), encoding="utf-8")
+                tmp_staged = DATA_DIR / ".staged_tmp.json"
+                with open(tmp_staged, "w", encoding="utf-8") as tf:
+                    json.dump(staged, tf, indent=2)
+                    tf.flush()
+                    try:
+                        os.fsync(tf.fileno())
+                    except Exception:
+                        pass
+                tmp_staged.replace(STAGED_ORDERS_FILE)
             finally:
                 _release_lock(lf)
     except Exception as e:

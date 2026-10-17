@@ -213,7 +213,11 @@ class KioskBrainDaemon:
 
     def execute_order(self, order: Dict[str, Any]):
         """Executes a customer print job via CUPS only when PIN is verified."""
-        order_id = order.get("orderId") or order.get("orderNumber") or order.get("_id")
+        order_id = order.get("orderId")
+        if not order_id:
+            print(f"[Kiosk Brain] [WARN] Order missing 'orderId', skipping: {order.get('_id', 'unknown')}")
+            return
+        order_id = str(order_id).strip()
         order_number = order.get("orderNumber")
         release_pin = order.get("releasePin") or order.get("otp") or order.get("pickupCode")
         aliases = [a for a in [order_number, release_pin] if a and a != order_id]
@@ -247,8 +251,6 @@ class KioskBrainDaemon:
         page_copies = order.get("pageCopies") or settings.get("pageCopies")
 
         download_url = f"{self.api_url}/print/download/{order_id}?kioskId={urllib.parse.quote(self.kiosk_id)}"
-        if self.kiosk_secret:
-            download_url += f"&secret={urllib.parse.quote(self.kiosk_secret)}"
         local_target = TEMP_JOBS_DIR / f"{order_id}_{file_name}"
 
         # Determine if order is ready for immediate hardware printing (PAID, PRINTING, VERIFIED, or auto-dispense)

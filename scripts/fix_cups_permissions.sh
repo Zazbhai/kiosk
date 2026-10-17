@@ -25,7 +25,7 @@ fi
 echo "• Installing passwordless sudoers policy in /etc/sudoers.d/printbooth-cups..."
 sudo tee /etc/sudoers.d/printbooth-cups > /dev/null << 'EOF'
 # PrintBooth Kiosk Hardware & Spooler Passwordless Rights
-ALL ALL=(ALL) NOPASSWD: /usr/sbin/cupsenable, /usr/sbin/cupsaccept, /usr/sbin/lpadmin, /usr/sbin/cupsctl, /usr/sbin/cupsfilter, /sbin/modprobe, /bin/systemctl restart cups, /bin/systemctl status cups, /usr/bin/brprintconf_dcpt420w, /opt/brother/Printers/dcpt420w/lpd/brprintconf_dcpt420w, /usr/bin/cancel
+ALL ALL=(ALL) NOPASSWD: /usr/sbin/cupsenable, /usr/sbin/cupsaccept, /usr/sbin/lpadmin, /usr/sbin/cupsctl, /usr/sbin/cupsfilter, /sbin/modprobe, /bin/systemctl restart cups, /bin/systemctl status cups, /usr/bin/brprintconf_dcpt420w, /opt/brother/Printers/dcpt420w/lpd/brprintconf_dcpt420w, /usr/bin/cancel, /usr/bin/tee /sys/bus/usb/devices/*/power/control, /usr/bin/tee /sys/bus/usb/devices/*/power/autosuspend
 EOF
 sudo chmod 0440 /etc/sudoers.d/printbooth-cups
 

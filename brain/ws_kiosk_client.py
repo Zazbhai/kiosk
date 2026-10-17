@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+import shutil
 import time
 import urllib.request
 from pathlib import Path
@@ -142,7 +143,7 @@ class KioskWsClient:
         base_host = self.api_url.replace("http://", "ws://").replace("https://", "wss://")
         if base_host.endswith("/api"):
             base_host = base_host[:-4]
-        self.ws_url = f"{base_host}/ws?role=kiosk&kioskId={self.kiosk_id}&secret={self.kiosk_secret}"
+        self.ws_url = f"{base_host}/ws?role=kiosk&kioskId={self.kiosk_id}"
         
         self.cups = CupsController()
         self.monitor = HardwareMonitor(self.cups)
@@ -492,8 +493,8 @@ class KioskWsClient:
                                 )
                                 with urllib.request.urlopen(req, timeout=5):
                                     pass
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                print(f"[WSS Kiosk Client] Liveness ping failed for {order_id}: {e}")
 
                         # If this is a master order with multiple files, do NOT queue it monolithically!
                         # Multi-file orders are dispatched as individual sub-jobs.
@@ -515,9 +516,8 @@ class KioskWsClient:
                         self.printed_orders.update(all_ids)
                         await self.print_queue.put((order_id, job))
 
-            except Exception:
-                # Non-blocking; network or backend might be temporarily unreachable
-                pass
+            except Exception as e:
+                print(f"[WSS Kiosk Client] HTTP poll error: {e}")
 
             await asyncio.sleep(5)
 
@@ -884,22 +884,29 @@ class KioskWsClient:
 
             separator = "&" if "?" in base_dl_url else "?"
             file_url = f"{base_dl_url}{separator}kioskId={urllib.parse.quote(self.kiosk_id)}"
-            if self.kiosk_secret:
-                file_url += f"&secret={urllib.parse.quote(self.kiosk_secret)}"
 
             print(f"[WSS Kiosk Client] ⚡ Pre-fetching document from {file_url}...")
             loop = asyncio.get_event_loop()
             def _download_with_auth():
                 import ssl
+                MAX_DOWNLOAD = 200 * 1024 * 1024  # 200 MB cap
                 dl_req = urllib.request.Request(file_url, headers=self._get_auth_headers())
                 try:
                     ctx = ssl.create_default_context()
-                    with urllib.request.urlopen(dl_req, context=ctx, timeout=25) as resp, open(local_target, "wb") as f:
-                        f.write(resp.read())
+                    with urllib.request.urlopen(dl_req, context=ctx, timeout=25) as resp:
+                        cl = int(resp.headers.get("Content-Length") or 0)
+                        if cl > MAX_DOWNLOAD:
+                            raise ValueError(f"Download too large: {cl} bytes (max {MAX_DOWNLOAD})")
+                        shutil.copyfileobj(resp, f := open(local_target, "wb"), length=8192)
+                        f.close()
                 except ssl.SSLError:
                     ctx = ssl._create_unverified_context()
-                    with urllib.request.urlopen(dl_req, context=ctx, timeout=25) as resp, open(local_target, "wb") as f:
-                        f.write(resp.read())
+                    with urllib.request.urlopen(dl_req, context=ctx, timeout=25) as resp:
+                        cl = int(resp.headers.get("Content-Length") or 0)
+                        if cl > MAX_DOWNLOAD:
+                            raise ValueError(f"Download too large: {cl} bytes (max {MAX_DOWNLOAD})")
+                        shutil.copyfileobj(resp, f := open(local_target, "wb"), length=8192)
+                        f.close()
             await loop.run_in_executor(None, _download_with_auth)
             if local_target.exists() and local_target.stat().st_size > 0:
                 print(f"[WSS Kiosk Client] ✓ Pre-fetched {file_name} ({local_target.stat().st_size} bytes)")

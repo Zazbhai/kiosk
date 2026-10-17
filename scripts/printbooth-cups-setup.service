@@ -1,0 +1,15 @@
+[Unit]
+Description=PrintBooth CUPS Permissions & USB Power Setup
+After=network-online.target cups.service
+Before=printbooth-brain.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/bin/bash /home/kiosk/kiosk/scripts/fix_cups_permissions.sh
+RemainAfterState=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

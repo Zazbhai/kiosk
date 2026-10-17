@@ -1430,7 +1430,7 @@ class CupsController:
             options["orientation-requested"] = "3"
 
         # Color vs Monochrome (ColorModel & print-color-mode are standard CUPS / IPP attributes)
-        raw_c = str(colour_mode or "BW").upper().replace("&", "").strip()
+        raw_c = str(colour_mode or "BW").upper().replace("&", "").replace("&AMP;", "").strip()
         is_color = raw_c in ("COLOR", "COLOUR")
         if is_color:
             options["ColorModel"] = "RGB"
@@ -1942,7 +1942,7 @@ class CupsController:
         if not printer:
             return {"success": False, "error": "No CUPS printer available on this station"}
 
-        raw_c = str(colour_mode or "BW").upper().replace("&", "").strip()
+        raw_c = str(colour_mode or "BW").upper().replace("&", "").replace("&AMP;", "").strip()
         is_color = raw_c in ("COLOR", "COLOUR")
         clean_copies = max(1, int(copies or 1))
 
@@ -1969,7 +1969,7 @@ class CupsController:
                     v_str = "COLOUR" if v else "BW"
                 else:
                     v_str = str(v)
-                v_norm = v_str.upper().replace("&", "").strip()
+                v_norm = v_str.upper().replace("&", "").replace("&AMP;", "").strip()
                 col_map[p_num] = "COLOUR" if v_norm in ("COLOUR", "COLOR") else "BW"
             except (ValueError, TypeError):
                 continue
@@ -2012,6 +2012,11 @@ class CupsController:
                 selected_pages = self._parse_page_range(selected_pages, total_pages)
         else:
             selected_pages = self._parse_page_range(page_range, total_pages)
+
+        # Clamp selected pages to actual PDF page count
+        selected_pages = [p for p in selected_pages if 1 <= p <= total_pages]
+        if not selected_pages:
+            selected_pages = list(range(1, total_pages + 1))
 
         # Map each selected page to its exact color mode
         page_modes: Dict[int, str] = {}
@@ -2159,7 +2164,7 @@ class CupsController:
 
         # If user selected a subset of pages in a multi-page PDF, extract those exact pages
         # so CUPS and printer hardware receive ONLY the pages the user requested!
-        effective_range = None if is_all_pages else page_range
+        effective_range = None if is_all_pages else (",".join(str(p) for p in selected_pages) if selected_pages else page_range)
         if is_pdf and not is_all_pages and selected_pages and len(selected_pages) < total_pages:
             range_tag = "_".join(str(x) for x in selected_pages[:4])
             unique_suffix = f"{os.getpid()}_{int(time.time() * 1000) % 100000}"
@@ -2294,7 +2299,7 @@ class CupsController:
                     _sys.path.insert(0, root)
                 from services.printer.windows_printer import print_file as win_print_file
 
-                raw_c = str(colour_mode or "BW").upper().replace("&", "")
+                raw_c = str(colour_mode or "BW").upper().replace("&", "").replace("&AMP;", "")
                 norm_colour = "COLOUR" if raw_c in ("COLOUR", "COLOR") else "BW"
 
                 parsed_colours = None

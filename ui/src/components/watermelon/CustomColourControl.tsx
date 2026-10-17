@@ -22,12 +22,15 @@ export const CustomColourControl: React.FC<CustomColourControlProps> = ({
   const onPageColoursChangeRef = useRef(onPageColoursChange)
   onPageColoursChangeRef.current = onPageColoursChange
 
-  // Clear any existing per-page colour map so user only selects all black or all colour
+  // Clear per-page colour overrides when the user changes the global colour mode
+  // (not when pageColours prop changes — that would create a destructive feedback loop)
+  const prevGlobalColourRef = useRef(globalColour)
   useEffect(() => {
-    if (pageColours && Object.keys(pageColours).length > 0) {
+    if (prevGlobalColourRef.current !== globalColour && pageColours && Object.keys(pageColours).length > 0) {
       onPageColoursChangeRef.current?.(undefined)
     }
-  }, [pageColours])
+    prevGlobalColourRef.current = globalColour
+  }, [globalColour, pageColours])
 
   return (
     <div className="clr-root" onClick={e => e.stopPropagation()}>

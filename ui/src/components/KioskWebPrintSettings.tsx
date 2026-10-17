@@ -248,8 +248,8 @@ export default function KioskWebPrintSettings({
         <CustomColourControl
           selectedPages={selectedPagesList}
           globalColour={settings.colour}
-          pageColours={undefined}
-          onGlobalColourChange={(newVal) => patchSettings({ colour: newVal, pageColours: undefined })}
+          pageColours={settings.pageColours}
+          onGlobalColourChange={(newVal) => patchSettings({ colour: newVal, pageColours: settings.pageColours })}
           onPageColoursChange={() => patchSettings({ pageColours: undefined })}
         />
       ),

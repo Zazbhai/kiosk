@@ -19,8 +19,9 @@ CURRENT_USER="$(id -un 2>/dev/null || echo "kiosk")"
 
 # ── 0. Apply CUPS permissions & sudoers on every boot (idempotent) ─────────────
 # Ensures the kiosk user can always run CUPS commands without password prompts.
-# This runs once per boot and is fast after the first run (files already exist).
-if [ -f "$SCRIPT_DIR/fix_cups_permissions.sh" ]; then
+# Only runs if the sudoers file already exists (avoids chicken-and-egg on cold boot).
+# On a cold boot the printbooth-cups-setup.service one-shot runs this as root first.
+if [ -f "$SCRIPT_DIR/fix_cups_permissions.sh" ] && [ -f /etc/sudoers.d/printbooth-cups ]; then
     echo "[Start Kiosk] Applying CUPS permissions and sudoers rules (boot)..."
     sudo bash "$SCRIPT_DIR/fix_cups_permissions.sh" >> "/tmp/printbooth_cups_boot.log" 2>&1 || true
     echo "[Start Kiosk] CUPS permissions applied."
@@ -96,7 +97,7 @@ fi
 
 # ── 6. Display Pre-Chromium Canvas & Suppress Mouse Cursor ───────────────────
 if command -v xsetroot > /dev/null 2>&1; then
-    xsetroot -solid "#ffffff" 2>/dev/null || true
+    xsetroot -solid "#06110D" 2>/dev/null || true
 fi
 
 SPLASH_PNG="/etc/printbooth/boot_splash.png"
